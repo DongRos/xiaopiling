@@ -445,7 +445,7 @@ const AnniversaryTimer = ({ startDate, onSetDate }: { startDate: string, onSetDa
                 <span className="text-lg md:text-2xl font-bold text-rose-500 font-cute">{diff.days}</span>
                 <span className="text-[9px] md:text-[10px] text-gray-400 ml-0.5 md:ml-1 font-bold">天</span>
             </div>
-            <div className="text-[9px] text-gray-300 font-mono">今日{diff.seconds}秒</div>
+            <div className="text-[9px] text-gray-200 font-mono">{diff.seconds}秒</div>
         </div>
     );
 };
