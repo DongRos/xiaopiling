@@ -41,7 +41,7 @@ import { judgeConflict, extractTodosFromText, JudgeResult } from './services/ai'
 import { Memory, PinnedPhoto, PeriodEntry, TodoItem, ConflictRecord, Page, Message, Album, AlbumMedia } from './types';
 // 修复图片引入：假设 pailide.png 在项目根目录，而 App.tsx 在 src 目录，所以使用 ../ 访问
 // @ts-ignore
-import pailideIcon from '../pailide.png';
+import pailideIcon from './pailide.png';
 
 // --- Helper Functions ---
 
