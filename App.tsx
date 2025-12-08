@@ -139,7 +139,7 @@ const ImageViewer = ({ src, onClose, onAction, actionLabel }: { src: string; onC
 
   const handleClick = (e: React.MouseEvent) => {
       e.stopPropagation();
-      if (onAction) onAction();
+      // 点击图片本身不触发任何操作，避免误触
   };
 
   return createPortal(
@@ -161,9 +161,14 @@ const ImageViewer = ({ src, onClose, onAction, actionLabel }: { src: string; onC
         onDoubleClick={handleDoubleTap}
       />
       
+      {/* 隐式操作按钮：显示在图片下方 */}
       {onAction && actionLabel && (
-           <div className="absolute bottom-24 left-0 right-0 flex justify-center pointer-events-none">
-               <div className="bg-white/20 backdrop-blur-md px-4 py-2 rounded-full text-white text-sm pointer-events-auto cursor-pointer" onClick={(e) => { e.stopPropagation(); onAction(); }}>
+           <div className="absolute bottom-24 left-0 right-0 flex justify-center pointer-events-none z-[1000]">
+               <div 
+                  className="bg-white/20 backdrop-blur-md px-6 py-3 rounded-full text-white text-sm font-bold pointer-events-auto cursor-pointer border border-white/30 hover:bg-white/30 transition shadow-lg flex items-center gap-2" 
+                  onClick={(e) => { e.stopPropagation(); onAction(); }}
+               >
+                   <Edit2 size={14} />
                    {actionLabel}
                </div>
            </div>
@@ -863,41 +868,17 @@ const MemoriesViewContent = ({
 }: any) => {
   const [activeTab, setActiveTab] = useState<'moments' | 'albums'>('moments');
   const [viewingImage, setViewingImage] = useState<string | null>(null);
+  const [viewerAction, setViewerAction] = useState<{ label: string, handler: () => void } | null>(null);
   const [isCreatingAlbum, setIsCreatingAlbum] = useState(false);
   const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null);
   const [newAlbumName, setNewAlbumName] = useState('');
   const [commentInputs, setCommentInputs] = useState<{[key:string]: string}>({});
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   
-  // 引用滚动容器以监听滚动位置
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [showCoverBtn, setShowCoverBtn] = useState(false);
-
   useEffect(() => {
     const handleClickOutside = () => setActiveMenuId(null);
     document.addEventListener('click', handleClickOutside);
     return () => document.removeEventListener('click', handleClickOutside);
-  }, []);
-
-  // 监听滚动：只有当页面处于顶部（下拉状态）时才显示更换封面按钮
-  useEffect(() => {
-      const container = scrollContainerRef.current;
-      if(!container) return;
-
-      const handleScroll = () => {
-          // 当滚动条在最顶部时显示按钮
-          if (container.scrollTop < 5) {
-              setShowCoverBtn(true);
-          } else {
-              setShowCoverBtn(false);
-          }
-      };
-      
-      // 初始化状态
-      handleScroll();
-      
-      container.addEventListener('scroll', handleScroll);
-      return () => container.removeEventListener('scroll', handleScroll);
   }, []);
 
   const createAlbum = () => {
@@ -905,7 +886,7 @@ const MemoriesViewContent = ({
     const newAlbum: Album = {
         id: Date.now().toString(),
         name: newAlbumName,
-        coverUrl: '', // 新建相册默认无封面
+        coverUrl: '', 
         createdAt: getBeijingDateString(),
         media: []
     };
@@ -933,26 +914,17 @@ const MemoriesViewContent = ({
               if (processedCount === files.length) {
                   setAlbums((prev: Album[]) => prev.map(a => {
                       if (a.id === selectedAlbum.id) {
-                          // 逻辑：如果当前相册没有封面，且上传了新照片，则将第一张新照片设为封面
-                          const shouldSetCover = !a.coverUrl && newMedia.length > 0;
-                          return { 
-                              ...a, 
-                              coverUrl: shouldSetCover ? newMedia[0].url : a.coverUrl,
-                              media: [...newMedia, ...a.media] 
-                          };
+                          // 如果没有封面，自动设为封面
+                          const newCover = !a.coverUrl && newMedia.length > 0 ? newMedia[0].url : a.coverUrl;
+                          return { ...a, coverUrl: newCover, media: [...newMedia, ...a.media] };
                       }
                       return a;
                   }));
-                  // 同步更新当前选中的相册视图状态
-                  setSelectedAlbum(prev => {
-                      if (!prev) return null;
-                      const shouldSetCover = !prev.coverUrl && newMedia.length > 0;
-                      return { 
-                          ...prev, 
-                          coverUrl: shouldSetCover ? newMedia[0].url : prev.coverUrl,
-                          media: [...newMedia, ...prev.media] 
-                      };
-                  });
+                  setSelectedAlbum(prev => prev ? { 
+                      ...prev, 
+                      coverUrl: !prev.coverUrl && newMedia.length > 0 ? newMedia[0].url : prev.coverUrl,
+                      media: [...newMedia, ...prev.media] 
+                  } : null);
               }
           };
           reader.readAsDataURL(file);
@@ -964,6 +936,7 @@ const MemoriesViewContent = ({
       setAlbums((prev: Album[]) => prev.map(a => a.id === selectedAlbum.id ? { ...a, coverUrl: url } : a));
       setSelectedAlbum(prev => prev ? { ...prev, coverUrl: url } : null);
       alert("封面设置成功！");
+      setViewingImage(null); // Close viewer after setting
   }
 
   const onCommentChange = (id: string, val: string) => {
@@ -982,6 +955,34 @@ const MemoriesViewContent = ({
       setActiveMenuId(activeMenuId === id ? null : id);
   };
 
+  // 处理封面点击 - 打开全屏并设置更换封面动作
+  const handleCoverClick = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setViewingImage(coverUrl);
+      setViewerAction({
+          label: '更换封面',
+          handler: () => {
+              document.getElementById('cover-upload')?.click();
+              setViewingImage(null); // close viewer after action
+          }
+      });
+  };
+
+  // 处理相册图片点击 - 打开全屏并设置设为封面动作
+  const handleAlbumImageClick = (url: string) => {
+      setViewingImage(url);
+      setViewerAction({
+          label: '设为封面',
+          handler: () => setAlbumCover(url)
+      });
+  };
+
+  // 普通图片点击（点滴） - 无特殊动作
+  const handleNormalImageClick = (url: string) => {
+      setViewingImage(url);
+      setViewerAction(null);
+  };
+
   if (selectedAlbum) {
       return (
           <div className="h-full bg-white flex flex-col pb-20">
@@ -996,41 +997,34 @@ const MemoriesViewContent = ({
               <div className="p-4 grid grid-cols-3 gap-2 overflow-y-auto">
                   {selectedAlbum.media.length === 0 && <div className="col-span-3 text-center text-gray-400 py-10">相册是空的，上传第一张照片吧！</div>}
                   {selectedAlbum.media.map((item, idx) => (
-                      <div key={idx} className="aspect-square rounded-xl overflow-hidden bg-gray-100 relative group">
-                          <img src={item.url} className="w-full h-full object-cover cursor-pointer" onClick={() => setViewingImage(item.url)} loading="lazy" />
-                          <button 
-                              onClick={() => setAlbumCover(item.url)}
-                              className="absolute bottom-1 right-1 bg-black/50 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition"
-                          >
-                              设为封面
-                          </button>
+                      <div key={idx} className="aspect-square rounded-xl overflow-hidden bg-gray-100 relative group cursor-pointer" onClick={() => handleAlbumImageClick(item.url)}>
+                          <img src={item.url} className="w-full h-full object-cover" loading="lazy" />
                       </div>
                   ))}
               </div>
-              {viewingImage && <ImageViewer src={viewingImage} onClose={() => setViewingImage(null)} />}
+              {viewingImage && (
+                  <ImageViewer 
+                      src={viewingImage} 
+                      onClose={() => setViewingImage(null)} 
+                      onAction={viewerAction?.handler}
+                      actionLabel={viewerAction?.label}
+                  />
+              )}
           </div>
       )
   }
 
   return (
-    <div ref={scrollContainerRef} className="h-full bg-white overflow-y-auto pb-24 relative">
-        <div className="relative group cursor-pointer" style={{ height: '320px' }}>
+    <div className="h-full bg-white overflow-y-auto pb-24 relative">
+        {/* 朋友圈封面区域 */}
+        <div className="relative group cursor-pointer" style={{ height: '320px' }} onClick={handleCoverClick}>
              <div className="w-full h-full overflow-hidden relative">
-                <img src={coverUrl} alt="Cover" className="w-full h-full object-cover" onClick={() => setViewingImage(coverUrl)} />
+                <img src={coverUrl} alt="Cover" className="w-full h-full object-cover" />
                 <div className="absolute inset-0 bg-black/10 pointer-events-none" />
              </div>
              
-             {/* 更换封面的按钮，只有在顶部时显示 (opacity控制 + pointer-events控制) */}
-             <div 
-                className={`absolute bottom-4 right-4 z-20 transition-all duration-300 ${showCoverBtn ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'}`}
-                onClick={(e) => { e.stopPropagation(); document.getElementById('cover-upload')?.click(); }}
-             >
-                <div className="bg-black/30 backdrop-blur-md p-2 rounded-md text-white hover:bg-black/50 transition cursor-pointer flex items-center gap-2">
-                    <Camera size={16} />
-                    <span className="text-xs font-bold">换封面</span>
-                </div>
-                <input id="cover-upload" type="file" className="hidden" onChange={onUpdateCover} accept="image/*" />
-            </div>
+             {/* 隐藏的上传控件 */}
+             <input id="cover-upload" type="file" className="hidden" onChange={onUpdateCover} accept="image/*" />
 
             <div className="absolute -bottom-8 right-4 flex items-end gap-3 z-20 pointer-events-none">
                  <div className="text-white font-bold text-lg drop-shadow-md pb-10 font-cute">我们的点滴</div>
@@ -1042,7 +1036,7 @@ const MemoriesViewContent = ({
             </div>
             
             <div className="absolute top-4 right-4 z-30">
-               <button onClick={onFileSelect} className="bg-black/20 p-2 rounded-full text-white hover:bg-black/40 backdrop-blur-sm">
+               <button onClick={(e) => {e.stopPropagation(); onFileSelect(e);}} className="bg-black/20 p-2 rounded-full text-white hover:bg-black/40 backdrop-blur-sm pointer-events-auto">
                    <Camera size={20} />
                </button>
                <input type="file" multiple accept="image/*" className="hidden" onChange={onFileSelect} />
@@ -1080,7 +1074,7 @@ const MemoriesViewContent = ({
                               {memory.type === 'media' && memory.media.length > 0 && (
                                   <div className={`grid gap-1 mb-2 max-w-[80%] ${memory.media.length === 1 ? 'grid-cols-1' : memory.media.length === 4 ? 'grid-cols-2 w-2/3' : 'grid-cols-3'}`}>
                                       {memory.media.map((url: string, idx: number) => (
-                                          <div key={idx} onClick={() => setViewingImage(url)} className={`aspect-square bg-gray-100 cursor-pointer overflow-hidden ${memory.media.length === 1 ? 'max-w-[200px] max-h-[200px]' : ''}`}>
+                                          <div key={idx} onClick={() => handleNormalImageClick(url)} className={`aspect-square bg-gray-100 cursor-pointer overflow-hidden ${memory.media.length === 1 ? 'max-w-[200px] max-h-[200px]' : ''}`}>
                                               <img src={url} className="w-full h-full object-cover" alt="Memory" />
                                           </div>
                                       ))}
@@ -1170,7 +1164,6 @@ const MemoriesViewContent = ({
                           ) : (
                               <div className="w-full h-full bg-gray-50 rounded-2xl flex items-center justify-center text-xs text-gray-400 border border-gray-100">暂无封面</div>
                           )}
-                          {/* 修复：移除 opacity-0 group-hover:opacity-100，让名称一直显示 */}
                           <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-4 rounded-2xl pointer-events-none">
                               <div className="text-white w-full">
                                   <h4 className="font-bold truncate text-shadow-sm">{album.name}</h4>
@@ -1243,7 +1236,14 @@ const MemoriesViewContent = ({
         </div>
       )}
 
-      {viewingImage && <ImageViewer src={viewingImage} onClose={() => setViewingImage(null)} />}
+      {viewingImage && (
+          <ImageViewer 
+              src={viewingImage} 
+              onClose={() => setViewingImage(null)} 
+              onAction={viewerAction?.handler}
+              actionLabel={viewerAction?.label}
+          />
+      )}
     </div>
   );
 };
@@ -1482,7 +1482,7 @@ const BoardViewContent = ({ messages, onPost, onPin, onFav, onDelete, onAddTodo 
                  <h2 className="text-2xl font-bold font-cute text-yellow-600 text-center">留言板</h2>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-32">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-40">
                 <div className="grid grid-cols-1 gap-4">
                     {sortedMessages.map((msg: Message) => (
                         <div key={msg.id} className={`p-6 rounded-2xl shadow-sm border text-base relative group transition-all ${msg.isFavorite ? 'bg-rose-50 border-rose-100' : 'bg-white border-yellow-100'}`}>
@@ -1628,10 +1628,10 @@ const CalendarViewContent = ({ periods, conflicts, todos, addTodo, toggleTodo, s
                                 >
                                     {d}
                                     <div className="absolute bottom-1 flex gap-0.5">
-                                        {inPeriod && <div className={`w-1 h-1 rounded-full bg-red-500 ${isSelected ? 'ring-1 ring-white' : ''}`} />}
-                                        {isPredicted && !inPeriod && <div className={`w-1 h-1 rounded-full bg-blue-400 ${isSelected ? 'ring-1 ring-white' : ''}`} />}
-                                        {hasTodo && <div className={`w-1 h-1 rounded-full bg-yellow-400 ${isSelected ? 'ring-1 ring-white' : ''}`} />}
-                                        {hasConflict && <div className={`w-1 h-1 rounded-full bg-purple-500 ${isSelected ? 'ring-1 ring-white' : ''}`} />}
+                                        {inPeriod && <div className={`w-1 h-1 rounded-full bg-red-500`} />}
+                                        {isPredicted && !inPeriod && <div className={`w-1 h-1 rounded-full bg-blue-400`} />}
+                                        {hasTodo && <div className={`w-1 h-1 rounded-full bg-yellow-400`} />}
+                                        {hasConflict && <div className={`w-1 h-1 rounded-full bg-purple-500`} />}
                                     </div>
                                 </button>
                             </div>
