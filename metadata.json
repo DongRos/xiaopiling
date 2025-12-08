@@ -1,0 +1,8 @@
+{
+  "name": "PurrfectLove",
+  "description": "A cute relationship tracker with AI mediation, period tracking, and a polaroid memory board.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
