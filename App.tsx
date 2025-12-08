@@ -35,8 +35,8 @@ import {
   Clock,
   MoreHorizontal,
   MoreVertical,
-  CheckCircle, // 新增：用于多选勾选
-  Settings,    // 新增：用于管理按钮
+  CheckCircle, 
+  Settings,    
   Menu
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -89,7 +89,7 @@ const DEFAULT_COVER = "https://images.unsplash.com/photo-1516962215378-7fa2e137a
 
 // --- Components ---
 
-// 1. Image Viewer (保持不变)
+// 1. Image Viewer
 const ImageViewer = ({ src, onClose, onAction, actionLabel }: { src: string; onClose: () => void; onAction?: () => void; actionLabel?: string }) => {
   const [scale, setScale] = useState(1);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -472,7 +472,6 @@ export default function App() {
   const [anniversaryDate, setAnniversaryDate] = useState("2023-01-01");
 
   // Logic for Polaroid (No Repeats)
-  // Store used photo IDs to avoid repetition
   const [usedPhotoIds, setUsedPhotoIds] = useState<string[]>([]);
 
   // Upload State
@@ -543,7 +542,6 @@ export default function App() {
   useEffect(() => localStorage.setItem('anniversaryDate', anniversaryDate), [anniversaryDate]);
 
   const handleTakePhoto = () => {
-    // 1. 获取所有可用照片资源
     const momentImages = memories.filter(m => m.type === 'media' && m.media.length > 0).flatMap(m => m.media.map(url => ({ url, caption: m.caption, id: m.id, source: 'memory' })));
     const albumImages = albums.flatMap(a => a.media.map(m => ({ url: m.url, caption: m.caption || a.name, id: m.id, source: 'album' })));
     const allImages = [...momentImages, ...albumImages];
@@ -553,20 +551,13 @@ export default function App() {
       return;
     }
 
-    // 2. 过滤掉已经使用过的照片
-    // 注意：这里用 image url 或 唯一ID 来判断。由于 allImages 是构造出来的，最好用 url 辅助判断
     let availableImages = allImages.filter(img => !usedPhotoIds.includes(img.url));
-
-    // 3. 如果所有照片都展示过了，重置列表（类似重新洗牌）
     if (availableImages.length === 0) {
         setUsedPhotoIds([]);
         availableImages = allImages;
     }
 
-    // 4. 随机抽取一张
     const randomImg = availableImages[Math.floor(Math.random() * availableImages.length)];
-    
-    // 5. 记录已使用
     setUsedPhotoIds(prev => [...prev, randomImg.url]);
 
     const newPin: PinnedPhoto = {
@@ -930,12 +921,10 @@ const MemoriesViewContent = ({
       return () => container.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // 退出管理模式时清空选择
   useEffect(() => {
       if(!isManageMode) setSelectedItems(new Set());
   }, [isManageMode]);
 
-  // 相册操作
   const createAlbum = () => {
     if(!newAlbumName.trim()) return;
     const newAlbum: Album = {
@@ -984,7 +973,6 @@ const MemoriesViewContent = ({
       });
   };
 
-  // 批量删除相册
   const batchDeleteAlbums = () => {
       if(window.confirm(`确定要删除选中的 ${selectedItems.size} 个相册吗？`)) {
           setAlbums((prev: Album[]) => prev.filter(a => !selectedItems.has(a.id)));
@@ -992,21 +980,15 @@ const MemoriesViewContent = ({
       }
   };
 
-  // 批量删除照片
   const batchDeletePhotos = () => {
       if(!selectedAlbum) return;
       if(window.confirm(`确定要删除选中的 ${selectedItems.size} 张照片吗？`)) {
           const updatedMedia = selectedAlbum.media.filter(m => !selectedItems.has(m.id));
           const updatedAlbum = { ...selectedAlbum, media: updatedMedia };
-          // 如果封面被删了，重置封面
-          if (selectedItems.has(selectedAlbum.coverUrl)) { // 这里简单判断，实际上 coverUrl 是 url 字符串，而 selectedItems 存的是 id。需要修正逻辑。
-             // 实际上 setAlbumCover存的是url，这里id和url不匹配。
-             // 修正：coverUrl 是 url 字符串。selectedItems 存的是 media.id。
-             // 应该判断被删除的 media 是否是当前 coverUrl 对应的 media。
-             const coverMedia = selectedAlbum.media.find(m => m.url === selectedAlbum.coverUrl);
-             if (coverMedia && selectedItems.has(coverMedia.id)) {
-                 updatedAlbum.coverUrl = updatedMedia.length > 0 ? updatedMedia[0].url : '';
-             }
+          
+          const coverMedia = selectedAlbum.media.find(m => m.url === selectedAlbum.coverUrl);
+          if (coverMedia && selectedItems.has(coverMedia.id)) {
+              updatedAlbum.coverUrl = updatedMedia.length > 0 ? updatedMedia[0].url : '';
           }
 
           setAlbums((prev: Album[]) => prev.map(a => a.id === selectedAlbum.id ? updatedAlbum : a));
@@ -1022,12 +1004,11 @@ const MemoriesViewContent = ({
       setSelectedItems(newSet);
   };
 
-  // 微信发布按钮逻辑
   const handleCameraPressStart = () => {
       isLongPress.current = false;
       pressTimer.current = setTimeout(() => {
           isLongPress.current = true;
-          onTextPost(); // 长按触发纯文本
+          onTextPost(); 
       }, 500);
   };
 
@@ -1037,13 +1018,11 @@ const MemoriesViewContent = ({
           pressTimer.current = null;
       }
       if (!isLongPress.current) {
-          // 短按触发选图，需要先阻止默认行为防止触发两次
-          // e.preventDefault(); // 有时候会导致 input file 不弹窗，慎用
+          // 这里修复白屏：使用 props 传入的 correct function
           onFileSelect(e); 
       }
   };
 
-  // 其他辅助函数保持不变...
   const setAlbumCover = (url: string) => {
       if(!selectedAlbum) return;
       setAlbums((prev: Album[]) => prev.map(a => a.id === selectedAlbum.id ? { ...a, coverUrl: url } : a));
@@ -1088,8 +1067,6 @@ const MemoriesViewContent = ({
       setViewingImage(url);
       setViewerAction(null);
   };
-
-  // ---------------- Render ----------------
 
   if (selectedAlbum) {
       return (
@@ -1151,7 +1128,6 @@ const MemoriesViewContent = ({
              
              <input id="cover-upload" type="file" className="hidden" onChange={onUpdateCover} accept="image/*" />
 
-             {/* 更换封面的按钮 */}
              <div 
                 className={`absolute bottom-4 right-4 z-20 transition-all duration-300 ${showCoverBtn ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'}`}
                 onClick={(e) => { e.stopPropagation(); document.getElementById('cover-upload')?.click(); }}
@@ -1171,7 +1147,6 @@ const MemoriesViewContent = ({
                 </div>
             </div>
             
-            {/* 微信风格发布按钮：长按/短按 */}
             <div className="absolute top-4 right-4 z-30">
                <button 
                    onMouseDown={handleCameraPressStart}
@@ -1182,8 +1157,8 @@ const MemoriesViewContent = ({
                >
                    <Camera size={20} />
                </button>
-               {/* 隐藏的 input file，由 handleCameraPressEnd 短按触发点击 */}
-               <input id="camera-file-input" type="file" multiple accept="image/*" className="hidden" onChange={handleMomentsFileSelect} />
+               {/* Hidden input, triggered programmatically if short press */}
+               <input id="camera-file-input" type="file" multiple accept="image/*" className="hidden" onChange={onFileSelect} />
             </div>
         </div>
 
@@ -1274,7 +1249,6 @@ const MemoriesViewContent = ({
                   ))}
               </div>
           ) : (
-              // 相册列表视图
               <div>
                   <div className="flex justify-between items-center mb-4 px-2">
                       <div onClick={() => setIsCreatingAlbum(true)} className="flex items-center gap-2 text-gray-500 cursor-pointer hover:text-rose-500">
@@ -1633,6 +1607,18 @@ const BoardViewContent = ({ messages, onPost, onPin, onFav, onDelete, onAddTodo,
         setInput('');
     };
 
+    const handleExtractTodo = async (content: string) => {
+        if (confirm('确认要让 AI 从这条留言中提取待办事项吗？')) {
+            const todos = await extractTodosFromText(content, getBeijingDateString());
+            if (todos.length > 0) {
+                todos.forEach(t => onAddTodo(t.text, t.date));
+                alert(`成功添加了 ${todos.length} 条待办！`);
+            } else {
+                alert('未识别到待办事项');
+            }
+        }
+    };
+
     const toggleSelection = (id: string) => {
         const newSet = new Set(selectedItems);
         if(newSet.has(id)) newSet.delete(id);
@@ -1655,7 +1641,7 @@ const BoardViewContent = ({ messages, onPost, onPin, onFav, onDelete, onAddTodo,
             });
         });
         
-        if(action === 'delete') setIsManageMode(false); // 删除后退出管理模式
+        if(action === 'delete') setIsManageMode(false); 
     };
 
     const sortedMessages = [...messages].sort((a: Message, b: Message) => {
@@ -1667,7 +1653,7 @@ const BoardViewContent = ({ messages, onPost, onPin, onFav, onDelete, onAddTodo,
     return (
         <div className="flex flex-col h-full bg-yellow-50/30">
             <div className="pt-4 px-4 pb-2 bg-yellow-50/30 flex justify-between items-center relative">
-                 <div className="w-8"></div> {/* Spacer */}
+                 <div className="w-8"></div> 
                  <h2 className="text-2xl font-bold font-cute text-yellow-600 text-center">留言板</h2>
                  <button onClick={() => setIsManageMode(!isManageMode)} className={`p-2 rounded-full hover:bg-yellow-100 ${isManageMode ? 'text-rose-500' : 'text-gray-400'}`}>
                      {isManageMode ? '完成' : <Settings size={20} />}
@@ -1690,9 +1676,34 @@ const BoardViewContent = ({ messages, onPost, onPin, onFav, onDelete, onAddTodo,
                              <div className="absolute bottom-4 left-0 right-0 px-6 flex justify-between items-center">
                                  <div className="text-xs text-gray-300 font-bold">{msg.date.slice(5)} {msg.time}</div>
                                  <div className="flex gap-4">
-                                     <button onClick={() => onFav(msg.id)} className={`transition ${msg.isFavorite ? 'text-rose-500' : 'text-gray-300 hover:text-rose-500'}`}><Heart size={18} fill={msg.isFavorite ? "currentColor" : "none"} /></button>
-                                     <button onClick={() => onPin(msg.id)} className={`transition ${msg.isPinned ? 'text-blue-500' : 'text-gray-300 hover:text-blue-500'}`}><Pin size={18} fill={msg.isPinned ? "currentColor" : "none"} /></button>
-                                     <button onClick={() => onDelete(msg.id)} className="text-gray-300 hover:text-red-500 transition"><Trash2 size={18} /></button>
+                                     <button 
+                                        onClick={(e) => { e.stopPropagation(); handleExtractTodo(msg.content); }}
+                                        className="transition text-yellow-500 hover:text-yellow-600"
+                                        title="AI提取待办"
+                                     >
+                                        <Sparkles size={18} />
+                                     </button>
+                                     <button 
+                                        onClick={() => onFav(msg.id)} 
+                                        className={`transition ${msg.isFavorite ? 'text-rose-500' : 'text-gray-300 hover:text-rose-500'}`}
+                                        title="收藏"
+                                     >
+                                        <Heart size={18} fill={msg.isFavorite ? "currentColor" : "none"} />
+                                     </button>
+                                     <button 
+                                        onClick={() => onPin(msg.id)} 
+                                        className={`transition ${msg.isPinned ? 'text-blue-500' : 'text-gray-300 hover:text-blue-500'}`}
+                                        title="置顶"
+                                     >
+                                        <Pin size={18} fill={msg.isPinned ? "currentColor" : "none"} />
+                                     </button>
+                                     <button 
+                                        onClick={() => onDelete(msg.id)} 
+                                        className="text-gray-300 hover:text-red-500 transition"
+                                        title="删除"
+                                     >
+                                        <Trash2 size={18} />
+                                     </button>
                                  </div>
                              </div>
 
