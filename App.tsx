@@ -31,7 +31,8 @@ import {
   Sparkles,
   Gavel,
   ShieldCheck,
-  Lightbulb
+  Lightbulb,
+  Clock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { judgeConflict, extractTodosFromText, JudgeResult } from './services/ai';
@@ -47,7 +48,6 @@ const getFirstDayOfMonth = (year: number, month: number) => {
   return new Date(year, month, 1).getDay();
 };
 
-// Gets 'YYYY-MM-DD' string based on Beijing/Local Time, avoiding UTC shifts
 const getBeijingDateString = () => {
     const now = new Date();
     const year = now.getFullYear();
@@ -56,7 +56,6 @@ const getBeijingDateString = () => {
     return `${year}-${month}-${day}`;
 };
 
-// Parse a YYYY-MM-DD string into a Local Date object (00:00:00)
 const parseLocalDate = (dateStr: string) => {
     if (!dateStr) return new Date();
     const parts = dateStr.split('-');
@@ -64,7 +63,6 @@ const parseLocalDate = (dateStr: string) => {
     return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
 };
 
-// Safe LocalStorage Hook
 const useSafeStorage = (key: string, value: any) => {
   useEffect(() => {
     try {
@@ -389,16 +387,54 @@ const MiniCalendar = ({ periods, conflicts }: { periods: PeriodEntry[], conflict
                     });
                     
                     return (
-                        <div key={i} className={`aspect-square rounded-full flex items-center justify-center text-[10px] font-medium transition-all
+                        <div key={i} className={`aspect-square rounded-full flex flex-col items-center justify-center text-[10px] font-medium transition-all
                             ${d === today.getDate() ? 'bg-rose-500 text-white shadow-md scale-110' : 'text-gray-600 hover:bg-rose-50'}
-                            ${isPeriod && d !== today.getDate() ? 'bg-red-500 text-white' : ''}
-                            ${isConflict && d !== today.getDate() ? 'ring-1 ring-indigo-200 bg-indigo-50' : ''}
                         `}>
                             {d}
+                            <div className="flex gap-0.5">
+                                {isPeriod && d !== today.getDate() && <div className="w-1 h-1 rounded-full bg-red-500" />}
+                                {isConflict && d !== today.getDate() && <div className="w-1 h-1 rounded-full bg-pink-500" />}
+                            </div>
                         </div>
                     )
                 })}
             </div>
+        </div>
+    );
+};
+
+// Anniversary Timer Component
+const AnniversaryTimer = ({ startDate, onSetDate }: { startDate: string, onSetDate: () => void }) => {
+    const [diff, setDiff] = useState({ days: 0, seconds: 0 });
+
+    useEffect(() => {
+        const calculate = () => {
+            const start = parseLocalDate(startDate).getTime();
+            const now = new Date().getTime();
+            const delta = now - start;
+            if(delta < 0) return setDiff({ days: 0, seconds: 0 });
+
+            const days = Math.floor(delta / (1000 * 60 * 60 * 24));
+            // Calculate seconds part only (for display effect) or total seconds? 
+            // Usually simpler to just show dynamic seconds loop or part of day.
+            // Let's show total seconds mod 60 for the ticking effect, or just days.
+            // User asked for "XX days XX seconds".
+            const seconds = Math.floor((delta / 1000) % 60);
+            setDiff({ days, seconds });
+        };
+        calculate();
+        const timer = setInterval(calculate, 1000);
+        return () => clearInterval(timer);
+    }, [startDate]);
+
+    return (
+        <div onClick={onSetDate} className="bg-white/90 backdrop-blur-sm rounded-xl md:rounded-2xl shadow-lg border-2 border-rose-100 p-2 flex flex-col items-center min-w-[70px] md:min-w-[90px] transform hover:scale-105 transition cursor-pointer">
+            <span className="text-[9px] md:text-[10px] text-rose-400 font-bold uppercase tracking-wider font-cute">在一起</span>
+            <div className="text-center">
+                <span className="text-lg md:text-2xl font-bold text-rose-500 font-cute">{diff.days}</span>
+                <span className="text-[9px] md:text-[10px] text-gray-400 ml-0.5 md:ml-1 font-bold">天</span>
+            </div>
+            <div className="text-[9px] text-gray-300 font-mono">{diff.seconds}秒</div>
         </div>
     );
 };
@@ -422,7 +458,8 @@ export default function App() {
   const [cameraIcon, setCameraIcon] = useState<string>(DEFAULT_CAMERA_ICON);
   const [appTitle, setAppTitle] = useState("小屁铃");
   const [isEditingTitle, setIsEditingTitle] = useState(false);
-  
+  const [anniversaryDate, setAnniversaryDate] = useState("2023-01-01");
+
   // Upload State
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadImages, setUploadImages] = useState<string[]>([]);
@@ -473,6 +510,7 @@ export default function App() {
     const savedTitle = localStorage.getItem('appTitle'); if(savedTitle) setAppTitle(savedTitle);
     const savedMessages = localStorage.getItem('messages'); if(savedMessages) try { setMessages(JSON.parse(savedMessages)); } catch(e) {}
     const savedCover = localStorage.getItem('momentsCover'); if(savedCover) setMomentsCover(savedCover);
+    const savedAnniversary = localStorage.getItem('anniversaryDate'); if(savedAnniversary) setAnniversaryDate(savedAnniversary);
   }, []);
 
   useSafeStorage('pinnedPhotos', pinnedPhotos);
@@ -485,6 +523,7 @@ export default function App() {
   useSafeStorage('cameraIcon', cameraIcon);
   useSafeStorage('momentsCover', momentsCover);
   useEffect(() => localStorage.setItem('appTitle', appTitle), [appTitle]);
+  useEffect(() => localStorage.setItem('anniversaryDate', anniversaryDate), [anniversaryDate]);
 
   const handleTakePhoto = () => {
     const momentImages = memories.filter(m => m.type === 'media' && m.media.length > 0).flatMap(m => m.media.map(url => ({ url, caption: m.caption, id: m.id, source: 'memory' })));
@@ -557,7 +596,7 @@ export default function App() {
         id: Date.now().toString(),
         media: uploadImages,
         caption: uploadCaption,
-        date: getBeijingDateString(), // Use safe string
+        date: getBeijingDateString(), 
         type: uploadType,
         likes: 0,
         isLiked: false,
@@ -571,7 +610,6 @@ export default function App() {
   };
 
   const addPeriod = (date: string) => {
-    // Ensure date is string YYYY-MM-DD
     const updated = [...periods, { startDate: date, duration: 5 }].sort((a,b) => parseLocalDate(a.startDate).getTime() - parseLocalDate(b.startDate).getTime());
     setPeriods(updated);
   };
@@ -618,6 +656,13 @@ export default function App() {
           reader.readAsDataURL(file);
       }
   }
+
+  const handleSetAnniversary = () => {
+      const date = prompt("请输入在一起的纪念日 (格式: YYYY-MM-DD)", anniversaryDate);
+      if(date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+          setAnniversaryDate(date);
+      }
+  };
 
   // --- Views ---
 
@@ -682,6 +727,9 @@ export default function App() {
         </div>
         
         <div className="flex flex-col md:flex-row gap-2 md:gap-4 items-end pointer-events-auto">
+            {/* Added Anniversary Timer */}
+            <AnniversaryTimer startDate={anniversaryDate} onSetDate={handleSetAnniversary} />
+
             <div className="bg-white/90 backdrop-blur-sm rounded-xl md:rounded-2xl shadow-lg border-2 border-rose-100 p-2 flex flex-col items-center min-w-[70px] md:min-w-[90px] transform hover:scale-105 transition cursor-pointer" onClick={() => setActivePage(Page.CYCLE)}>
             <span className="text-[9px] md:text-[10px] text-rose-400 font-bold uppercase tracking-wider font-cute">姨妈倒计时</span>
             {nextPeriod ? (
@@ -894,9 +942,9 @@ const MemoriesViewContent = ({
       )
   }
 
-  // FIX: Removed `drag="y"` and `dragConstraints` to fix scrolling issue
+  // REFACTORED: Simplified layout to fix "cannot open" bugs. Standard scrolling container.
   return (
-    <div className="min-h-full bg-white pb-24 relative">
+    <div className="h-full bg-white overflow-y-auto pb-24 relative">
         <div className="relative h-72 w-full group cursor-pointer" onClick={() => document.getElementById('cover-upload')?.click()}>
             <img src={coverUrl} alt="Cover" className="w-full h-full object-cover" />
             <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition flex items-center justify-center opacity-0 group-hover:opacity-100">
@@ -1111,7 +1159,6 @@ const CycleViewContent = ({ periods, nextPeriod, addPeriod }: any) => {
       }
   };
 
-  // FIX: Added pointer-events-none to background decorators so button is clickable
   return (
     <div className="p-6 space-y-6 pb-24 h-full overflow-y-auto">
         <div className="bg-white rounded-3xl p-8 shadow-xl text-center border-2 border-rose-100 relative overflow-hidden">
@@ -1191,7 +1238,6 @@ const ConflictViewContent = ({ judgeConflict, conflicts, setConflicts }: any) =>
         }
     };
 
-    // FIX: Sort Pinned first, then by date desc
     const sortedConflicts = [...conflicts].sort((a, b) => {
         if (a.isPinned && !b.isPinned) return -1;
         if (!a.isPinned && b.isPinned) return 1;
@@ -1201,12 +1247,11 @@ const ConflictViewContent = ({ judgeConflict, conflicts, setConflicts }: any) =>
     return (
         <div className="p-4 pb-24 space-y-6 bg-gray-50 min-h-full overflow-y-auto">
             <div className="bg-white rounded-3xl p-6 shadow-md border border-indigo-50">
-                <div className="flex items-center gap-3 mb-6">
-                    <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center text-2xl">🐱</div>
-                    <div>
-                        {/* FIX: Set Theme to Meow Judge */}
-                        <h2 className="font-bold text-xl font-cute text-indigo-900">喵喵法官</h2>
-                        <p className="text-xs text-gray-400">专治各种不服</p>
+                <div className="flex flex-col items-center gap-3 mb-6">
+                    <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center text-3xl">🐱</div>
+                    <div className="text-center">
+                        <h2 className="font-bold text-3xl font-cute text-indigo-900">喵喵法官</h2>
+                        <p className="text-sm text-gray-400">专治各种不服</p>
                     </div>
                 </div>
 
@@ -1238,46 +1283,46 @@ const ConflictViewContent = ({ judgeConflict, conflicts, setConflicts }: any) =>
 
             <div className="space-y-4">
                 {sortedConflicts.map((c: ConflictRecord) => (
-                    <div key={c.id} className={`bg-white rounded-3xl p-5 shadow-sm border relative overflow-hidden transition-all ${c.isFavorite ? 'border-pink-200 bg-pink-50/30' : 'border-gray-100'}`}>
-                        {c.isPinned && <div className="absolute top-0 right-0 p-2 text-indigo-500 transform rotate-12"><Pin size={16} fill="currentColor" /></div>}
+                    <div key={c.id} className={`bg-white rounded-3xl p-6 shadow-md border relative overflow-hidden transition-all ${c.isFavorite ? 'border-pink-300 ring-2 ring-pink-100' : 'border-gray-100'}`}>
+                        {c.isPinned && <div className="absolute top-0 right-0 p-2 text-indigo-500 transform rotate-12"><Pin size={20} fill="currentColor" /></div>}
                         
-                        <div className="flex justify-between items-start mb-3 pr-6">
-                            <span className="text-xs font-bold bg-gray-100 text-gray-500 px-2 py-1 rounded-md">{c.date}</span>
-                            <div className="flex gap-1">
-                                {c.aiResponse && (
-                                    <>
-                                        <span className="text-xs font-bold text-blue-500">公猫过错 {c.aiResponse.hisFault}%</span>
-                                        <span className="text-gray-300">|</span>
-                                        <span className="text-xs font-bold text-rose-500">母猫过错 {c.aiResponse.herFault}%</span>
-                                    </>
-                                )}
-                            </div>
+                        <div className="flex justify-between items-center mb-3">
+                            <span className="text-xs font-bold bg-gray-100 text-gray-500 px-3 py-1 rounded-full">{c.date}</span>
                         </div>
-                        {/* FIX: Show reason */}
-                        <h4 className="font-bold text-gray-800 mb-2 font-cute">{c.reason}</h4>
+                        <h4 className="font-bold text-gray-800 mb-4 font-cute text-lg text-center">{c.reason}</h4>
                         
-                        {/* FIX: Show full AI response including prevention */}
                         {c.aiResponse && (
-                            <div className="space-y-2 mt-3">
-                                <div className="bg-indigo-50 rounded-xl p-3 text-sm text-indigo-900 leading-relaxed relative">
-                                    <p className="font-cute">🐱 <span className="font-bold">复盘:</span> {c.aiResponse.analysis}</p>
-                                </div>
-                                <div className="bg-green-50 rounded-xl p-3 text-sm text-green-900 leading-relaxed">
-                                    <p className="font-cute">💡 <span className="font-bold">建议:</span> {c.aiResponse.advice}</p>
-                                </div>
-                                {c.aiResponse.prevention && (
-                                    <div className="bg-yellow-50 rounded-xl p-3 text-sm text-yellow-900 leading-relaxed">
-                                        <p className="font-cute">🛡️ <span className="font-bold">预防:</span> {c.aiResponse.prevention}</p>
+                            <div className="space-y-4">
+                                {/* Battle Bar */}
+                                <div className="bg-gray-100 rounded-full h-4 w-full flex overflow-hidden relative">
+                                    <div style={{ width: `${c.aiResponse.hisFault}%` }} className="bg-blue-400 h-full transition-all duration-1000" />
+                                    <div style={{ width: `${c.aiResponse.herFault}%` }} className="bg-rose-400 h-full transition-all duration-1000" />
+                                    <div className="absolute inset-0 flex justify-between px-2 items-center text-[9px] font-bold text-white drop-shadow-md">
+                                        <span>公猫 {c.aiResponse.hisFault}%</span>
+                                        <span>母猫 {c.aiResponse.herFault}%</span>
                                     </div>
-                                )}
+                                </div>
+
+                                <div className="space-y-2">
+                                    <div className="bg-indigo-50 rounded-xl p-3 text-sm text-indigo-900 leading-relaxed relative">
+                                        <p className="font-cute">🐱 <span className="font-bold">复盘:</span> {c.aiResponse.analysis}</p>
+                                    </div>
+                                    <div className="bg-green-50 rounded-xl p-3 text-sm text-green-900 leading-relaxed">
+                                        <p className="font-cute">💡 <span className="font-bold">建议:</span> {c.aiResponse.advice}</p>
+                                    </div>
+                                    {c.aiResponse.prevention && (
+                                        <div className="bg-yellow-50 rounded-xl p-3 text-sm text-yellow-900 leading-relaxed">
+                                            <p className="font-cute">🛡️ <span className="font-bold">预防:</span> {c.aiResponse.prevention}</p>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         )}
                         
-                        {/* FIX: Add Pin/Fav/Delete actions */}
                         <div className="flex justify-end gap-3 mt-4 border-t border-gray-100 pt-3">
-                            <button onClick={() => toggleFav(c.id)} className={`${c.isFavorite ? 'text-pink-500' : 'text-gray-400 hover:text-pink-500'}`}><Heart size={18} fill={c.isFavorite ? "currentColor" : "none"} /></button>
-                            <button onClick={() => togglePin(c.id)} className={`${c.isPinned ? 'text-indigo-500' : 'text-gray-400 hover:text-indigo-500'}`}><Pin size={18} fill={c.isPinned ? "currentColor" : "none"} /></button>
-                            <button onClick={() => deleteRecord(c.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={18} /></button>
+                            <button onClick={() => toggleFav(c.id)} className={`${c.isFavorite ? 'text-pink-500' : 'text-gray-400 hover:text-pink-500'}`}><Heart size={20} fill={c.isFavorite ? "currentColor" : "none"} /></button>
+                            <button onClick={() => togglePin(c.id)} className={`${c.isPinned ? 'text-indigo-500' : 'text-gray-400 hover:text-indigo-500'}`}><Pin size={20} fill={c.isPinned ? "currentColor" : "none"} /></button>
+                            <button onClick={() => deleteRecord(c.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={20} /></button>
                         </div>
                     </div>
                 ))}
@@ -1308,22 +1353,26 @@ const BoardViewContent = ({ messages, onPost, onPin, onFav, onDelete, onAddTodo 
         setInput('');
     };
 
-    // FIX: Adjusted padding bottom (pb-32) to ensure messages aren't hidden behind input
-    // FIX: Added break-words to ensure text wraps correctly
     return (
         <div className="flex flex-col h-full bg-yellow-50/30">
+            {/* Added Title */}
+            <div className="pt-4 px-4">
+                 <h2 className="text-2xl font-bold font-cute text-yellow-600">留言板</h2>
+            </div>
+            
+            {/* Changed to Single Column (grid-cols-1) and increased min-height via spacing */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-32">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-4">
                     {messages.map((msg: Message) => (
-                        <div key={msg.id} className={`p-4 rounded-tl-2xl rounded-tr-2xl rounded-br-2xl shadow-sm border text-sm relative group transition hover:scale-[1.02] ${msg.isFavorite ? 'bg-rose-50 border-rose-100' : 'bg-white border-yellow-100'}`}>
-                             <p className="text-gray-700 font-cute mb-6 leading-relaxed whitespace-pre-wrap break-words">{msg.content}</p>
-                             <div className="absolute bottom-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                 <button onClick={() => onFav(msg.id)} className={`${msg.isFavorite ? 'text-rose-500' : 'text-gray-300 hover:text-rose-500'}`}><Heart size={14} fill={msg.isFavorite ? "currentColor" : "none"} /></button>
-                                 <button onClick={() => onPin(msg.id)} className={`${msg.isPinned ? 'text-blue-500' : 'text-gray-300 hover:text-blue-500'}`}><Pin size={14} fill={msg.isPinned ? "currentColor" : "none"} /></button>
-                                 <button onClick={() => onDelete(msg.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={14} /></button>
+                        <div key={msg.id} className={`p-5 rounded-tl-3xl rounded-tr-3xl rounded-br-3xl shadow-md border text-base relative group transition hover:scale-[1.01] ${msg.isFavorite ? 'bg-rose-50 border-rose-100' : 'bg-white border-yellow-100'}`}>
+                             <p className="text-gray-700 font-cute mb-8 leading-relaxed whitespace-pre-wrap break-words text-lg">{msg.content}</p>
+                             <div className="absolute bottom-3 right-3 flex gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                                 <button onClick={() => onFav(msg.id)} className={`${msg.isFavorite ? 'text-rose-500' : 'text-gray-300 hover:text-rose-500'}`}><Heart size={18} fill={msg.isFavorite ? "currentColor" : "none"} /></button>
+                                 <button onClick={() => onPin(msg.id)} className={`${msg.isPinned ? 'text-blue-500' : 'text-gray-300 hover:text-blue-500'}`}><Pin size={18} fill={msg.isPinned ? "currentColor" : "none"} /></button>
+                                 <button onClick={() => onDelete(msg.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={18} /></button>
                              </div>
-                             <div className="absolute bottom-2 left-3 text-[10px] text-gray-300 font-bold">{msg.date.slice(5)} {msg.time}</div>
-                             {msg.isPinned && <div className="absolute -top-2 -right-2 text-blue-500 transform rotate-12"><Pin size={16} fill="currentColor" /></div>}
+                             <div className="absolute bottom-3 left-4 text-xs text-gray-400 font-bold">{msg.date.slice(5)} {msg.time}</div>
+                             {msg.isPinned && <div className="absolute -top-2 -right-2 text-blue-500 transform rotate-12"><Pin size={20} fill="currentColor" /></div>}
                         </div>
                     ))}
                 </div>
@@ -1402,15 +1451,14 @@ const CalendarViewContent = ({ periods, conflicts, todos, addTodo, toggleTodo, s
         return curr >= predictedStart && curr < predictedEnd;
     }
 
-    // FIX: Added Legend Section matching the calendar logic
     return (
         <div className="h-full bg-white flex flex-col pb-20">
             {/* Legend */}
             <div className="bg-gray-50 py-3 px-4 flex gap-4 overflow-x-auto text-xs font-bold text-gray-500 justify-center">
-                <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-red-500"></div>经期</div>
-                <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-blue-400"></div>预测</div>
-                <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-yellow-400"></div>待办</div>
-                <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-pink-400"></div>吵架</div>
+                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500"></div>经期</div>
+                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-blue-400"></div>预测</div>
+                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-yellow-400"></div>待办</div>
+                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-pink-400"></div>吵架</div>
             </div>
 
             {/* Header */}
@@ -1438,24 +1486,25 @@ const CalendarViewContent = ({ periods, conflicts, todos, addTodo, toggleTodo, s
                         const inPeriod = isPeriodDay(dateStr);
                         const isPredicted = isPredictedPeriodDay(dateStr);
                         
+                        // FIX: Use Dots instead of background colors for events
                         return (
                             <div key={i} className="flex justify-center relative">
                                 <button 
                                     onClick={() => handleDateClick(d)}
                                     className={`
-                                        w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold transition-all relative
+                                        w-10 h-11 rounded-xl flex flex-col items-center justify-start pt-1.5 transition-all relative
                                         ${isSelected ? 'bg-gray-800 text-white shadow-lg scale-110 z-10' : 'text-gray-700 hover:bg-gray-50'}
-                                        ${isToday && !isSelected ? 'bg-rose-50 text-rose-500' : ''}
-                                        ${inPeriod && !isSelected ? 'bg-red-50 text-red-500 border border-red-100' : ''}
-                                        ${isPredicted && !inPeriod && !isSelected ? 'bg-blue-50 text-blue-400 border border-blue-100' : ''}
+                                        ${isToday && !isSelected ? 'text-rose-500 font-bold' : ''}
                                     `}
                                 >
-                                    {d}
-                                    {/* Indicators */}
-                                    <div className="absolute bottom-1 flex gap-0.5">
-                                        {hasTodo && <div className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-yellow-400'}`} />}
-                                        {hasConflict && <div className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-pink-400'}`} />}
-                                        {isPredicted && !inPeriod && <div className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-blue-400'}`} />}
+                                    <span className="text-sm font-bold leading-none">{d}</span>
+                                    
+                                    {/* Event Dots Container */}
+                                    <div className="flex gap-0.5 mt-1.5 justify-center flex-wrap px-1">
+                                        {inPeriod && <div className={`w-1.5 h-1.5 rounded-full bg-red-500 ${isSelected ? 'ring-1 ring-white' : ''}`} />}
+                                        {isPredicted && !inPeriod && <div className={`w-1.5 h-1.5 rounded-full bg-blue-400 ${isSelected ? 'ring-1 ring-white' : ''}`} />}
+                                        {hasTodo && <div className={`w-1.5 h-1.5 rounded-full bg-yellow-400 ${isSelected ? 'ring-1 ring-white' : ''}`} />}
+                                        {hasConflict && <div className={`w-1.5 h-1.5 rounded-full bg-pink-400 ${isSelected ? 'ring-1 ring-white' : ''}`} />}
                                     </div>
                                 </button>
                             </div>
