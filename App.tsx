@@ -34,7 +34,10 @@ import {
   Lightbulb,
   Clock,
   MoreHorizontal,
-  MoreVertical
+  MoreVertical,
+  CheckCircle, // 新增：用于多选勾选
+  Settings,    // 新增：用于管理按钮
+  Menu
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { judgeConflict, extractTodosFromText, JudgeResult } from './services/ai';
@@ -86,7 +89,7 @@ const DEFAULT_COVER = "https://images.unsplash.com/photo-1516962215378-7fa2e137a
 
 // --- Components ---
 
-// 1. Image Viewer
+// 1. Image Viewer (保持不变)
 const ImageViewer = ({ src, onClose, onAction, actionLabel }: { src: string; onClose: () => void; onAction?: () => void; actionLabel?: string }) => {
   const [scale, setScale] = useState(1);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -139,7 +142,6 @@ const ImageViewer = ({ src, onClose, onAction, actionLabel }: { src: string; onC
 
   const handleClick = (e: React.MouseEvent) => {
       e.stopPropagation();
-      // 点击图片本身不触发任何操作，避免误触
   };
 
   return createPortal(
@@ -161,7 +163,6 @@ const ImageViewer = ({ src, onClose, onAction, actionLabel }: { src: string; onC
         onDoubleClick={handleDoubleTap}
       />
       
-      {/* 隐式操作按钮：显示在图片下方 */}
       {onAction && actionLabel && (
            <div className="absolute bottom-24 left-0 right-0 flex justify-center pointer-events-none z-[1000]">
                <div 
@@ -369,7 +370,7 @@ const DraggablePhoto: React.FC<DraggablePhotoProps> = ({ pin, onUpdate, onDelete
   );
 };
 
-// 5. Mini Calendar (Dashboard)
+// 5. Mini Calendar
 const MiniCalendar = ({ periods, conflicts }: { periods: PeriodEntry[], conflicts: ConflictRecord[] }) => {
     const today = new Date();
     const daysInMonth = getDaysInMonth(today.getFullYear(), today.getMonth());
@@ -425,11 +426,8 @@ const AnniversaryTimer = ({ startDate, onSetDate }: { startDate: string, onSetDa
             const now = new Date();
             const nowTime = now.getTime();
             
-            // Calculate total days
             const delta = nowTime - start;
             const days = Math.floor(delta / (1000 * 60 * 60 * 24));
-
-            // Calculate seconds passed TODAY (since 00:00:00 today)
             const secondsToday = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
 
             if(delta < 0) return setDiff({ days: 0, seconds: 0 });
@@ -447,7 +445,6 @@ const AnniversaryTimer = ({ startDate, onSetDate }: { startDate: string, onSetDa
                 <span className="text-lg md:text-2xl font-bold text-rose-500 font-cute">{diff.days}</span>
                 <span className="text-[9px] md:text-[10px] text-gray-400 ml-0.5 md:ml-1 font-bold">天</span>
             </div>
-            {/* Display seconds passed TODAY */}
             <div className="text-[9px] text-gray-300 font-mono">今日{diff.seconds}秒</div>
         </div>
     );
@@ -474,6 +471,10 @@ export default function App() {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [anniversaryDate, setAnniversaryDate] = useState("2023-01-01");
 
+  // Logic for Polaroid (No Repeats)
+  // Store used photo IDs to avoid repetition
+  const [usedPhotoIds, setUsedPhotoIds] = useState<string[]>([]);
+
   // Upload State
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadImages, setUploadImages] = useState<string[]>([]);
@@ -490,7 +491,6 @@ export default function App() {
     const diffTime = next.getTime() - new Date().getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     
-    // Format safely
     const y = next.getFullYear();
     const m = String(next.getMonth() + 1).padStart(2, '0');
     const d = String(next.getDate()).padStart(2, '0');
@@ -543,6 +543,7 @@ export default function App() {
   useEffect(() => localStorage.setItem('anniversaryDate', anniversaryDate), [anniversaryDate]);
 
   const handleTakePhoto = () => {
+    // 1. 获取所有可用照片资源
     const momentImages = memories.filter(m => m.type === 'media' && m.media.length > 0).flatMap(m => m.media.map(url => ({ url, caption: m.caption, id: m.id, source: 'memory' })));
     const albumImages = albums.flatMap(a => a.media.map(m => ({ url: m.url, caption: m.caption || a.name, id: m.id, source: 'album' })));
     const allImages = [...momentImages, ...albumImages];
@@ -551,7 +552,23 @@ export default function App() {
       alert("相册里还没有照片哦！先去'点滴'页面上传一些吧~");
       return;
     }
-    const randomImg = allImages[Math.floor(Math.random() * allImages.length)];
+
+    // 2. 过滤掉已经使用过的照片
+    // 注意：这里用 image url 或 唯一ID 来判断。由于 allImages 是构造出来的，最好用 url 辅助判断
+    let availableImages = allImages.filter(img => !usedPhotoIds.includes(img.url));
+
+    // 3. 如果所有照片都展示过了，重置列表（类似重新洗牌）
+    if (availableImages.length === 0) {
+        setUsedPhotoIds([]);
+        availableImages = allImages;
+    }
+
+    // 4. 随机抽取一张
+    const randomImg = availableImages[Math.floor(Math.random() * availableImages.length)];
+    
+    // 5. 记录已使用
+    setUsedPhotoIds(prev => [...prev, randomImg.url]);
+
     const newPin: PinnedPhoto = {
       id: Date.now().toString(),
       memoryId: randomImg.id,
@@ -629,6 +646,14 @@ export default function App() {
   const addPeriod = (date: string) => {
     const updated = [...periods, { startDate: date, duration: 5 }].sort((a,b) => parseLocalDate(a.startDate).getTime() - parseLocalDate(b.startDate).getTime());
     setPeriods(updated);
+  };
+
+  const deletePeriod = (index: number) => {
+      if(window.confirm("确定要删除这条经期记录吗？")) {
+          const updated = [...periods];
+          updated.splice(index, 1);
+          setPeriods(updated);
+      }
   };
 
   const addTodo = (text: string, date?: string) => {
@@ -835,12 +860,13 @@ export default function App() {
                               onDeleteMemory={handleDeleteMemory}
                           />
                        )}
-                       {activePage === Page.CYCLE && <CycleViewContent periods={periods} nextPeriod={nextPeriod} addPeriod={addPeriod} />}
+                       {activePage === Page.CYCLE && <CycleViewContent periods={periods} nextPeriod={nextPeriod} addPeriod={addPeriod} deletePeriod={deletePeriod} />}
                        {activePage === Page.CONFLICT && <ConflictViewContent judgeConflict={judgeConflict} conflicts={conflicts} setConflicts={setConflicts} />}
                        {activePage === Page.BOARD && (
                           <BoardViewContent 
                               messages={messages} onPost={handlePostMessage} onPin={handleTogglePinMessage} 
                               onFav={handleToggleFavMessage} onDelete={handleDeleteMessage} onAddTodo={addTodo} 
+                              setMessages={setMessages}
                           />
                        )}
                        {activePage === Page.CALENDAR && (
@@ -875,12 +901,41 @@ const MemoriesViewContent = ({
   const [commentInputs, setCommentInputs] = useState<{[key:string]: string}>({});
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   
+  // 管理模式状态
+  const [isManageMode, setIsManageMode] = useState(false);
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+
+  // 微信风格发布按钮长按逻辑
+  const pressTimer = useRef<NodeJS.Timeout | null>(null);
+  const isLongPress = useRef(false);
+
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [showCoverBtn, setShowCoverBtn] = useState(false);
+
   useEffect(() => {
     const handleClickOutside = () => setActiveMenuId(null);
     document.addEventListener('click', handleClickOutside);
     return () => document.removeEventListener('click', handleClickOutside);
   }, []);
 
+  useEffect(() => {
+      const container = scrollContainerRef.current;
+      if(!container) return;
+      const handleScroll = () => {
+          if (container.scrollTop < 5) setShowCoverBtn(true);
+          else setShowCoverBtn(false);
+      };
+      handleScroll();
+      container.addEventListener('scroll', handleScroll);
+      return () => container.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // 退出管理模式时清空选择
+  useEffect(() => {
+      if(!isManageMode) setSelectedItems(new Set());
+  }, [isManageMode]);
+
+  // 相册操作
   const createAlbum = () => {
     if(!newAlbumName.trim()) return;
     const newAlbum: Album = {
@@ -899,7 +954,6 @@ const MemoriesViewContent = ({
       if (!selectedAlbum || !e.target.files) return;
       const files = Array.from(e.target.files);
       const newMedia: AlbumMedia[] = [];
-      
       let processedCount = 0;
       files.forEach(file => {
           const reader = new FileReader();
@@ -914,7 +968,6 @@ const MemoriesViewContent = ({
               if (processedCount === files.length) {
                   setAlbums((prev: Album[]) => prev.map(a => {
                       if (a.id === selectedAlbum.id) {
-                          // 如果没有封面，自动设为封面
                           const newCover = !a.coverUrl && newMedia.length > 0 ? newMedia[0].url : a.coverUrl;
                           return { ...a, coverUrl: newCover, media: [...newMedia, ...a.media] };
                       }
@@ -931,31 +984,84 @@ const MemoriesViewContent = ({
       });
   };
 
+  // 批量删除相册
+  const batchDeleteAlbums = () => {
+      if(window.confirm(`确定要删除选中的 ${selectedItems.size} 个相册吗？`)) {
+          setAlbums((prev: Album[]) => prev.filter(a => !selectedItems.has(a.id)));
+          setIsManageMode(false);
+      }
+  };
+
+  // 批量删除照片
+  const batchDeletePhotos = () => {
+      if(!selectedAlbum) return;
+      if(window.confirm(`确定要删除选中的 ${selectedItems.size} 张照片吗？`)) {
+          const updatedMedia = selectedAlbum.media.filter(m => !selectedItems.has(m.id));
+          const updatedAlbum = { ...selectedAlbum, media: updatedMedia };
+          // 如果封面被删了，重置封面
+          if (selectedItems.has(selectedAlbum.coverUrl)) { // 这里简单判断，实际上 coverUrl 是 url 字符串，而 selectedItems 存的是 id。需要修正逻辑。
+             // 实际上 setAlbumCover存的是url，这里id和url不匹配。
+             // 修正：coverUrl 是 url 字符串。selectedItems 存的是 media.id。
+             // 应该判断被删除的 media 是否是当前 coverUrl 对应的 media。
+             const coverMedia = selectedAlbum.media.find(m => m.url === selectedAlbum.coverUrl);
+             if (coverMedia && selectedItems.has(coverMedia.id)) {
+                 updatedAlbum.coverUrl = updatedMedia.length > 0 ? updatedMedia[0].url : '';
+             }
+          }
+
+          setAlbums((prev: Album[]) => prev.map(a => a.id === selectedAlbum.id ? updatedAlbum : a));
+          setSelectedAlbum(updatedAlbum);
+          setIsManageMode(false);
+      }
+  };
+
+  const toggleSelection = (id: string) => {
+      const newSet = new Set(selectedItems);
+      if(newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
+      setSelectedItems(newSet);
+  };
+
+  // 微信发布按钮逻辑
+  const handleCameraPressStart = () => {
+      isLongPress.current = false;
+      pressTimer.current = setTimeout(() => {
+          isLongPress.current = true;
+          onTextPost(); // 长按触发纯文本
+      }, 500);
+  };
+
+  const handleCameraPressEnd = (e: React.MouseEvent | React.TouchEvent) => {
+      if (pressTimer.current) {
+          clearTimeout(pressTimer.current);
+          pressTimer.current = null;
+      }
+      if (!isLongPress.current) {
+          // 短按触发选图，需要先阻止默认行为防止触发两次
+          // e.preventDefault(); // 有时候会导致 input file 不弹窗，慎用
+          onFileSelect(e); 
+      }
+  };
+
+  // 其他辅助函数保持不变...
   const setAlbumCover = (url: string) => {
       if(!selectedAlbum) return;
       setAlbums((prev: Album[]) => prev.map(a => a.id === selectedAlbum.id ? { ...a, coverUrl: url } : a));
       setSelectedAlbum(prev => prev ? { ...prev, coverUrl: url } : null);
       alert("封面设置成功！");
-      setViewingImage(null); // Close viewer after setting
+      setViewingImage(null); 
   }
-
-  const onCommentChange = (id: string, val: string) => {
-      setCommentInputs(prev => ({...prev, [id]: val}));
-  };
-
+  const onCommentChange = (id: string, val: string) => setCommentInputs(prev => ({...prev, [id]: val}));
   const submitComment = (id: string) => {
       if(!commentInputs[id]?.trim()) return;
       handleComment(id, commentInputs[id]);
       setCommentInputs(prev => ({...prev, [id]: ''}));
       setActiveMenuId(null); 
   };
-
   const toggleMenu = (e: React.MouseEvent, id: string) => {
       e.stopPropagation();
       setActiveMenuId(activeMenuId === id ? null : id);
   };
-
-  // 处理封面点击 - 打开全屏并设置更换封面动作
   const handleCoverClick = (e: React.MouseEvent) => {
       e.stopPropagation();
       setViewingImage(coverUrl);
@@ -963,42 +1069,63 @@ const MemoriesViewContent = ({
           label: '更换封面',
           handler: () => {
               document.getElementById('cover-upload')?.click();
-              setViewingImage(null); // close viewer after action
+              setViewingImage(null); 
           }
       });
   };
-
-  // 处理相册图片点击 - 打开全屏并设置设为封面动作
-  const handleAlbumImageClick = (url: string) => {
-      setViewingImage(url);
-      setViewerAction({
-          label: '设为封面',
-          handler: () => setAlbumCover(url)
-      });
+  const handleAlbumImageClick = (item: AlbumMedia) => {
+      if (isManageMode) {
+          toggleSelection(item.id);
+      } else {
+          setViewingImage(item.url);
+          setViewerAction({
+              label: '设为封面',
+              handler: () => setAlbumCover(item.url)
+          });
+      }
   };
-
-  // 普通图片点击（点滴） - 无特殊动作
   const handleNormalImageClick = (url: string) => {
       setViewingImage(url);
       setViewerAction(null);
   };
 
+  // ---------------- Render ----------------
+
   if (selectedAlbum) {
       return (
           <div className="h-full bg-white flex flex-col pb-20">
-              <div className="p-4 border-b flex items-center gap-4 bg-white/80 backdrop-blur sticky top-0 z-10">
-                  <button onClick={() => setSelectedAlbum(null)} className="p-2 hover:bg-gray-100 rounded-full"><ArrowLeft /></button>
-                  <h2 className="text-xl font-bold font-cute flex-1">{selectedAlbum.name}</h2>
-                  <label className="p-2 bg-rose-50 text-rose-500 rounded-full cursor-pointer hover:bg-rose-100">
-                      <Plus size={24} />
-                      <input type="file" multiple accept="image/*" className="hidden" onChange={handleAlbumUpload} />
-                  </label>
+              <div className="p-4 border-b flex items-center gap-4 bg-white/80 backdrop-blur sticky top-0 z-10 justify-between">
+                  <div className="flex items-center gap-4">
+                      <button onClick={() => setSelectedAlbum(null)} className="p-2 hover:bg-gray-100 rounded-full"><ArrowLeft /></button>
+                      <h2 className="text-xl font-bold font-cute">{selectedAlbum.name}</h2>
+                  </div>
+                  <div className="flex gap-2">
+                      {isManageMode ? (
+                          <>
+                              <button onClick={batchDeletePhotos} className="text-red-500 font-bold text-sm px-3 py-1 bg-red-50 rounded-full">删除({selectedItems.size})</button>
+                              <button onClick={() => setIsManageMode(false)} className="text-gray-500 font-bold text-sm px-3 py-1">取消</button>
+                          </>
+                      ) : (
+                          <>
+                              <button onClick={() => setIsManageMode(true)} className="p-2 hover:bg-gray-100 rounded-full text-gray-600"><Settings size={20} /></button>
+                              <label className="p-2 bg-rose-50 text-rose-500 rounded-full cursor-pointer hover:bg-rose-100">
+                                  <Plus size={24} />
+                                  <input type="file" multiple accept="image/*" className="hidden" onChange={handleAlbumUpload} />
+                              </label>
+                          </>
+                      )}
+                  </div>
               </div>
               <div className="p-4 grid grid-cols-3 gap-2 overflow-y-auto">
                   {selectedAlbum.media.length === 0 && <div className="col-span-3 text-center text-gray-400 py-10">相册是空的，上传第一张照片吧！</div>}
                   {selectedAlbum.media.map((item, idx) => (
-                      <div key={idx} className="aspect-square rounded-xl overflow-hidden bg-gray-100 relative group cursor-pointer" onClick={() => handleAlbumImageClick(item.url)}>
-                          <img src={item.url} className="w-full h-full object-cover" loading="lazy" />
+                      <div key={idx} className="aspect-square rounded-xl overflow-hidden bg-gray-100 relative group cursor-pointer" onClick={() => handleAlbumImageClick(item)}>
+                          <img src={item.url} className={`w-full h-full object-cover transition ${isManageMode && selectedItems.has(item.id) ? 'opacity-50 scale-90' : ''}`} loading="lazy" />
+                          {isManageMode && (
+                              <div className="absolute top-2 right-2">
+                                  {selectedItems.has(item.id) ? <CheckCircle className="text-rose-500 fill-white" /> : <div className="w-5 h-5 rounded-full border-2 border-white/80" />}
+                              </div>
+                          )}
                       </div>
                   ))}
               </div>
@@ -1015,16 +1142,25 @@ const MemoriesViewContent = ({
   }
 
   return (
-    <div className="h-full bg-white overflow-y-auto pb-24 relative">
-        {/* 朋友圈封面区域 */}
+    <div ref={scrollContainerRef} className="h-full bg-white overflow-y-auto pb-24 relative">
         <div className="relative group cursor-pointer" style={{ height: '320px' }} onClick={handleCoverClick}>
              <div className="w-full h-full overflow-hidden relative">
                 <img src={coverUrl} alt="Cover" className="w-full h-full object-cover" />
                 <div className="absolute inset-0 bg-black/10 pointer-events-none" />
              </div>
              
-             {/* 隐藏的上传控件 */}
              <input id="cover-upload" type="file" className="hidden" onChange={onUpdateCover} accept="image/*" />
+
+             {/* 更换封面的按钮 */}
+             <div 
+                className={`absolute bottom-4 right-4 z-20 transition-all duration-300 ${showCoverBtn ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'}`}
+                onClick={(e) => { e.stopPropagation(); document.getElementById('cover-upload')?.click(); }}
+             >
+                <div className="bg-black/30 backdrop-blur-md p-2 rounded-md text-white hover:bg-black/50 transition cursor-pointer flex items-center gap-2">
+                    <Camera size={16} />
+                    <span className="text-xs font-bold">换封面</span>
+                </div>
+            </div>
 
             <div className="absolute -bottom-8 right-4 flex items-end gap-3 z-20 pointer-events-none">
                  <div className="text-white font-bold text-lg drop-shadow-md pb-10 font-cute">我们的点滴</div>
@@ -1035,11 +1171,19 @@ const MemoriesViewContent = ({
                 </div>
             </div>
             
+            {/* 微信风格发布按钮：长按/短按 */}
             <div className="absolute top-4 right-4 z-30">
-               <button onClick={(e) => {e.stopPropagation(); onFileSelect(e);}} className="bg-black/20 p-2 rounded-full text-white hover:bg-black/40 backdrop-blur-sm pointer-events-auto">
+               <button 
+                   onMouseDown={handleCameraPressStart}
+                   onMouseUp={handleCameraPressEnd}
+                   onTouchStart={handleCameraPressStart}
+                   onTouchEnd={handleCameraPressEnd}
+                   className="bg-black/20 p-2 rounded-full text-white hover:bg-black/40 backdrop-blur-sm pointer-events-auto transition-transform active:scale-90"
+               >
                    <Camera size={20} />
                </button>
-               <input type="file" multiple accept="image/*" className="hidden" onChange={onFileSelect} />
+               {/* 隐藏的 input file，由 handleCameraPressEnd 短按触发点击 */}
+               <input id="camera-file-input" type="file" multiple accept="image/*" className="hidden" onChange={handleMomentsFileSelect} />
             </div>
         </div>
 
@@ -1066,11 +1210,9 @@ const MemoriesViewContent = ({
                   {memories.map((memory: Memory) => (
                       <div key={memory.id} className="flex gap-3 pb-6 border-b border-gray-50 last:border-0">
                           <div className="w-10 h-10 rounded-lg bg-rose-100 flex items-center justify-center text-xl shrink-0">🐶</div>
-                          
                           <div className="flex-1 min-w-0">
                               <h4 className="font-bold text-gray-800 font-cute text-sm mb-1 text-blue-900">我们</h4>
                               <p className="mb-2 text-gray-800 text-sm leading-relaxed">{memory.caption}</p>
-                              
                               {memory.type === 'media' && memory.media.length > 0 && (
                                   <div className={`grid gap-1 mb-2 max-w-[80%] ${memory.media.length === 1 ? 'grid-cols-1' : memory.media.length === 4 ? 'grid-cols-2 w-2/3' : 'grid-cols-3'}`}>
                                       {memory.media.map((url: string, idx: number) => (
@@ -1080,21 +1222,15 @@ const MemoriesViewContent = ({
                                       ))}
                                   </div>
                               )}
-
                               <div className="flex justify-between items-center mt-2 relative">
                                   <div className="flex items-center gap-3">
                                       <span className="text-xs text-gray-400">{memory.date}</span>
                                       <button onClick={() => onDeleteMemory(memory.id)} className="text-xs text-blue-900 hover:underline">删除</button>
                                   </div>
-                                  
                                   <div className="relative">
-                                      <button 
-                                        onClick={(e) => toggleMenu(e, memory.id)}
-                                        className="bg-gray-50 p-1 rounded-sm text-blue-800 hover:bg-gray-100"
-                                      >
+                                      <button onClick={(e) => toggleMenu(e, memory.id)} className="bg-gray-50 p-1 rounded-sm text-blue-800 hover:bg-gray-100">
                                           <MoreHorizontal size={16} />
                                       </button>
-
                                       <AnimatePresence>
                                         {activeMenuId === memory.id && (
                                             <motion.div 
@@ -1104,21 +1240,12 @@ const MemoriesViewContent = ({
                                                 className="absolute right-8 top-0 bg-gray-800 text-white rounded-md flex items-center overflow-hidden shadow-xl z-10"
                                                 onClick={(e) => e.stopPropagation()}
                                             >
-                                                <button 
-                                                    onClick={() => { handleLike(memory.id); setActiveMenuId(null); }}
-                                                    className="flex items-center gap-1 px-4 py-2 hover:bg-gray-700 text-xs font-bold min-w-[80px] justify-center"
-                                                >
+                                                <button onClick={() => { handleLike(memory.id); setActiveMenuId(null); }} className="flex items-center gap-1 px-4 py-2 hover:bg-gray-700 text-xs font-bold min-w-[80px] justify-center">
                                                     <Heart size={14} fill={memory.isLiked ? "red" : "none"} color={memory.isLiked ? "red" : "white"} />
                                                     {memory.isLiked ? '取消' : '赞'}
                                                 </button>
                                                 <div className="w-[1px] h-4 bg-gray-600"></div>
-                                                <button 
-                                                    onClick={() => {
-                                                        const input = prompt('请输入评论');
-                                                        if(input) { handleComment(memory.id, input); setActiveMenuId(null); }
-                                                    }}
-                                                    className="flex items-center gap-1 px-4 py-2 hover:bg-gray-700 text-xs font-bold min-w-[80px] justify-center"
-                                                >
+                                                <button onClick={() => { const input = prompt('请输入评论'); if(input) { handleComment(memory.id, input); setActiveMenuId(null); } }} className="flex items-center gap-1 px-4 py-2 hover:bg-gray-700 text-xs font-bold min-w-[80px] justify-center">
                                                     <MessageCircle size={14} />
                                                     评论
                                                 </button>
@@ -1127,7 +1254,6 @@ const MemoriesViewContent = ({
                                       </AnimatePresence>
                                   </div>
                               </div>
-
                               {(memory.likes > 0 || memory.comments.length > 0) && (
                                   <div className="mt-3 bg-gray-50 rounded-sm p-2 text-xs">
                                       {memory.likes > 0 && (
@@ -1138,8 +1264,7 @@ const MemoriesViewContent = ({
                                       )}
                                       {memory.comments.map((c: any) => (
                                           <div key={c.id} className="leading-5">
-                                              <span className="font-bold text-blue-900">我:</span> 
-                                              <span className="text-gray-600 ml-1">{c.text}</span>
+                                              <span className="font-bold text-blue-900">我:</span> <span className="text-gray-600 ml-1">{c.text}</span>
                                           </div>
                                       ))}
                                   </div>
@@ -1149,29 +1274,57 @@ const MemoriesViewContent = ({
                   ))}
               </div>
           ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  <div 
-                      onClick={() => setIsCreatingAlbum(true)} 
-                      className="aspect-square bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center text-gray-400 hover:bg-gray-100 hover:border-rose-300 hover:text-rose-400 transition cursor-pointer"
-                  >
-                      <FolderPlus size={32} className="mb-2" />
-                      <span className="font-cute text-sm">新建相册</span>
-                  </div>
-                  {albums.map((album: Album) => (
-                      <div key={album.id} onClick={() => setSelectedAlbum(album)} className="aspect-square bg-white rounded-3xl shadow-sm border border-gray-100 p-2 relative group overflow-hidden cursor-pointer">
-                          {album.coverUrl ? (
-                              <img src={album.coverUrl} className="w-full h-full object-cover rounded-2xl" alt={album.name} />
-                          ) : (
-                              <div className="w-full h-full bg-gray-50 rounded-2xl flex items-center justify-center text-xs text-gray-400 border border-gray-100">暂无封面</div>
-                          )}
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-4 rounded-2xl pointer-events-none">
-                              <div className="text-white w-full">
-                                  <h4 className="font-bold truncate text-shadow-sm">{album.name}</h4>
-                                  <span className="text-xs opacity-90">{album.media.length} 张照片</span>
-                              </div>
-                          </div>
+              // 相册列表视图
+              <div>
+                  <div className="flex justify-between items-center mb-4 px-2">
+                      <div onClick={() => setIsCreatingAlbum(true)} className="flex items-center gap-2 text-gray-500 cursor-pointer hover:text-rose-500">
+                          <FolderPlus size={20} />
+                          <span className="text-sm font-bold">新建相册</span>
                       </div>
-                  ))}
+                      <button 
+                          onClick={() => setIsManageMode(!isManageMode)} 
+                          className={`text-sm font-bold ${isManageMode ? 'text-rose-500' : 'text-gray-400'}`}
+                      >
+                          {isManageMode ? '完成' : '管理'}
+                      </button>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      {albums.map((album: Album) => (
+                          <div 
+                              key={album.id} 
+                              onClick={() => {
+                                  if(isManageMode) toggleSelection(album.id);
+                                  else setSelectedAlbum(album);
+                              }} 
+                              className={`aspect-square bg-white rounded-3xl shadow-sm border border-gray-100 p-2 relative group overflow-hidden cursor-pointer transition ${isManageMode && selectedItems.has(album.id) ? 'ring-2 ring-rose-500 bg-rose-50' : ''}`}
+                          >
+                              {album.coverUrl ? (
+                                  <img src={album.coverUrl} className="w-full h-full object-cover rounded-2xl" alt={album.name} />
+                              ) : (
+                                  <div className="w-full h-full bg-gray-50 rounded-2xl flex items-center justify-center text-xs text-gray-400 border border-gray-100">暂无封面</div>
+                              )}
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-4 rounded-2xl pointer-events-none">
+                                  <div className="text-white w-full">
+                                      <h4 className="font-bold truncate text-shadow-sm">{album.name}</h4>
+                                      <span className="text-xs opacity-90">{album.media.length} 张照片</span>
+                                  </div>
+                              </div>
+                              {isManageMode && (
+                                  <div className="absolute top-2 right-2 pointer-events-none">
+                                      {selectedItems.has(album.id) ? <CheckCircle className="text-rose-500 fill-white" /> : <div className="w-5 h-5 rounded-full border-2 border-white/80 bg-black/20" />}
+                                  </div>
+                              )}
+                          </div>
+                      ))}
+                  </div>
+                  {isManageMode && (
+                      <div className="fixed bottom-20 left-0 right-0 p-4 bg-white border-t border-gray-100 flex justify-center gap-4 z-40">
+                          <button onClick={batchDeleteAlbums} disabled={selectedItems.size === 0} className="bg-red-500 text-white px-6 py-2 rounded-full font-bold shadow-md disabled:bg-gray-300">
+                              删除选中 ({selectedItems.size})
+                          </button>
+                      </div>
+                  )}
               </div>
           )}
       </div>
@@ -1248,7 +1401,7 @@ const MemoriesViewContent = ({
   );
 };
 
-const CycleViewContent = ({ periods, nextPeriod, addPeriod }: any) => {
+const CycleViewContent = ({ periods, nextPeriod, addPeriod, deletePeriod }: any) => {
   const handleLogPeriod = () => {
       const today = getBeijingDateString();
       if(confirm(`记录今天 (${today}) 为大姨妈开始日？`)) {
@@ -1287,9 +1440,14 @@ const CycleViewContent = ({ periods, nextPeriod, addPeriod }: any) => {
             </h3>
             <div className="space-y-3">
                 {periods.slice().reverse().map((p: any, i: number) => (
-                    <div key={i} className="flex justify-between items-center p-3 bg-rose-50/50 rounded-xl">
+                    <div key={i} className="flex justify-between items-center p-3 bg-rose-50/50 rounded-xl group">
                         <span className="font-bold text-gray-600">{p.startDate}</span>
-                        <span className="text-xs text-rose-400 font-bold px-2 py-1 bg-white rounded-lg shadow-sm">持续 {p.duration} 天</span>
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-rose-400 font-bold px-2 py-1 bg-white rounded-lg shadow-sm">持续 {p.duration} 天</span>
+                            <button onClick={() => deletePeriod(periods.length - 1 - i)} className="text-gray-300 hover:text-red-500 p-1">
+                                <X size={16} />
+                            </button>
+                        </div>
                     </div>
                 ))}
                 {periods.length === 0 && <p className="text-center text-gray-400 text-sm py-4">还没有记录哦</p>}
@@ -1447,9 +1605,15 @@ const ConflictViewContent = ({ judgeConflict, conflicts, setConflicts }: any) =>
     );
 };
 
-const BoardViewContent = ({ messages, onPost, onPin, onFav, onDelete, onAddTodo }: any) => {
+const BoardViewContent = ({ messages, onPost, onPin, onFav, onDelete, onAddTodo, setMessages }: any) => {
     const [input, setInput] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
+    const [isManageMode, setIsManageMode] = useState(false);
+    const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+
+    useEffect(() => {
+        if(!isManageMode) setSelectedItems(new Set());
+    }, [isManageMode]);
 
     const handleSend = async () => {
         if(!input.trim()) return;
@@ -1469,7 +1633,31 @@ const BoardViewContent = ({ messages, onPost, onPin, onFav, onDelete, onAddTodo 
         setInput('');
     };
 
-    // 修复置顶：在渲染前对数据进行排序，置顶(isPinned)的排在前面
+    const toggleSelection = (id: string) => {
+        const newSet = new Set(selectedItems);
+        if(newSet.has(id)) newSet.delete(id);
+        else newSet.add(id);
+        setSelectedItems(newSet);
+    };
+
+    const batchAction = (action: 'pin' | 'fav' | 'delete') => {
+        if(action === 'delete' && !window.confirm(`确定删除选中的 ${selectedItems.size} 条留言吗？`)) return;
+
+        setMessages((prev: Message[]) => {
+            if(action === 'delete') return prev.filter(m => !selectedItems.has(m.id));
+            
+            return prev.map(m => {
+                if(selectedItems.has(m.id)) {
+                    if(action === 'pin') return { ...m, isPinned: !m.isPinned };
+                    if(action === 'fav') return { ...m, isFavorite: !m.isFavorite };
+                }
+                return m;
+            });
+        });
+        
+        if(action === 'delete') setIsManageMode(false); // 删除后退出管理模式
+    };
+
     const sortedMessages = [...messages].sort((a: Message, b: Message) => {
         if (a.isPinned && !b.isPinned) return -1;
         if (!a.isPinned && b.isPinned) return 1;
@@ -1478,66 +1666,74 @@ const BoardViewContent = ({ messages, onPost, onPin, onFav, onDelete, onAddTodo 
 
     return (
         <div className="flex flex-col h-full bg-yellow-50/30">
-            <div className="pt-4 px-4 pb-2 bg-yellow-50/30">
+            <div className="pt-4 px-4 pb-2 bg-yellow-50/30 flex justify-between items-center relative">
+                 <div className="w-8"></div> {/* Spacer */}
                  <h2 className="text-2xl font-bold font-cute text-yellow-600 text-center">留言板</h2>
+                 <button onClick={() => setIsManageMode(!isManageMode)} className={`p-2 rounded-full hover:bg-yellow-100 ${isManageMode ? 'text-rose-500' : 'text-gray-400'}`}>
+                     {isManageMode ? '完成' : <Settings size={20} />}
+                 </button>
             </div>
             
             <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-40">
                 <div className="grid grid-cols-1 gap-4">
                     {sortedMessages.map((msg: Message) => (
-                        <div key={msg.id} className={`p-6 rounded-2xl shadow-sm border text-base relative group transition-all ${msg.isFavorite ? 'bg-rose-50 border-rose-100' : 'bg-white border-yellow-100'}`}>
+                        <div 
+                            key={msg.id} 
+                            onClick={() => isManageMode && toggleSelection(msg.id)}
+                            className={`p-6 rounded-2xl shadow-sm border text-base relative group transition-all 
+                                ${msg.isFavorite ? 'bg-rose-50 border-rose-100' : 'bg-white border-yellow-100'}
+                                ${isManageMode && selectedItems.has(msg.id) ? 'ring-2 ring-rose-500 bg-rose-50' : ''}
+                            `}
+                        >
                              <p className="text-gray-700 font-cute mb-10 leading-relaxed whitespace-pre-wrap break-words text-lg">{msg.content}</p>
                              
                              <div className="absolute bottom-4 left-0 right-0 px-6 flex justify-between items-center">
                                  <div className="text-xs text-gray-300 font-bold">{msg.date.slice(5)} {msg.time}</div>
                                  <div className="flex gap-4">
-                                     <button 
-                                        onClick={() => onFav(msg.id)} 
-                                        className={`transition ${msg.isFavorite ? 'text-rose-500' : 'text-gray-300 hover:text-rose-500'}`}
-                                        title="收藏"
-                                     >
-                                        <Heart size={18} fill={msg.isFavorite ? "currentColor" : "none"} />
-                                     </button>
-                                     <button 
-                                        onClick={() => onPin(msg.id)} 
-                                        className={`transition ${msg.isPinned ? 'text-blue-500' : 'text-gray-300 hover:text-blue-500'}`}
-                                        title="置顶"
-                                     >
-                                        <Pin size={18} fill={msg.isPinned ? "currentColor" : "none"} />
-                                     </button>
-                                     <button 
-                                        onClick={() => onDelete(msg.id)} 
-                                        className="text-gray-300 hover:text-red-500 transition"
-                                        title="删除"
-                                     >
-                                        <Trash2 size={18} />
-                                     </button>
+                                     <button onClick={() => onFav(msg.id)} className={`transition ${msg.isFavorite ? 'text-rose-500' : 'text-gray-300 hover:text-rose-500'}`}><Heart size={18} fill={msg.isFavorite ? "currentColor" : "none"} /></button>
+                                     <button onClick={() => onPin(msg.id)} className={`transition ${msg.isPinned ? 'text-blue-500' : 'text-gray-300 hover:text-blue-500'}`}><Pin size={18} fill={msg.isPinned ? "currentColor" : "none"} /></button>
+                                     <button onClick={() => onDelete(msg.id)} className="text-gray-300 hover:text-red-500 transition"><Trash2 size={18} /></button>
                                  </div>
                              </div>
 
                              {msg.isPinned && <div className="absolute top-0 right-0 p-3 text-blue-500 transform rotate-45"><Pin size={24} fill="currentColor" /></div>}
+                             
+                             {isManageMode && (
+                                  <div className="absolute top-4 right-4 pointer-events-none">
+                                      {selectedItems.has(msg.id) ? <CheckCircle className="text-rose-500 fill-white" /> : <div className="w-6 h-6 rounded-full border-2 border-gray-300 bg-white" />}
+                                  </div>
+                             )}
                         </div>
                     ))}
                 </div>
             </div>
-            <div className="fixed bottom-16 left-0 right-0 p-4 bg-white border-t border-gray-100 pb-safe safe-area-inset-bottom z-40">
-                <div className="relative max-w-2xl mx-auto">
-                    <textarea 
-                        className="w-full bg-gray-50 rounded-2xl pl-4 pr-12 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-rose-100 resize-none h-14"
-                        placeholder="写给对方的留言..."
-                        value={input}
-                        onChange={e => setInput(e.target.value)}
-                        onKeyDown={e => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }}}
-                    />
-                    <button 
-                        onClick={handleSend}
-                        disabled={!input.trim()}
-                        className="absolute right-2 top-1/2 transform -translate-y-1/2 p-2 bg-rose-500 text-white rounded-xl shadow-md disabled:bg-gray-300 transition hover:scale-105 active:scale-95"
-                    >
-                        {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
-                    </button>
+
+            {isManageMode ? (
+                <div className="fixed bottom-16 left-0 right-0 p-4 bg-white border-t border-gray-100 pb-safe safe-area-inset-bottom z-40 flex justify-around">
+                    <button onClick={() => batchAction('fav')} className="flex flex-col items-center text-gray-600 hover:text-rose-500"><Heart /> <span className="text-xs mt-1">收藏</span></button>
+                    <button onClick={() => batchAction('pin')} className="flex flex-col items-center text-gray-600 hover:text-blue-500"><Pin /> <span className="text-xs mt-1">置顶</span></button>
+                    <button onClick={() => batchAction('delete')} className="flex flex-col items-center text-gray-600 hover:text-red-500"><Trash2 /> <span className="text-xs mt-1">删除</span></button>
                 </div>
-            </div>
+            ) : (
+                <div className="fixed bottom-16 left-0 right-0 p-4 bg-white border-t border-gray-100 pb-safe safe-area-inset-bottom z-40">
+                    <div className="relative max-w-2xl mx-auto">
+                        <textarea 
+                            className="w-full bg-gray-50 rounded-2xl pl-4 pr-12 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-rose-100 resize-none h-14"
+                            placeholder="写给对方的留言..."
+                            value={input}
+                            onChange={e => setInput(e.target.value)}
+                            onKeyDown={e => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }}}
+                        />
+                        <button 
+                            onClick={handleSend}
+                            disabled={!input.trim()}
+                            className="absolute right-2 top-1/2 transform -translate-y-1/2 p-2 bg-rose-500 text-white rounded-xl shadow-md disabled:bg-gray-300 transition hover:scale-105 active:scale-95"
+                        >
+                            {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
