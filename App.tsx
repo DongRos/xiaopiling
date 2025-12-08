@@ -32,12 +32,16 @@ import {
   Gavel,
   ShieldCheck,
   Lightbulb,
-  Clock
+  Clock,
+  MoreHorizontal, // 新增：用于朋友圈更多菜单
+  MoreVertical
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { judgeConflict, extractTodosFromText, JudgeResult } from './services/ai';
 import { Memory, PinnedPhoto, PeriodEntry, TodoItem, ConflictRecord, Page, Message, Album, AlbumMedia } from './types';
-import pailideIcon from './pailide.png';
+// 修复图片引入：假设 pailide.png 在项目根目录，而 App.tsx 在 src 目录，所以使用 ../ 访问
+// @ts-ignore
+import pailideIcon from '../pailide.png';
 
 // --- Helper Functions ---
 
@@ -78,12 +82,13 @@ const useSafeStorage = (key: string, value: any) => {
   }, [key, value]);
 };
 
-const DEFAULT_CAMERA_ICON = pailideIcon;
+// 如果根目录图片加载失败，使用备用图，但首选 pailideIcon
+const DEFAULT_CAMERA_ICON = pailideIcon || "https://images.unsplash.com/photo-1526045431048-f857369baa09?auto=format&fit=crop&w=600&q=80";
 const DEFAULT_COVER = "https://images.unsplash.com/photo-1516962215378-7fa2e137ae91?auto=format&fit=crop&w=1000&q=80";
 
 // --- Components ---
 
-// 1. Image Viewer
+// 1. Image Viewer (保持不变)
 const ImageViewer = ({ src, onClose, onAction, actionLabel }: { src: string; onClose: () => void; onAction?: () => void; actionLabel?: string }) => {
   const [scale, setScale] = useState(1);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -176,7 +181,7 @@ const ImageViewer = ({ src, onClose, onAction, actionLabel }: { src: string; onC
   );
 };
 
-// 2. Navigation
+// 2. Navigation (保持不变)
 const Navbar = ({ active, setPage }: { active: Page, setPage: (p: Page) => void }) => {
   const navItems = [
     { id: Page.HOME, icon: <Cat size={24} />, label: '小屁铃' },
@@ -207,7 +212,7 @@ const Navbar = ({ active, setPage }: { active: Page, setPage: (p: Page) => void 
   );
 };
 
-// 3. Polaroid Camera
+// 3. Polaroid Camera (保持不变)
 const PolaroidCamera = ({ 
   onTakePhoto, 
   iconUrl, 
@@ -242,6 +247,10 @@ const PolaroidCamera = ({
           src={iconUrl} 
           alt="Polaroid Camera"
           className="w-full drop-shadow-2xl relative z-30 object-contain max-h-32"
+          onError={(e) => {
+              // Fallback if image fails to load
+              e.currentTarget.src = DEFAULT_CAMERA_ICON;
+          }}
         />
       </div>
       <div className="camera-actions absolute -right-12 bottom-0 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-50 scale-75 origin-bottom-left">
@@ -263,7 +272,7 @@ const PolaroidCamera = ({
   );
 };
 
-// 4. Draggable Photo
+// 4. Draggable Photo (保持不变)
 interface DraggablePhotoProps {
   pin: PinnedPhoto;
   onUpdate: (id: string, changes: Partial<PinnedPhoto>) => void;
@@ -631,6 +640,12 @@ export default function App() {
       setMemories(memories.map(m => m.id === memoryId ? { ...m, comments: [...m.comments, { id: Date.now().toString(), text, author: 'me', date: getBeijingDateString() }] } : m));
   }
 
+  const handleDeleteMemory = (memoryId: string) => {
+      if(window.confirm("确定要删除这条朋友圈吗？")) {
+          setMemories(memories.filter(m => m.id !== memoryId));
+      }
+  }
+
   const handlePostMessage = (content: string) => {
       const now = new Date();
       const newMessage: Message = {
@@ -809,6 +824,7 @@ export default function App() {
                               setShowUploadModal={setShowUploadModal} uploadImages={uploadImages} setUploadImages={setUploadImages}
                               uploadCaption={uploadCaption} setUploadCaption={setUploadCaption} uploadType={uploadType}
                               confirmUpload={confirmMomentsUpload} coverUrl={momentsCover} onUpdateCover={handleUpdateCover}
+                              onDeleteMemory={handleDeleteMemory}
                           />
                        )}
                        {activePage === Page.CYCLE && <CycleViewContent periods={periods} nextPeriod={nextPeriod} addPeriod={addPeriod} />}
@@ -834,14 +850,13 @@ export default function App() {
     </div>
   );
 }
-
 // --- Content Components ---
 
 const MemoriesViewContent = ({
   memories, albums, setAlbums, handleLike, handleComment,
   onFileSelect, onTextPost, showUploadModal, setShowUploadModal,
   uploadImages, setUploadImages, uploadCaption, setUploadCaption,
-  uploadType, confirmUpload, coverUrl, onUpdateCover
+  uploadType, confirmUpload, coverUrl, onUpdateCover, onDeleteMemory
 }: any) => {
   const [activeTab, setActiveTab] = useState<'moments' | 'albums'>('moments');
   const [viewingImage, setViewingImage] = useState<string | null>(null);
@@ -849,7 +864,14 @@ const MemoriesViewContent = ({
   const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null);
   const [newAlbumName, setNewAlbumName] = useState('');
   const [commentInputs, setCommentInputs] = useState<{[key:string]: string}>({});
-  const pressTimer = useRef<NodeJS.Timeout | null>(null);
+  const [activeMenuId, setActiveMenuId] = useState<string | null>(null); // 控制哪个卡片的菜单打开
+
+  // 点击外部关闭菜单
+  useEffect(() => {
+    const handleClickOutside = () => setActiveMenuId(null);
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
 
   const createAlbum = () => {
     if(!newAlbumName.trim()) return;
@@ -900,21 +922,13 @@ const MemoriesViewContent = ({
       if(!commentInputs[id]?.trim()) return;
       handleComment(id, commentInputs[id]);
       setCommentInputs(prev => ({...prev, [id]: ''}));
+      setActiveMenuId(null); // 评论后关闭菜单
   };
 
-  const handlePressStart = () => {
-      pressTimer.current = setTimeout(() => {
-          onTextPost();
-          pressTimer.current = null;
-      }, 500);
-  };
-
-  const handlePressEnd = (e: React.MouseEvent | React.TouchEvent) => {
-      if (pressTimer.current) {
-          clearTimeout(pressTimer.current);
-          pressTimer.current = null;
-          document.getElementById('camera-upload')?.click();
-      }
+  // 这里的点击事件为了触发菜单，需要阻止冒泡
+  const toggleMenu = (e: React.MouseEvent, id: string) => {
+      e.stopPropagation();
+      setActiveMenuId(activeMenuId === id ? null : id);
   };
 
   if (selectedAlbum) {
@@ -943,41 +957,43 @@ const MemoriesViewContent = ({
 
   return (
     <div className="h-full bg-white overflow-y-auto pb-24 relative">
-        <div className="relative h-72 w-full group cursor-pointer" onClick={() => document.getElementById('cover-upload')?.click()}>
-            <img src={coverUrl} alt="Cover" className="w-full h-full object-cover" />
-            <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition flex items-center justify-center opacity-0 group-hover:opacity-100">
-                <span className="text-white font-bold border border-white px-4 py-1 rounded-full backdrop-blur-md">更换封面</span>
-            </div>
-            <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-transparent pointer-events-none" />
-            
-            <div className="absolute top-4 right-4 z-20" onClick={(e) => e.stopPropagation()}>
-                <button 
-                    className="bg-white/20 backdrop-blur-md p-2 rounded-xl text-white hover:bg-white/30 active:scale-95 transition"
-                    onMouseDown={handlePressStart}
-                    onMouseUp={handlePressEnd}
-                    onTouchStart={handlePressStart}
-                    onTouchEnd={handlePressEnd}
-                    onContextMenu={(e) => e.preventDefault()}
-                >
-                    <Camera size={24} />
-                </button>
-                <input id="camera-upload" type="file" multiple accept="image/*" className="hidden" onChange={onFileSelect} />
-            </div>
-            
-            <div className="absolute bottom-4 left-4 text-white pointer-events-none">
-                <h2 className="text-3xl font-bold font-cute shadow-black drop-shadow-md">我们的点滴</h2>
+        {/* 仿微信朋友圈背景 */}
+        <div className="relative group cursor-pointer" style={{ height: '320px' }}>
+             {/* 只有点击相机图标才触发上传，或者整体点击 */}
+             <div className="w-full h-full overflow-hidden relative">
+                <img src={coverUrl} alt="Cover" className="w-full h-full object-cover" onClick={() => setViewingImage(coverUrl)} />
+                <div className="absolute inset-0 bg-black/10 pointer-events-none" />
+             </div>
+             
+             {/* 更换封面的按钮，放在右下角，类似微信 */}
+             <div className="absolute bottom-4 right-4 z-20" onClick={(e) => { e.stopPropagation(); document.getElementById('cover-upload')?.click(); }}>
+                <div className="bg-black/30 backdrop-blur-md p-2 rounded-md text-white hover:bg-black/50 transition cursor-pointer flex items-center gap-2">
+                    <Camera size={16} />
+                    <span className="text-xs font-bold">换封面</span>
+                </div>
+                <input id="cover-upload" type="file" className="hidden" onChange={onUpdateCover} accept="image/*" />
             </div>
 
-            <div className="absolute -bottom-6 right-8 flex gap-4 z-20 pointer-events-none">
-                <div className="bg-white p-1 rounded-xl shadow-lg transform rotate-3">
+            {/* 头像和名字，悬浮在背景图右下角 */}
+            <div className="absolute -bottom-8 right-4 flex items-end gap-3 z-20 pointer-events-none">
+                 <div className="text-white font-bold text-lg drop-shadow-md pb-10 font-cute">我们的点滴</div>
+                 <div className="bg-white p-1 rounded-xl shadow-lg pointer-events-auto">
                     <div className="w-16 h-16 bg-rose-100 rounded-lg flex items-center justify-center overflow-hidden">
-                        <span className="text-2xl">💑</span>
+                        <span className="text-3xl">💑</span>
                     </div>
                 </div>
             </div>
+            
+            {/* 顶部发布按钮，依然保留在右上角方便操作 */}
+            <div className="absolute top-4 right-4 z-30">
+               <button onClick={onFileSelect} className="bg-black/20 p-2 rounded-full text-white hover:bg-black/40 backdrop-blur-sm">
+                   <Camera size={20} />
+               </button>
+               <input type="file" multiple accept="image/*" className="hidden" onChange={onFileSelect} />
+            </div>
         </div>
 
-      <div className="flex justify-center mt-12 mb-6 border-b border-gray-100 pb-1 relative bg-white sticky top-0 z-30">
+      <div className="mt-14 mb-4 border-b border-gray-100 pb-1 relative bg-white sticky top-0 z-30 flex justify-center">
           <button 
               onClick={() => setActiveTab('moments')}
               className={`px-6 py-2 font-bold transition-all relative ${activeTab === 'moments' ? 'text-rose-500' : 'text-gray-400'}`}
@@ -994,66 +1010,98 @@ const MemoriesViewContent = ({
           </button>
       </div>
 
-      <div className="px-4 md:px-8 max-w-4xl mx-auto min-h-[50vh] bg-white">
+      <div className="px-4 pb-10 max-w-2xl mx-auto min-h-[50vh] bg-white">
           {activeTab === 'moments' ? (
               <div className="space-y-8">
                   {memories.map((memory: Memory) => (
-                      <div key={memory.id} className="bg-white p-4 md:p-6 rounded-3xl shadow-sm border border-gray-50">
-                          <div className="flex items-center gap-3 mb-4">
-                              <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center text-lg">🐶</div>
-                              <div>
-                                  <h4 className="font-bold text-gray-800 font-cute">我们</h4>
-                                  <span className="text-xs text-gray-400">{memory.date}</span>
-                              </div>
-                          </div>
-                          <p className="mb-4 text-gray-700 leading-relaxed font-cute">{memory.caption}</p>
-                          {memory.type === 'media' && memory.media.length > 0 && (
-                              <div className={`grid gap-2 mb-4 ${memory.media.length === 1 ? 'grid-cols-1' : memory.media.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
-                                  {memory.media.map((url: string, idx: number) => (
-                                      <div key={idx} onClick={() => setViewingImage(url)} className="aspect-square rounded-2xl overflow-hidden cursor-pointer">
-                                          <img src={url} className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" alt="Memory" />
-                                      </div>
-                                  ))}
-                              </div>
-                          )}
-                          <div className="flex items-center justify-between border-t border-gray-50 pt-4">
-                              <div className="flex gap-4">
-                                  <button onClick={() => handleLike(memory.id)} className={`flex items-center gap-1.5 text-sm font-bold transition ${memory.isLiked ? 'text-rose-500' : 'text-gray-400 hover:text-rose-400'}`}>
-                                      <Heart size={18} fill={memory.isLiked ? "currentColor" : "none"} />
-                                      {memory.likes}
-                                  </button>
-                                  <div className="flex items-center gap-1.5 text-sm font-bold text-gray-400">
-                                      <MessageCircle size={18} />
-                                      {memory.comments?.length || 0}
+                      <div key={memory.id} className="flex gap-3 pb-6 border-b border-gray-50 last:border-0">
+                          {/* 左侧头像 */}
+                          <div className="w-10 h-10 rounded-lg bg-rose-100 flex items-center justify-center text-xl shrink-0">🐶</div>
+                          
+                          {/* 右侧内容 */}
+                          <div className="flex-1 min-w-0">
+                              <h4 className="font-bold text-gray-800 font-cute text-sm mb-1 text-blue-900">我们</h4>
+                              <p className="mb-2 text-gray-800 text-sm leading-relaxed">{memory.caption}</p>
+                              
+                              {/* 图片网格 */}
+                              {memory.type === 'media' && memory.media.length > 0 && (
+                                  <div className={`grid gap-1 mb-2 max-w-[80%] ${memory.media.length === 1 ? 'grid-cols-1' : memory.media.length === 4 ? 'grid-cols-2 w-2/3' : 'grid-cols-3'}`}>
+                                      {memory.media.map((url: string, idx: number) => (
+                                          <div key={idx} onClick={() => setViewingImage(url)} className={`aspect-square bg-gray-100 cursor-pointer overflow-hidden ${memory.media.length === 1 ? 'max-w-[200px] max-h-[200px]' : ''}`}>
+                                              <img src={url} className="w-full h-full object-cover" alt="Memory" />
+                                          </div>
+                                      ))}
+                                  </div>
+                              )}
+
+                              {/* 底部信息栏：时间、删除按钮、操作菜单 */}
+                              <div className="flex justify-between items-center mt-2 relative">
+                                  <div className="flex items-center gap-3">
+                                      <span className="text-xs text-gray-400">{memory.date}</span>
+                                      <button onClick={() => onDeleteMemory(memory.id)} className="text-xs text-blue-900 hover:underline">删除</button>
+                                  </div>
+                                  
+                                  {/* 操作按钮区 */}
+                                  <div className="relative">
+                                      {/* 两个点按钮 */}
+                                      <button 
+                                        onClick={(e) => toggleMenu(e, memory.id)}
+                                        className="bg-gray-50 p-1 rounded-sm text-blue-800 hover:bg-gray-100"
+                                      >
+                                          <MoreHorizontal size={16} />
+                                      </button>
+
+                                      {/* 弹出菜单 */}
+                                      <AnimatePresence>
+                                        {activeMenuId === memory.id && (
+                                            <motion.div 
+                                                initial={{ opacity: 0, scale: 0.9, x: 10 }}
+                                                animate={{ opacity: 1, scale: 1, x: 0 }}
+                                                exit={{ opacity: 0, scale: 0.9, x: 10 }}
+                                                className="absolute right-8 top-0 bg-gray-800 text-white rounded-md flex items-center overflow-hidden shadow-xl z-10"
+                                                onClick={(e) => e.stopPropagation()}
+                                            >
+                                                <button 
+                                                    onClick={() => { handleLike(memory.id); setActiveMenuId(null); }}
+                                                    className="flex items-center gap-1 px-4 py-2 hover:bg-gray-700 text-xs font-bold min-w-[80px] justify-center"
+                                                >
+                                                    <Heart size={14} fill={memory.isLiked ? "red" : "none"} color={memory.isLiked ? "red" : "white"} />
+                                                    {memory.isLiked ? '取消' : '赞'}
+                                                </button>
+                                                <div className="w-[1px] h-4 bg-gray-600"></div>
+                                                <button 
+                                                    onClick={() => {
+                                                        const input = prompt('请输入评论');
+                                                        if(input) { handleComment(memory.id, input); setActiveMenuId(null); }
+                                                    }}
+                                                    className="flex items-center gap-1 px-4 py-2 hover:bg-gray-700 text-xs font-bold min-w-[80px] justify-center"
+                                                >
+                                                    <MessageCircle size={14} />
+                                                    评论
+                                                </button>
+                                            </motion.div>
+                                        )}
+                                      </AnimatePresence>
                                   </div>
                               </div>
-                          </div>
-                          
-                          {memory.comments?.length > 0 && (
-                              <div className="mt-3 bg-gray-50 rounded-xl p-3 space-y-1">
-                                  {memory.comments.map((c: any) => (
-                                      <div key={c.id} className="text-xs">
-                                          <span className="font-bold text-gray-600">我:</span> <span className="text-gray-500">{c.text}</span>
-                                      </div>
-                                  ))}
-                              </div>
-                          )}
 
-                          <div className="mt-3 flex gap-2">
-                              <input 
-                                  className="flex-1 bg-gray-50 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-rose-200"
-                                  placeholder="评论..."
-                                  value={commentInputs[memory.id] || ''}
-                                  onChange={(e) => onCommentChange(memory.id, e.target.value)}
-                                  onKeyDown={(e) => { if(e.key === 'Enter') submitComment(memory.id); }}
-                              />
-                              <button 
-                                  onClick={() => submitComment(memory.id)}
-                                  disabled={!commentInputs[memory.id]?.trim()}
-                                  className="text-rose-500 disabled:text-gray-300 p-1.5 hover:bg-rose-50 rounded-lg transition"
-                              >
-                                  <Send size={16} />
-                              </button>
+                              {/* 点赞和评论列表区域 */}
+                              {(memory.likes > 0 || memory.comments.length > 0) && (
+                                  <div className="mt-3 bg-gray-50 rounded-sm p-2 text-xs">
+                                      {memory.likes > 0 && (
+                                          <div className="flex items-center gap-1 text-blue-900 font-bold border-b border-gray-200/50 pb-1 mb-1">
+                                              <Heart size={12} fill="currentColor" />
+                                              <span>{memory.likes} 人觉得很赞</span>
+                                          </div>
+                                      )}
+                                      {memory.comments.map((c: any) => (
+                                          <div key={c.id} className="leading-5">
+                                              <span className="font-bold text-blue-900">我:</span> 
+                                              <span className="text-gray-600 ml-1">{c.text}</span>
+                                          </div>
+                                      ))}
+                                  </div>
+                              )}
                           </div>
                       </div>
                   ))}
@@ -1081,6 +1129,7 @@ const MemoriesViewContent = ({
               </div>
           )}
       </div>
+
       {showUploadModal && (
         <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl animate-in fade-in zoom-in">
@@ -1142,8 +1191,6 @@ const MemoriesViewContent = ({
       )}
 
       {viewingImage && <ImageViewer src={viewingImage} onClose={() => setViewingImage(null)} />}
-      
-      <input id="cover-upload" type="file" className="hidden" onChange={onUpdateCover} accept="image/*" />
     </div>
   );
 };
@@ -1158,6 +1205,8 @@ const CycleViewContent = ({ periods, nextPeriod, addPeriod }: any) => {
 
   return (
     <div className="p-6 space-y-6 pb-24 h-full overflow-y-auto">
+        <h2 className="text-2xl font-bold font-cute text-rose-500 text-center mb-2">经期记录</h2>
+        
         <div className="bg-white rounded-3xl p-8 shadow-xl text-center border-2 border-rose-100 relative overflow-hidden">
              <div className="relative z-10">
                 <h2 className="text-gray-500 font-bold mb-2 font-cute">距离下次大姨妈还有</h2>
@@ -1175,7 +1224,6 @@ const CycleViewContent = ({ periods, nextPeriod, addPeriod }: any) => {
                     大姨妈来了
                 </button>
              </div>
-             
              <div className="absolute top-0 right-0 -mt-10 -mr-10 w-40 h-40 bg-rose-50 rounded-full opacity-50 pointer-events-none" />
              <div className="absolute bottom-0 left-0 -mb-10 -ml-10 w-32 h-32 bg-rose-50 rounded-full opacity-50 pointer-events-none" />
         </div>
@@ -1243,79 +1291,103 @@ const ConflictViewContent = ({ judgeConflict, conflicts, setConflicts }: any) =>
 
     return (
         <div className="p-4 pb-24 space-y-6 bg-gray-50 min-h-full overflow-y-auto">
-            <div className="bg-white rounded-3xl p-6 shadow-md border border-indigo-50">
-                <div className="flex items-center gap-3 mb-6">
-                    <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center text-2xl">🐱</div>
-                    <div>
-                        <h2 className="font-bold text-xl font-cute text-indigo-900">喵喵法官</h2>
-                        <p className="text-xs text-gray-400">专治各种不服</p>
-                    </div>
-                </div>
+             {/* 头部标题区域 - 居中大气 */}
+             <div className="flex flex-col items-center justify-center py-6">
+                 <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center text-4xl shadow-md mb-3">🐱</div>
+                 <h2 className="font-bold text-3xl font-cute text-indigo-900 tracking-wide">喵喵法官</h2>
+                 <p className="text-sm text-gray-400 font-medium">公正无私 · 在线断案</p>
+             </div>
 
-                <div className="space-y-4">
+            <div className="bg-white rounded-3xl p-6 shadow-lg border border-indigo-50">
+                <div className="space-y-5">
                     <div>
-                        <label className="text-xs font-bold text-gray-500 ml-1 block mb-1">吵架原因</label>
-                        <input className="w-full bg-gray-50 rounded-xl p-3 text-sm focus:ring-2 focus:ring-indigo-100 outline-none" placeholder="比如：谁去洗碗..." value={reason} onChange={e => setReason(e.target.value)} />
+                        <label className="text-sm font-bold text-gray-700 ml-1 block mb-2">争吵原因</label>
+                        <input 
+                            className="w-full bg-gray-50 rounded-xl p-4 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition" 
+                            placeholder="简单描述一下因为什么吵架..." 
+                            value={reason} 
+                            onChange={e => setReason(e.target.value)} 
+                        />
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label className="text-xs font-bold text-blue-500 ml-1 block mb-1">公猫观点</label>
-                            <textarea className="w-full bg-blue-50/50 rounded-xl p-3 text-sm h-24 resize-none focus:ring-2 focus:ring-blue-100 outline-none" placeholder="我觉得..." value={hisPoint} onChange={e => setHisPoint(e.target.value)} />
+                            <label className="text-sm font-bold text-blue-600 ml-1 block mb-2">👦 男生观点</label>
+                            <textarea 
+                                className="w-full bg-blue-50/50 rounded-xl p-4 text-sm h-32 resize-none focus:ring-2 focus:ring-blue-100 outline-none transition" 
+                                placeholder="我觉得..." 
+                                value={hisPoint} 
+                                onChange={e => setHisPoint(e.target.value)} 
+                            />
                         </div>
                         <div>
-                            <label className="text-xs font-bold text-rose-500 ml-1 block mb-1">母猫观点</label>
-                            <textarea className="w-full bg-rose-50/50 rounded-xl p-3 text-sm h-24 resize-none focus:ring-2 focus:ring-rose-100 outline-none" placeholder="明明是..." value={herPoint} onChange={e => setHerPoint(e.target.value)} />
+                            <label className="text-sm font-bold text-rose-500 ml-1 block mb-2">👧 女生观点</label>
+                            <textarea 
+                                className="w-full bg-rose-50/50 rounded-xl p-4 text-sm h-32 resize-none focus:ring-2 focus:ring-rose-100 outline-none transition" 
+                                placeholder="明明是..." 
+                                value={herPoint} 
+                                onChange={e => setHerPoint(e.target.value)} 
+                            />
                         </div>
                     </div>
                     <button 
                         onClick={handleJudge}
                         disabled={isJudging}
-                        className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition flex justify-center items-center gap-2"
+                        className="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition flex justify-center items-center gap-2 text-lg active:scale-[0.98]"
                     >
-                        {isJudging ? <Loader2 className="animate-spin" /> : <Gavel size={20} />}
-                        {isJudging ? '喵喵思考中...' : '请喵喵裁决'}
+                        {isJudging ? <Loader2 className="animate-spin" /> : <Gavel size={24} />}
+                        {isJudging ? '喵喵正在思考中...' : '请求喵喵裁决'}
                     </button>
                 </div>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-6">
+                <h3 className="text-center text-gray-400 text-sm font-bold tracking-widest uppercase mt-8 mb-4">- 历史判决书 -</h3>
                 {sortedConflicts.map((c: ConflictRecord) => (
-                    <div key={c.id} className={`bg-white rounded-3xl p-5 shadow-sm border relative overflow-hidden transition-all ${c.isFavorite ? 'border-pink-200 bg-pink-50/30' : 'border-gray-100'}`}>
-                        {c.isPinned && <div className="absolute top-0 right-0 p-2 text-indigo-500 transform rotate-12"><Pin size={16} fill="currentColor" /></div>}
+                    <div key={c.id} className={`bg-white rounded-3xl p-6 shadow-md border relative overflow-hidden transition-all ${c.isFavorite ? 'border-pink-300 ring-2 ring-pink-50' : 'border-gray-100'}`}>
+                        {c.isPinned && <div className="absolute top-0 right-0 p-3 text-indigo-500 transform rotate-12 bg-indigo-50 rounded-bl-xl"><Pin size={20} fill="currentColor" /></div>}
                         
-                        <div className="flex justify-between items-start mb-3 pr-6">
-                            <span className="text-xs font-bold bg-gray-100 text-gray-500 px-2 py-1 rounded-md">{c.date}</span>
-                            <div className="flex gap-1">
-                                {c.aiResponse && (
-                                    <>
-                                        <span className="text-xs font-bold text-blue-500">公猫过错 {c.aiResponse.hisFault}%</span>
-                                        <span className="text-gray-300">|</span>
-                                        <span className="text-xs font-bold text-rose-500">母猫过错 {c.aiResponse.herFault}%</span>
-                                    </>
-                                )}
-                            </div>
+                        <div className="flex justify-between items-center mb-4">
+                            <span className="text-xs font-bold bg-gray-100 text-gray-500 px-3 py-1 rounded-full">{c.date}</span>
                         </div>
-                        <h4 className="font-bold text-gray-800 mb-2 font-cute">{c.reason}</h4>
+                        <h4 className="font-bold text-gray-800 mb-6 font-cute text-xl text-center">{c.reason}</h4>
+                        
                         {c.aiResponse && (
-                            <div className="space-y-2 mt-3">
-                                <div className="bg-indigo-50 rounded-xl p-3 text-sm text-indigo-900 leading-relaxed relative">
-                                    <p className="font-cute">🐱 <span className="font-bold">复盘:</span> {c.aiResponse.analysis}</p>
-                                </div>
-                                <div className="bg-green-50 rounded-xl p-3 text-sm text-green-900 leading-relaxed">
-                                    <p className="font-cute">💡 <span className="font-bold">建议:</span> {c.aiResponse.advice}</p>
-                                </div>
-                                {c.aiResponse.prevention && (
-                                    <div className="bg-yellow-50 rounded-xl p-3 text-sm text-yellow-900 leading-relaxed">
-                                        <p className="font-cute">🛡️ <span className="font-bold">预防:</span> {c.aiResponse.prevention}</p>
+                            <div className="space-y-5">
+                                {/* 进度条结果展示 */}
+                                <div className="space-y-2">
+                                    <div className="flex justify-between text-xs font-bold px-1">
+                                        <span className="text-blue-500">公猫过错 {c.aiResponse.hisFault}%</span>
+                                        <span className="text-rose-500">母猫过错 {c.aiResponse.herFault}%</span>
                                     </div>
-                                )}
+                                    <div className="h-4 w-full bg-gray-100 rounded-full overflow-hidden flex shadow-inner">
+                                        <div style={{ width: `${c.aiResponse.hisFault}%` }} className="bg-blue-500 h-full transition-all duration-1000 ease-out" />
+                                        <div style={{ width: `${c.aiResponse.herFault}%` }} className="bg-rose-500 h-full transition-all duration-1000 ease-out" />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <div className="bg-indigo-50/80 rounded-2xl p-4 text-sm text-indigo-900 leading-relaxed border border-indigo-100">
+                                        <p className="font-cute text-base mb-1">🐱 喵喵复盘:</p>
+                                        <p className="opacity-90">{c.aiResponse.analysis}</p>
+                                    </div>
+                                    <div className="bg-green-50/80 rounded-2xl p-4 text-sm text-green-900 leading-relaxed border border-green-100">
+                                        <p className="font-cute text-base mb-1">💡 和好建议:</p>
+                                        <p className="opacity-90">{c.aiResponse.advice}</p>
+                                    </div>
+                                    {c.aiResponse.prevention && (
+                                        <div className="bg-yellow-50/80 rounded-2xl p-4 text-sm text-yellow-900 leading-relaxed border border-yellow-100">
+                                            <p className="font-cute text-base mb-1">🛡️ 预防方案:</p>
+                                            <p className="opacity-90">{c.aiResponse.prevention}</p>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         )}
                         
-                        <div className="flex justify-end gap-3 mt-4 border-t border-gray-100 pt-3">
-                            <button onClick={() => toggleFav(c.id)} className={`${c.isFavorite ? 'text-pink-500' : 'text-gray-400 hover:text-pink-500'}`}><Heart size={18} fill={c.isFavorite ? "currentColor" : "none"} /></button>
-                            <button onClick={() => togglePin(c.id)} className={`${c.isPinned ? 'text-indigo-500' : 'text-gray-400 hover:text-indigo-500'}`}><Pin size={18} fill={c.isPinned ? "currentColor" : "none"} /></button>
-                            <button onClick={() => deleteRecord(c.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={18} /></button>
+                        <div className="flex justify-end gap-4 mt-6 border-t border-gray-50 pt-4">
+                            <button onClick={() => toggleFav(c.id)} className={`p-2 rounded-full hover:bg-pink-50 transition ${c.isFavorite ? 'text-pink-500' : 'text-gray-300'}`}><Heart size={20} fill={c.isFavorite ? "currentColor" : "none"} /></button>
+                            <button onClick={() => togglePin(c.id)} className={`p-2 rounded-full hover:bg-indigo-50 transition ${c.isPinned ? 'text-indigo-500' : 'text-gray-300'}`}><Pin size={20} fill={c.isPinned ? "currentColor" : "none"} /></button>
+                            <button onClick={() => deleteRecord(c.id)} className="p-2 rounded-full hover:bg-red-50 text-gray-300 hover:text-red-500 transition"><Trash2 size={20} /></button>
                         </div>
                     </div>
                 ))}
@@ -1348,18 +1420,48 @@ const BoardViewContent = ({ messages, onPost, onPin, onFav, onDelete, onAddTodo 
 
     return (
         <div className="flex flex-col h-full bg-yellow-50/30">
+            {/* Added Title */}
+            <div className="pt-4 px-4 pb-2 bg-yellow-50/30">
+                 <h2 className="text-2xl font-bold font-cute text-yellow-600 text-center">留言板</h2>
+            </div>
+            
+            {/* Single Column Layout (grid-cols-1) */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-32">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-4">
                     {messages.map((msg: Message) => (
-                        <div key={msg.id} className={`p-4 rounded-tl-2xl rounded-tr-2xl rounded-br-2xl shadow-sm border text-sm relative group transition hover:scale-[1.02] ${msg.isFavorite ? 'bg-rose-50 border-rose-100' : 'bg-white border-yellow-100'}`}>
-                             <p className="text-gray-700 font-cute mb-6 leading-relaxed whitespace-pre-wrap break-words">{msg.content}</p>
-                             <div className="absolute bottom-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                 <button onClick={(e) => { e.stopPropagation(); onFav(msg.id); }} className={`${msg.isFavorite ? 'text-rose-500' : 'text-gray-300 hover:text-rose-500'}`}><Heart size={14} fill={msg.isFavorite ? "currentColor" : "none"} /></button>
-                                 <button onClick={(e) => { e.stopPropagation(); onPin(msg.id); }} className={`${msg.isPinned ? 'text-blue-500' : 'text-gray-300 hover:text-blue-500'}`}><Pin size={14} fill={msg.isPinned ? "currentColor" : "none"} /></button>
-                                 <button onClick={(e) => { e.stopPropagation(); onDelete(msg.id); }} className="text-gray-300 hover:text-red-500"><Trash2 size={14} /></button>
+                        <div key={msg.id} className={`p-6 rounded-2xl shadow-sm border text-base relative group transition-all ${msg.isFavorite ? 'bg-rose-50 border-rose-100' : 'bg-white border-yellow-100'}`}>
+                             {/* 留言内容 */}
+                             <p className="text-gray-700 font-cute mb-10 leading-relaxed whitespace-pre-wrap break-words text-lg">{msg.content}</p>
+                             
+                             {/* 底部信息和固定按钮栏 - 始终显示 */}
+                             <div className="absolute bottom-4 left-0 right-0 px-6 flex justify-between items-center">
+                                 <div className="text-xs text-gray-300 font-bold">{msg.date.slice(5)} {msg.time}</div>
+                                 <div className="flex gap-4">
+                                     <button 
+                                        onClick={() => onFav(msg.id)} 
+                                        className={`transition ${msg.isFavorite ? 'text-rose-500' : 'text-gray-300 hover:text-rose-500'}`}
+                                        title="收藏"
+                                     >
+                                        <Heart size={18} fill={msg.isFavorite ? "currentColor" : "none"} />
+                                     </button>
+                                     <button 
+                                        onClick={() => onPin(msg.id)} 
+                                        className={`transition ${msg.isPinned ? 'text-blue-500' : 'text-gray-300 hover:text-blue-500'}`}
+                                        title="置顶"
+                                     >
+                                        <Pin size={18} fill={msg.isPinned ? "currentColor" : "none"} />
+                                     </button>
+                                     <button 
+                                        onClick={() => onDelete(msg.id)} 
+                                        className="text-gray-300 hover:text-red-500 transition"
+                                        title="删除"
+                                     >
+                                        <Trash2 size={18} />
+                                     </button>
+                                 </div>
                              </div>
-                             <div className="absolute bottom-2 left-3 text-[10px] text-gray-300 font-bold">{msg.date.slice(5)} {msg.time}</div>
-                             {msg.isPinned && <div className="absolute -top-2 -right-2 text-blue-500 transform rotate-12"><Pin size={16} fill="currentColor" /></div>}
+
+                             {msg.isPinned && <div className="absolute top-0 right-0 p-3 text-blue-500 transform rotate-45"><Pin size={24} fill="currentColor" /></div>}
                         </div>
                     ))}
                 </div>
@@ -1435,7 +1537,9 @@ const CalendarViewContent = ({ periods, conflicts, todos, addTodo, toggleTodo, s
 
     return (
         <div className="h-full bg-white flex flex-col pb-20">
-            <div className="px-6 pt-4 pb-2 flex justify-between items-center">
+            <h2 className="text-2xl font-bold font-cute text-gray-800 text-center pt-4">专属日历</h2>
+
+            <div className="px-6 pt-2 pb-2 flex justify-between items-center">
                 <h2 className="text-xl font-bold font-cute text-gray-800">{year}年 {month + 1}月</h2>
                 <div className="flex gap-2">
                     <button onClick={prevMonth} className="p-2 bg-gray-50 rounded-full hover:bg-rose-50 transition"><ChevronLeft size={20} /></button>
@@ -1473,7 +1577,7 @@ const CalendarViewContent = ({ periods, conflicts, todos, addTodo, toggleTodo, s
                                     {d}
                                     <div className="absolute bottom-1 flex gap-0.5">
                                         {hasTodo && <div className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-yellow-400'}`} />}
-                                        {hasConflict && <div className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-purple-400'}`} />}
+                                        {hasConflict && <div className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-purple-500'}`} />}
                                         {isPredicted && !inPeriod && <div className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-blue-400'}`} />}
                                     </div>
                                 </button>
@@ -1483,6 +1587,7 @@ const CalendarViewContent = ({ periods, conflicts, todos, addTodo, toggleTodo, s
                 </div>
             </div>
 
+            {/* Legend placed below calendar grid as requested */}
             <div className="bg-gray-50 py-3 px-4 flex gap-4 overflow-x-auto text-xs font-bold text-gray-500 justify-center mt-2">
                 <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-red-500"></div>经期</div>
                 <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-blue-400"></div>预测</div>
@@ -1538,4 +1643,4 @@ const CalendarViewContent = ({ periods, conflicts, todos, addTodo, toggleTodo, s
             </div>
         </div>
     );
-};      
+};
