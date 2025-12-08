@@ -553,8 +553,8 @@ export default function App() {
 
     let availableImages = allImages.filter(img => !usedPhotoIds.includes(img.url));
     if (availableImages.length === 0) {
-        setUsedPhotoIds([]);
-        availableImages = allImages;
+        alert("全吐干净啦~");
+        return;
     }
 
     const randomImg = availableImages[Math.floor(Math.random() * availableImages.length)];
@@ -892,11 +892,9 @@ const MemoriesViewContent = ({
   const [commentInputs, setCommentInputs] = useState<{[key:string]: string}>({});
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   
-  // 管理模式状态
   const [isManageMode, setIsManageMode] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
 
-  // 微信风格发布按钮长按逻辑
   const pressTimer = useRef<NodeJS.Timeout | null>(null);
   const isLongPress = useRef(false);
 
@@ -1018,8 +1016,9 @@ const MemoriesViewContent = ({
           pressTimer.current = null;
       }
       if (!isLongPress.current) {
-          // 这里修复白屏：使用 props 传入的 correct function
-          onFileSelect(e); 
+          // 修复点滴页白屏：使用正确的 props 函数名触发
+          // 注意：这里我们触发的是 hidden input 的点击，input 的 onChange 绑定了 onFileSelect
+          document.getElementById('camera-file-input')?.click();
       }
   };
 
@@ -1157,7 +1156,7 @@ const MemoriesViewContent = ({
                >
                    <Camera size={20} />
                </button>
-               {/* Hidden input, triggered programmatically if short press */}
+               {/* 这里的 onChange 绑定了正确的 onFileSelect props */}
                <input id="camera-file-input" type="file" multiple accept="image/*" className="hidden" onChange={onFileSelect} />
             </div>
         </div>
