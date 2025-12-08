@@ -552,6 +552,8 @@ export default function App() {
     }
 
     let availableImages = allImages.filter(img => !usedPhotoIds.includes(img.url));
+    
+    // 如果没有可用照片了，提示
     if (availableImages.length === 0) {
         alert("全吐干净啦~");
         return;
@@ -898,25 +900,10 @@ const MemoriesViewContent = ({
   const pressTimer = useRef<NodeJS.Timeout | null>(null);
   const isLongPress = useRef(false);
 
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [showCoverBtn, setShowCoverBtn] = useState(false);
-
   useEffect(() => {
     const handleClickOutside = () => setActiveMenuId(null);
     document.addEventListener('click', handleClickOutside);
     return () => document.removeEventListener('click', handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-      const container = scrollContainerRef.current;
-      if(!container) return;
-      const handleScroll = () => {
-          if (container.scrollTop < 5) setShowCoverBtn(true);
-          else setShowCoverBtn(false);
-      };
-      handleScroll();
-      container.addEventListener('scroll', handleScroll);
-      return () => container.removeEventListener('scroll', handleScroll);
   }, []);
 
   useEffect(() => {
@@ -1016,9 +1003,9 @@ const MemoriesViewContent = ({
           pressTimer.current = null;
       }
       if (!isLongPress.current) {
-          // 修复点滴页白屏：使用正确的 props 函数名触发
-          // 注意：这里我们触发的是 hidden input 的点击，input 的 onChange 绑定了 onFileSelect
-          document.getElementById('camera-file-input')?.click();
+          // 短按触发，这里使用更可靠的 ref click 或者 querySelector click
+          const fileInput = document.getElementById('camera-file-input') as HTMLInputElement;
+          if (fileInput) fileInput.click();
       }
   };
 
@@ -1118,7 +1105,7 @@ const MemoriesViewContent = ({
   }
 
   return (
-    <div ref={scrollContainerRef} className="h-full bg-white overflow-y-auto pb-24 relative">
+    <div className="h-full bg-white overflow-y-auto pb-24 relative">
         <div className="relative group cursor-pointer" style={{ height: '320px' }} onClick={handleCoverClick}>
              <div className="w-full h-full overflow-hidden relative">
                 <img src={coverUrl} alt="Cover" className="w-full h-full object-cover" />
@@ -1126,16 +1113,6 @@ const MemoriesViewContent = ({
              </div>
              
              <input id="cover-upload" type="file" className="hidden" onChange={onUpdateCover} accept="image/*" />
-
-             <div 
-                className={`absolute bottom-4 right-4 z-20 transition-all duration-300 ${showCoverBtn ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'}`}
-                onClick={(e) => { e.stopPropagation(); document.getElementById('cover-upload')?.click(); }}
-             >
-                <div className="bg-black/30 backdrop-blur-md p-2 rounded-md text-white hover:bg-black/50 transition cursor-pointer flex items-center gap-2">
-                    <Camera size={16} />
-                    <span className="text-xs font-bold">换封面</span>
-                </div>
-            </div>
 
             <div className="absolute -bottom-8 right-4 flex items-end gap-3 z-20 pointer-events-none">
                  <div className="text-white font-bold text-lg drop-shadow-md pb-10 font-cute">我们的点滴</div>
