@@ -41,6 +41,7 @@ const DEFAULT_AVATAR = "https://cdn-icons-png.flaticon.com/512/4140/4140048.png"
 
 // --- Sub Components ---
 
+// 2. 修改：ImageViewer - 取消X按钮，点击任意处关闭
 const ImageViewer = ({ src, onClose, actions }: { src: string; onClose: () => void; actions?: { label: string, onClick: () => void, primary?: boolean }[] }) => {
   const [scale, setScale] = useState(1);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -48,15 +49,33 @@ const ImageViewer = ({ src, onClose, actions }: { src: string; onClose: () => vo
   const handleDoubleTap = (e: React.MouseEvent | React.TouchEvent) => { e.stopPropagation(); setScale(prev => prev > 1 ? 1 : 2.5); };
 
   return createPortal(
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[999] bg-black flex items-center justify-center overflow-hidden" onClick={onClose}>
-      <motion.img src={src} drag={scale > 1} dragConstraints={{ left: -200*scale, right: 200*scale, top: -200*scale, bottom: 200*scale }} style={{ scale }} className="max-w-full max-h-full object-contain touch-none" onClick={(e) => e.stopPropagation()} onDoubleClick={handleDoubleTap} />
+    <motion.div 
+      initial={{ opacity: 0 }} 
+      animate={{ opacity: 1 }} 
+      exit={{ opacity: 0 }} // 保持退出时的淡出动画
+      className="fixed inset-0 z-[999] bg-black flex items-center justify-center overflow-hidden" 
+      onClick={onClose} // 点击背景关闭
+    >
+      <motion.img 
+        src={src} 
+        drag={scale > 1} 
+        dragConstraints={{ left: -200*scale, right: 200*scale, top: -200*scale, bottom: 200*scale }} 
+        style={{ scale }} 
+        className="max-w-full max-h-full object-contain touch-none" 
+        onClick={onClose} // 点击图片也关闭
+        onDoubleClick={handleDoubleTap}
+        layoutId={`image-${src}`} // 可选：如果源也有 layoutId 可以实现更平滑的共享元素动画
+      />
       
+      {/* 按钮组：需要阻止冒泡，防止点击按钮时触发关闭 */}
       {actions && actions.length > 0 && (
-           <div className="absolute bottom-24 left-0 right-0 flex justify-center flex-wrap gap-4 pointer-events-none z-[1000]">
+           <div 
+             className="absolute bottom-24 left-0 right-0 flex justify-center flex-wrap gap-4 pointer-events-none z-[1000]"
+             onClick={(e) => e.stopPropagation()} 
+           >
                {actions.map((action, idx) => (
                    <button 
                         key={idx}
-                        // 1. 修复：改为深色磨砂 (bg-black/30) 以确保在纯白背景上可见
                         className={`px-6 py-2.5 rounded-full text-sm font-bold pointer-events-auto cursor-pointer flex items-center gap-2 backdrop-blur-md border border-white/20 transition active:scale-95 
                         ${action.primary 
                             ? 'bg-black/30 text-white hover:bg-black/40 shadow-lg' 
@@ -69,8 +88,7 @@ const ImageViewer = ({ src, onClose, actions }: { src: string; onClose: () => vo
                ))}
            </div>
       )}
-
-      <div className="absolute bottom-10 left-0 right-0 flex justify-center gap-4 pointer-events-none"><button className="pointer-events-auto bg-white/20 backdrop-blur-md p-3 rounded-full text-white hover:bg-white/30" onClick={onClose}><X size={24}/></button></div>
+      {/* 已移除底部的 X 关闭按钮 */}
     </motion.div>, document.body
   );
 };
@@ -119,11 +137,13 @@ const PolaroidCamera = ({ onTakePhoto, iconUrl, onUploadIcon, onResetIcon }: any
   );
 };
 
+// 1. 修复：拍立得置顶逻辑 (onPointerDown)
 const DraggablePhoto = ({ pin, onUpdate, onDelete, onBringToFront, isFresh = false, date }: any) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const displayCaption = pin.customCaption || '美好回忆';
   
+  // 确保按下时触发置顶
   const handlePointerDown = () => {
       if (onBringToFront) onBringToFront(pin.id);
   };
@@ -615,7 +635,6 @@ export default function App() {
 
   const calculateNextPeriod = () => { if (!periods.length) return null; const next = new Date(parseLocalDate(periods[periods.length - 1].startDate)); next.setDate(next.getDate() + 28); const diffDays = Math.ceil((next.getTime() - new Date().getTime()) / 86400000); return { date: `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-${String(next.getDate()).padStart(2,'0')}`, daysLeft: diffDays }; };
   
-  // 2. 修复：自动重置 + 携带日期
   const handleTakePhoto = () => {
     const allImages = [
         ...memories.filter(m => m.type === 'media').flatMap(m => m.media.map(url => ({ 
@@ -623,14 +642,14 @@ export default function App() {
             caption: m.caption, 
             id: m.id, 
             source: 'memory',
-            date: m.date // 携带日期
+            date: m.date 
         }))), 
         ...albums.flatMap(a => a.media.map(m => ({ 
             url: m.url, 
             caption: m.caption || a.name, 
             id: m.id, 
             source: 'album',
-            date: m.date // 携带日期
+            date: m.date 
         })))
     ];
 
@@ -638,7 +657,6 @@ export default function App() {
     
     let available = allImages.filter(img => !usedPhotoIds.includes(img.url));
     
-    // 自动重置逻辑
     if (available.length === 0) {
         if (pinnedPhotos.length === 0) {
             setUsedPhotoIds([]);
@@ -660,7 +678,7 @@ export default function App() {
         y: (Math.random()*40)-20, 
         rotation: (Math.random()*10)-5, 
         scale: 1,
-        date: randomImg.date // 传递日期
+        date: randomImg.date 
     }]);
   };
 
@@ -686,7 +704,6 @@ export default function App() {
                 <div className="relative w-full h-full bg-rose-50 overflow-hidden">
                   <div className="absolute inset-0 z-0 pointer-events-none opacity-40" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23fbbf24' fill-opacity='0.2'%3E%3Cpath d='M20 20c-2 0-3-2-3-3s2-3 3-3 3 2 3 3-2 3-3 3zm10 0c-2 0-3-2-3-3s2-3 3-3 3 2 3 3-2 3-3 3zm-5 5c-3 0-5-2-5-4s2-3 5-3 5 2 5 3-2 4-5 4zM70 70l-5-5 5-5 5 5-5 5zm20-20c2 0 3 2 3 3s-2 3-3 3-3-2-3-3 2-3 3-3zm-10 0c2 0 3 2 3 3s-2 3-3 3-3-2-3-3 2-3 3-3zm5 5c3 0 5 2 5 4s-2 3-5 3-5-2-5-3 2-4 5-4z'/%3E%3C/g%3E%3C/svg%3E")`, backgroundSize: '100px 100px' }} />
                   
-                  {/* 传递 date 属性 */}
                   <div className="absolute inset-0 z-10 overflow-hidden">{pinnedPhotos.map((pin, i) => (<DraggablePhoto key={pin.id} pin={pin} onUpdate={(id:any, data:any) => setPinnedPhotos(prev => prev.map(p => p.id === id ? {...p, ...data} : p))} onDelete={(id:any) => setPinnedPhotos(prev => prev.filter(p => p.id !== id))} onBringToFront={handleBringToFront} isFresh={i === pinnedPhotos.length - 1 && Date.now() - parseInt(pin.id) < 2000} date={pin.date} />))}</div>
                   
                   <header className="absolute top-0 left-0 right-0 pt-6 px-4 md:pt-8 md:px-8 flex justify-between items-start z-[70] pointer-events-none">
@@ -703,7 +720,7 @@ export default function App() {
                     </div>
                   </header>
                   <div className="absolute top-40 left-8 w-64 z-[60] flex flex-col gap-6 pointer-events-none hidden md:flex"><div className="pointer-events-auto transform transition hover:scale-105 origin-top-left"><MiniCalendar periods={periods} conflicts={conflicts} /></div><div className="bg-white/80 backdrop-blur-sm rounded-2xl p-4 shadow-lg border border-rose-50 pointer-events-auto transform transition hover:scale-105 origin-top-left"><h3 className="text-sm font-bold text-gray-600 mb-2 flex items-center gap-2 font-cute"><CheckSquare size={16} className="text-rose-400"/> 备忘录</h3><div className="space-y-2 max-h-40 overflow-y-auto pr-1">{todos.filter(t => !t.completed).length === 0 && <p className="text-xs text-gray-400 italic">暂无待办</p>}{todos.filter(t => !t.completed).slice(0, 5).map(todo => (<div key={todo.id} onClick={() => setTodos(todos.map(t => t.id === todo.id ? { ...t, completed: !t.completed } : t))} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer group p-1 hover:bg-rose-50 rounded"><div className="w-3.5 h-3.5 rounded border border-rose-300 flex items-center justify-center bg-white group-hover:border-rose-400 shrink-0">{todo.completed && <div className="w-2 h-2 bg-rose-400 rounded-full" />}</div><span className={`font-cute truncate ${todo.completed ? 'line-through text-gray-400' : ''}`}>{todo.text}</span></div>))}</div></div></div>
-                  {/* 新增: 手机端左上角迷你日历 */}
+                  
                   <div className="absolute top-28 left-4 z-[50] md:hidden pointer-events-none origin-top-left transform scale-[0.6]">
                         <div className="pointer-events-auto bg-white/20 backdrop-blur-md rounded-2xl p-2 border border-white/30 shadow-lg">
                             <MiniCalendar periods={periods} conflicts={conflicts} />
