@@ -381,13 +381,15 @@ const MemoriesViewContent = ({
   
   const handleCoverClick = (e: React.MouseEvent) => {
       if (isEditingMomentsTitle) return;
-      setViewingImage(coverUrl); 
+      // 修复：将其包装成列表对象
+      setViewingImage({ list: [coverUrl], index: 0 });
       setViewerActions([{ label: '更换封面', onClick: () => { document.getElementById('cover-upload')?.click(); setViewingImage(null); } }]);
   };
 
   const handleAvatarClick = (e: React.MouseEvent) => {
       e.stopPropagation();
-      setViewingImage(avatarUrl || DEFAULT_AVATAR);
+      // 修复：将其包装成列表对象
+      setViewingImage({ list: [avatarUrl || DEFAULT_AVATAR], index: 0 });
       setViewerActions([{ 
           label: '更换头像', 
           onClick: () => { document.getElementById('avatar-upload')?.click(); setViewingImage(null); }
@@ -466,7 +468,14 @@ const MemoriesViewContent = ({
               <div className="flex gap-2">{isManageMode ? <><button onClick={batchDeletePhotos} className="text-red-500 font-bold text-sm px-3 py-1 bg-red-50 rounded-full">删除({selectedItems.size})</button><button onClick={() => setIsManageMode(false)} className="text-gray-500 font-bold text-sm px-3 py-1">取消</button></> : <><button onClick={() => setIsManageMode(true)} className="p-2 hover:bg-gray-100 rounded-full text-gray-600"><Settings size={20} /></button><label className="p-2 bg-rose-50 text-rose-500 rounded-full cursor-pointer"><Plus size={24} /><input type="file" multiple accept="image/*" className="hidden" onChange={handleAlbumUpload} /></label></>}</div>
           </div>
           <div className="p-4 grid grid-cols-3 md:grid-cols-5 gap-2 overflow-y-auto">{selectedAlbum.media.map((item, idx) => (<div key={idx} className="aspect-square rounded-xl overflow-hidden bg-gray-100 relative group cursor-pointer" onClick={() => isManageMode ? setSelectedItems(prev => { const n = new Set(prev); n.has(item.id) ? n.delete(item.id) : n.add(item.id); return n; }) : handleViewImage(item.url, 'album', selectedAlbum.media.map(m => m.url))}><img src={item.url} className={`w-full h-full object-cover transition ${isManageMode && selectedItems.has(item.id) ? 'opacity-50 scale-90' : ''}`} loading="lazy" />{isManageMode && (<div className="absolute top-2 right-2">{selectedItems.has(item.id) ? <CheckCircle className="text-rose-500 fill-white" /> : <div className="w-5 h-5 rounded-full border-2 border-white/80" />}</div>)}</div>))}</div>
-          {viewingImage && <ImageViewer images={viewingImage?.list || []} initialIndex={viewingImage?.index || 0} onClose={() => setViewingImage(null)} actions={viewerActions} />}
+          {viewingImage && typeof viewingImage === 'object' && 'list' in viewingImage && (
+            <ImageViewer 
+                images={viewingImage.list} 
+                initialIndex={viewingImage.index} 
+                onClose={() => setViewingImage(null)} 
+                actions={viewerActions} 
+            />
+          )}
       </div>
   );
 
