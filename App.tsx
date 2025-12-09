@@ -259,6 +259,13 @@ const MemoriesViewContent = ({
 
   const handlePressEnd = (e: React.MouseEvent | React.TouchEvent) => {
       e.stopPropagation();
+    // --- 修复开始：解决双重触发问题 ---
+      // 如果检测到是触摸结束事件 (touchend)，调用 preventDefault()
+      // 这会告诉浏览器：“我已经处理了这个点击，不要再自动模拟一次鼠标点击了”
+      if (e.type === 'touchend') {
+          e.preventDefault();
+      }
+      // --- 修复结束 ---
       if (pressTimer.current) {
           clearTimeout(pressTimer.current);
           pressTimer.current = null;
