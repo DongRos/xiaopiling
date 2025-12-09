@@ -399,12 +399,10 @@ const MemoriesViewContent = ({
                  </div>
             </div>
 
-            <div className="absolute top-4 right-4 z-30">
+            <div className="absolute top-6 right-4 z-30">
                 <button 
                     onMouseDown={handlePressStart}
                     onMouseUp={handlePressEnd}
-                    onTouchStart={handlePressStart}
-                    onTouchEnd={handlePressEnd}
                     onContextMenu={(e) => e.preventDefault()}
                     className="bg-black/20 p-2 rounded-full text-white hover:bg-black/40 backdrop-blur-sm pointer-events-auto transition-transform active:scale-90 select-none"
                 >
