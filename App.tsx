@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { App as CapacitorApp } from '@capacitor/app';
 import { createPortal } from 'react-dom';
 import { 
   Heart, Camera, Calendar as CalendarIcon, Zap, CheckSquare, Cat, Upload, Trash2, X,
@@ -636,6 +637,32 @@ export default function App() {
   useSafeStorage('pinnedPhotos', pinnedPhotos); useSafeStorage('albums', albums); useSafeStorage('memories', memories); useSafeStorage('todos', todos); useSafeStorage('periods', periods); useSafeStorage('conflicts', conflicts); useSafeStorage('messages', messages); useSafeStorage('cameraIcon', cameraIcon); useSafeStorage('momentsCover', momentsCover); useSafeStorage('avatarUrl', avatarUrl);
   useEffect(() => localStorage.setItem('appTitle', appTitle), [appTitle]); useEffect(() => localStorage.setItem('momentsTitle', momentsTitle), [momentsTitle]); useEffect(() => localStorage.setItem('anniversaryDate', anniversaryDate), [anniversaryDate]);
 
+  // 处理安卓物理返回键
+  useEffect(() => {
+    // 定义监听函数
+    const handleBackButton = async () => {
+      if (activePage !== Page.HOME) {
+        // 如果当前不是首页，就返回首页
+        setActivePage(Page.HOME);
+      } else {
+        // 如果已经是首页，则退出 App
+        const info = await CapacitorApp.getInfo();
+        CapacitorApp.exitApp();
+      }
+    };
+
+    // 添加监听器
+    let listenerHandle: any;
+    const setupListener = async () => {
+        listenerHandle = await CapacitorApp.addListener('backButton', handleBackButton);
+    };
+    setupListener();
+
+    // 清理监听器
+    return () => {
+        if (listenerHandle) listenerHandle.remove();
+    };
+  }, [activePage]); // 依赖 activePage，这样能获取到最新的页面状态
   const calculateNextPeriod = () => { if (!periods.length) return null; const next = new Date(parseLocalDate(periods[periods.length - 1].startDate)); next.setDate(next.getDate() + 28); const diffDays = Math.ceil((next.getTime() - new Date().getTime()) / 86400000); return { date: `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-${String(next.getDate()).padStart(2,'0')}`, daysLeft: diffDays }; };
   
   const handleTakePhoto = () => {
