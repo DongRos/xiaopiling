@@ -43,7 +43,6 @@ const ImageViewer = ({ src, onClose, onAction, actionLabel }: { src: string; onC
   const [scale, setScale] = useState(1);
   const containerRef = useRef<HTMLDivElement>(null);
   
-  // 简化的手势逻辑
   const handleDoubleTap = (e: React.MouseEvent | React.TouchEvent) => { e.stopPropagation(); setScale(prev => prev > 1 ? 1 : 2.5); };
 
   return createPortal(
@@ -115,8 +114,9 @@ const DraggablePhoto = ({ pin, onUpdate, onDelete, isFresh = false, date }: any)
       {isEditing ? (
         <input autoFocus className="w-full text-center font-cute text-gray-700 bg-rose-50 border-none focus:ring-0 text-sm p-1 rounded" value={editValue} onChange={(e) => setEditValue(e.target.value)} onBlur={() => { setIsEditing(false); onUpdate(pin.id, { customCaption: editValue }); }} onKeyDown={(e) => { if(e.key === 'Enter') { setIsEditing(false); onUpdate(pin.id, { customCaption: editValue }); }}} onClick={(e) => e.stopPropagation()} />
       ) : (
-        <div className="text-center w-full" onDoubleClick={(e) => { e.stopPropagation(); setEditValue(displayCaption); setIsEditing(true); }}>
+        <div className="text-center w-full relative group/edit" onDoubleClick={(e) => { e.stopPropagation(); setEditValue(displayCaption); setIsEditing(true); }}>
           <p className="font-cute text-gray-700 text-sm truncate px-1 cursor-text">{displayCaption}</p>
+          <button onClick={(e) => { e.stopPropagation(); setEditValue(displayCaption); setIsEditing(true); }} className="absolute -right-2 -top-1 p-1 bg-white rounded-full text-gray-400 shadow-sm z-30 opacity-80 hover:text-rose-500"><Edit2 size={12} /></button>
           <p className="text-[10px] text-gray-400 font-sans mt-0.5">{date || 'Just now'}</p>
         </div>
       )}
@@ -171,7 +171,7 @@ const AnniversaryTimer = ({ startDate, onSetDate }: any) => {
     );
 };
 
-// --- Page Content Components (Defined BEFORE App to prevent white screen) ---
+// --- Page Content Components ---
 
 const MemoriesViewContent = ({
   memories, albums, setAlbums, handleLike, handleComment, onFileSelect, onTextPost, showUploadModal, setShowUploadModal,
@@ -248,7 +248,10 @@ const MemoriesViewContent = ({
                     {isEditingMomentsTitle ? (
                          <input value={momentsTitle} onChange={(e) => setMomentsTitle(e.target.value)} onBlur={() => setIsEditingMomentsTitle(false)} onKeyDown={(e) => { if(e.key === 'Enter') setIsEditingMomentsTitle(false); }} autoFocus className="text-white font-bold text-lg drop-shadow-md pb-10 font-cute bg-transparent outline-none border-b border-white w-40 text-right" />
                     ) : (
-                         <div onDoubleClick={() => setIsEditingMomentsTitle(true)} className="text-white font-bold text-lg drop-shadow-md pb-10 font-cute cursor-pointer select-none" title="双击修改标题">{momentsTitle}</div>
+                         <div className="flex items-center gap-2 pb-10">
+                            <div onDoubleClick={() => setIsEditingMomentsTitle(true)} className="text-white font-bold text-lg drop-shadow-md font-cute cursor-pointer select-none" title="双击修改标题">{momentsTitle}</div>
+                            <button onClick={() => setIsEditingMomentsTitle(true)} className="p-1.5 bg-black/20 rounded-full text-white/80 hover:bg-black/40 backdrop-blur-sm"><Edit2 size={14} /></button>
+                         </div>
                     )}
                  </div>
                  <div className="bg-white p-1 rounded-xl shadow-lg pointer-events-none"><div className="w-16 h-16 bg-rose-100 rounded-lg flex items-center justify-center overflow-hidden"><span className="text-3xl">💑</span></div></div>
@@ -286,7 +289,7 @@ const MemoriesViewContent = ({
                       <div onClick={() => setIsCreatingAlbum(true)} className="flex items-center gap-2 text-gray-500 cursor-pointer hover:text-rose-500"><FolderPlus size={20} /><span className="text-sm font-bold">新建相册</span></div>
                       <button onClick={() => setIsManageMode(!isManageMode)} className={`text-sm font-bold ${isManageMode ? 'text-rose-500' : 'text-gray-400'}`}>{isManageMode ? '完成' : '管理'}</button>
                   </div>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                       {albums.map((album: Album) => (
                           <div key={album.id} onClick={() => isManageMode ? setSelectedItems(p => { const n = new Set(p); n.has(album.id) ? n.delete(album.id) : n.add(album.id); return n; }) : setSelectedAlbum(album)} className={`aspect-square bg-white rounded-3xl shadow-sm border border-gray-100 p-2 relative group overflow-hidden cursor-pointer transition ${isManageMode && selectedItems.has(album.id) ? 'ring-2 ring-rose-500 bg-rose-50' : ''}`}>
                               {album.coverUrl ? (<img src={album.coverUrl} className="w-full h-full object-cover rounded-2xl" />) : (<div className="w-full h-full bg-gray-50 rounded-2xl flex items-center justify-center text-xs text-gray-400 border border-gray-100">暂无封面</div>)}
@@ -324,7 +327,6 @@ const MemoriesViewContent = ({
     </div>
   );
 };
-
 const CycleViewContent = ({ periods, nextPeriod, addPeriod, deletePeriod }: any) => {
   const handleLogPeriod = () => { if(confirm(`记录今天 (${getBeijingDateString()}) 为大姨妈开始日？`)) addPeriod(getBeijingDateString()); };
   return (
@@ -349,6 +351,7 @@ const CycleViewContent = ({ periods, nextPeriod, addPeriod, deletePeriod }: any)
     </div>
   );
 };
+
 const ConflictViewContent = ({ judgeConflict, conflicts, setConflicts }: any) => {
     const [reason, setReason] = useState(''); const [hisPoint, setHisPoint] = useState(''); const [herPoint, setHerPoint] = useState(''); const [isJudging, setIsJudging] = useState(false);
     const handleJudge = async () => { if(!reason || !hisPoint || !herPoint) return alert("请填写完整信息喵！"); setIsJudging(true); const result = await judgeConflict(reason, hisPoint, herPoint); setConflicts([{ id: Date.now().toString(), date: getBeijingDateString(), reason, hisPoint, herPoint, aiResponse: result, isPinned: false, isFavorite: false }, ...conflicts]); setIsJudging(false); setReason(''); setHisPoint(''); setHerPoint(''); };
@@ -392,8 +395,17 @@ const CalendarViewContent = ({ periods, conflicts, todos, addTodo, toggleTodo }:
     return (
         <div className="h-full bg-white flex flex-col pb-20"><h2 className="text-2xl font-bold font-cute text-gray-800 text-center pt-4">专属日历</h2>
             <div className="px-6 pt-2 pb-2 flex justify-between items-center"><h2 className="text-xl font-bold font-cute text-gray-800">{year}年 {month + 1}月</h2><div className="flex gap-2"><button onClick={() => setCurrentDate(new Date(year, month - 1, 1))} className="p-2 bg-gray-50 rounded-full hover:bg-rose-50 transition"><ChevronLeft size={20} /></button><button onClick={() => setCurrentDate(new Date(year, month + 1, 1))} className="p-2 bg-gray-50 rounded-full hover:bg-rose-50 transition"><ChevronRight size={20} /></button></div></div>
-            <div className="px-4"><div className="grid grid-cols-7 mb-2">{['日','一','二','三','四','五','六'].map(d => <div key={d} className="text-center text-xs text-gray-400 font-bold py-2">{d}</div>)}</div><div className="grid grid-cols-7 gap-y-2">{days.map((d, i) => { if (!d) return <div key={i} />; const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`; return (<div key={i} className="flex justify-center relative"><button onClick={() => setSelectedDate(dateStr)} className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold transition-all relative ${dateStr === selectedDate ? 'bg-gray-800 text-white shadow-lg scale-110 z-10' : 'text-gray-700 hover:bg-gray-50'} ${dateStr === getBeijingDateString() && dateStr !== selectedDate ? 'text-rose-500 font-bold' : ''}`}>{d}<div className="absolute bottom-1 flex gap-0.5">{isPeriod(dateStr) && <div className={`w-1 h-1 rounded-full bg-red-500`} />}{todos.some((t:any) => t.date === dateStr && !t.completed) && <div className={`w-1 h-1 rounded-full bg-yellow-400`} />}{conflicts.some((c:any) => c.date === dateStr) && <div className={`w-1 h-1 rounded-full bg-purple-500`} />}</div></button></div>) })}</div></div>
-            <div className="flex-1 bg-gray-50 mt-4 rounded-t-3xl p-6 overflow-y-auto"><div className="flex justify-between items-center mb-4"><h3 className="font-bold text-gray-800 font-cute flex items-center gap-2"><span className="text-2xl">{selectedDate.split('-')[2]}</span><span className="text-sm text-gray-400">日事项</span></h3><button onClick={() => addTodo(prompt("添加待办事项:"), selectedDate)} className="text-rose-500 text-sm font-bold flex items-center gap-1 bg-white px-3 py-1.5 rounded-full shadow-sm"><Plus size={16} /> 添加</button></div><div className="space-y-3">{isPeriod(selectedDate) && (<div className="bg-red-100 text-red-600 p-3 rounded-xl text-sm font-bold flex items-center gap-2"><Heart size={16} fill="currentColor" /> 大姨妈造访中</div>)}{dayConflicts.map((c: ConflictRecord) => (<div key={c.id} className="bg-purple-50 text-purple-900 p-3 rounded-xl text-sm border border-purple-100"><div className="font-bold flex items-center gap-2 mb-1"><Gavel size={14} /> 喵喵法官裁决</div>{c.reason}</div>))}{dayTodos.map((todo: TodoItem) => (<div key={todo.id} onClick={() => toggleTodo(todo.id)} className="bg-white p-3 rounded-xl flex items-center gap-3 shadow-sm cursor-pointer active:scale-98 transition"><div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${todo.completed ? 'border-green-500 bg-green-500' : 'border-gray-200'}`}>{todo.completed && <CheckSquare size={12} className="text-white" />}</div><span className={`text-sm ${todo.completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{todo.text}</span></div>))}{!dayTodos.length && !dayConflicts.length && !isPeriod(selectedDate) && (<div className="text-center text-gray-400 text-sm py-8">今天没有安排哦 ~</div>)}</div></div>
+            <div className="px-4">
+                <div className="grid grid-cols-7 mb-2">{['日','一','二','三','四','五','六'].map(d => <div key={d} className="text-center text-xs text-gray-400 font-bold py-2">{d}</div>)}</div>
+                <div className="grid grid-cols-7 gap-y-2">{days.map((d, i) => { if (!d) return <div key={i} />; const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`; return (<div key={i} className="flex justify-center relative"><button onClick={() => setSelectedDate(dateStr)} className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold transition-all relative ${dateStr === selectedDate ? 'bg-gray-800 text-white shadow-lg scale-110 z-10' : 'text-gray-700 hover:bg-gray-50'} ${dateStr === getBeijingDateString() && dateStr !== selectedDate ? 'text-rose-500 font-bold' : ''}`}>{d}<div className="absolute bottom-1 flex gap-0.5">{isPeriod(dateStr) && <div className={`w-1 h-1 rounded-full bg-red-500`} />}{todos.some((t:any) => t.date === dateStr && !t.completed) && <div className={`w-1 h-1 rounded-full bg-yellow-400`} />}{conflicts.some((c:any) => c.date === dateStr) && <div className={`w-1 h-1 rounded-full bg-purple-500`} />}</div></button></div>) })}</div>
+                {/* Legend Added Here */}
+                <div className="flex justify-center gap-4 py-2 mt-2 border-t border-gray-50">
+                    <div className="flex items-center gap-1 text-[10px] text-gray-400 font-bold"><div className="w-2 h-2 rounded-full bg-red-500"></div>经期</div>
+                    <div className="flex items-center gap-1 text-[10px] text-gray-400 font-bold"><div className="w-2 h-2 rounded-full bg-yellow-400"></div>待办</div>
+                    <div className="flex items-center gap-1 text-[10px] text-gray-400 font-bold"><div className="w-2 h-2 rounded-full bg-purple-500"></div>吵架</div>
+                </div>
+            </div>
+            <div className="flex-1 bg-gray-50 mt-2 rounded-t-3xl p-6 overflow-y-auto"><div className="flex justify-between items-center mb-4"><h3 className="font-bold text-gray-800 font-cute flex items-center gap-2"><span className="text-2xl">{selectedDate.split('-')[2]}</span><span className="text-sm text-gray-400">日事项</span></h3><button onClick={() => addTodo(prompt("添加待办事项:"), selectedDate)} className="text-rose-500 text-sm font-bold flex items-center gap-1 bg-white px-3 py-1.5 rounded-full shadow-sm"><Plus size={16} /> 添加</button></div><div className="space-y-3">{isPeriod(selectedDate) && (<div className="bg-red-100 text-red-600 p-3 rounded-xl text-sm font-bold flex items-center gap-2"><Heart size={16} fill="currentColor" /> 大姨妈造访中</div>)}{dayConflicts.map((c: ConflictRecord) => (<div key={c.id} className="bg-purple-50 text-purple-900 p-3 rounded-xl text-sm border border-purple-100"><div className="font-bold flex items-center gap-2 mb-1"><Gavel size={14} /> 喵喵法官裁决</div>{c.reason}</div>))}{dayTodos.map((todo: TodoItem) => (<div key={todo.id} onClick={() => toggleTodo(todo.id)} className="bg-white p-3 rounded-xl flex items-center gap-3 shadow-sm cursor-pointer active:scale-98 transition"><div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${todo.completed ? 'border-green-500 bg-green-500' : 'border-gray-200'}`}>{todo.completed && <CheckSquare size={12} className="text-white" />}</div><span className={`text-sm ${todo.completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{todo.text}</span></div>))}{!dayTodos.length && !dayConflicts.length && !isPeriod(selectedDate) && (<div className="text-center text-gray-400 text-sm py-8">今天没有安排哦 ~</div>)}</div></div>
         </div>
     );
 };
@@ -441,7 +453,7 @@ export default function App() {
     setPinnedPhotos(prev => [...prev, { id: Date.now().toString(), memoryId: randomImg.id, source: randomImg.source as any, mediaUrl: randomImg.url, customCaption: randomImg.caption, x: (Math.random()*40)-20, y: (Math.random()*40)-20, rotation: (Math.random()*10)-5, scale: 1 }]);
   };
 
-  const handleClearBoard = () => { setPinnedPhotos([]); setUsedPhotoIds([]); }; // 修复：重置已使用的照片
+  const handleClearBoard = () => { setPinnedPhotos([]); setUsedPhotoIds([]); };
 
   return (
     <div className="font-sans text-gray-800 bg-cream min-h-[100dvh]">
@@ -454,7 +466,12 @@ export default function App() {
                   <div className="absolute inset-0 z-10 overflow-hidden">{pinnedPhotos.map((pin, i) => (<DraggablePhoto key={pin.id} pin={pin} onUpdate={(id:any, data:any) => setPinnedPhotos(prev => prev.map(p => p.id === id ? {...p, ...data} : p))} onDelete={(id:any) => setPinnedPhotos(prev => prev.filter(p => p.id !== id))} isFresh={i === pinnedPhotos.length - 1 && Date.now() - parseInt(pin.id) < 2000} />))}</div>
                   <header className="absolute top-0 left-0 right-0 pt-6 px-4 md:pt-8 md:px-8 flex justify-between items-start z-[70] pointer-events-none">
                     <div className="pointer-events-auto">
-                      {isEditingTitle ? (<input value={appTitle} onChange={(e) => setAppTitle(e.target.value)} onBlur={() => setIsEditingTitle(false)} onKeyDown={(e) => { if(e.key === 'Enter') setIsEditingTitle(false); }} autoFocus className="text-4xl md:text-6xl font-cute text-rose-500 drop-shadow-sm -rotate-2 bg-transparent border-b-2 border-rose-300 outline-none w-48 md:w-80 text-center" />) : (<h1 onDoubleClick={() => setIsEditingTitle(true)} className="text-4xl md:text-6xl font-cute text-rose-500 drop-shadow-sm -rotate-2 cursor-pointer select-none" title="双击修改">{appTitle}</h1>)}
+                      {isEditingTitle ? (<input value={appTitle} onChange={(e) => setAppTitle(e.target.value)} onBlur={() => setIsEditingTitle(false)} onKeyDown={(e) => { if(e.key === 'Enter') setIsEditingTitle(false); }} autoFocus className="text-4xl md:text-6xl font-cute text-rose-500 drop-shadow-sm -rotate-2 bg-transparent border-b-2 border-rose-300 outline-none w-48 md:w-80 text-center" />) : (
+                          <div className="flex items-center gap-2">
+                             <h1 onDoubleClick={() => setIsEditingTitle(true)} className="text-4xl md:text-6xl font-cute text-rose-500 drop-shadow-sm -rotate-2 cursor-pointer select-none" title="双击修改">{appTitle}</h1>
+                             <button onClick={() => setIsEditingTitle(true)} className="p-1.5 bg-white/50 rounded-full text-rose-500 hover:bg-white backdrop-blur-sm shadow-sm"><Edit2 size={16} /></button>
+                          </div>
+                      )}
                       <p className="text-rose-400 text-xs md:text-sm mt-1 font-cute ml-1 md:ml-2 tracking-widest bg-white/50 backdrop-blur-sm inline-block px-2 rounded-lg">LOVE SPACE</p>
                     </div>
                     <div className="flex flex-col md:flex-row gap-2 md:gap-4 items-end pointer-events-auto">
