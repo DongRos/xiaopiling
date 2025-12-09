@@ -87,9 +87,12 @@ const useSafeStorage = (key: string, value: any) => {
 const DEFAULT_CAMERA_ICON = pailideIcon || "https://images.unsplash.com/photo-1526045431048-f857369baa09?auto=format&fit=crop&w=600&q=80";
 const DEFAULT_COVER = "https://images.unsplash.com/photo-1516962215378-7fa2e137ae91?auto=format&fit=crop&w=1000&q=80";
 
-// --- Components ---
+// --- Components (ImageViewer, Navbar, PolaroidCamera, DraggablePhoto, MiniCalendar, AnniversaryTimer) ---
+// Note: These helper components remain largely unchanged from the original file. 
+// For brevity in this response, I am focusing on the modifications in the main App logic and Views.
+// Please assume the helper components (ImageViewer, Navbar, PolaroidCamera, DraggablePhoto, MiniCalendar, AnniversaryTimer) are defined here as before.
 
-// 1. Image Viewer
+// ... [ImageViewer Component Code] ...
 const ImageViewer = ({ src, onClose, onAction, actionLabel }: { src: string; onClose: () => void; onAction?: () => void; actionLabel?: string }) => {
   const [scale, setScale] = useState(1);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -185,7 +188,6 @@ const ImageViewer = ({ src, onClose, onAction, actionLabel }: { src: string; onC
   );
 };
 
-// 2. Navigation
 const Navbar = ({ active, setPage }: { active: Page, setPage: (p: Page) => void }) => {
   const navItems = [
     { id: Page.HOME, icon: <Cat size={24} />, label: '小屁铃' },
@@ -216,7 +218,6 @@ const Navbar = ({ active, setPage }: { active: Page, setPage: (p: Page) => void 
   );
 };
 
-// 3. Polaroid Camera
 const PolaroidCamera = ({ 
   onTakePhoto, 
   iconUrl, 
@@ -275,7 +276,6 @@ const PolaroidCamera = ({
   );
 };
 
-// 4. Draggable Photo
 interface DraggablePhotoProps {
   pin: PinnedPhoto;
   onUpdate: (id: string, changes: Partial<PinnedPhoto>) => void;
@@ -354,7 +354,7 @@ const DraggablePhoto: React.FC<DraggablePhotoProps> = ({ pin, onUpdate, onDelete
         />
       ) : (
         <div className="text-center w-full" onDoubleClick={(e) => { e.stopPropagation(); startEditing(); }}>
-          <p className="font-cute text-gray-700 text-sm truncate px-1 cursor-text">{displayCaption}</p>
+          <p className="font-cute text-gray-700 text-sm truncate px-1 cursor-text" title="双击修改文字">{displayCaption}</p>
           <p className="text-[10px] text-gray-400 font-sans mt-0.5">{date || 'Just now'}</p>
         </div>
       )}
@@ -370,7 +370,6 @@ const DraggablePhoto: React.FC<DraggablePhotoProps> = ({ pin, onUpdate, onDelete
   );
 };
 
-// 5. Mini Calendar
 const MiniCalendar = ({ periods, conflicts }: { periods: PeriodEntry[], conflicts: ConflictRecord[] }) => {
     const today = new Date();
     const daysInMonth = getDaysInMonth(today.getFullYear(), today.getMonth());
@@ -416,7 +415,6 @@ const MiniCalendar = ({ periods, conflicts }: { periods: PeriodEntry[], conflict
     );
 };
 
-// Anniversary Timer Component
 const AnniversaryTimer = ({ startDate, onSetDate }: { startDate: string, onSetDate: () => void }) => {
     const [diff, setDiff] = useState({ days: 0, seconds: 0 });
 
@@ -469,6 +467,7 @@ export default function App() {
   const [cameraIcon, setCameraIcon] = useState<string>(DEFAULT_CAMERA_ICON);
   const [appTitle, setAppTitle] = useState("小屁铃");
   const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [momentsTitle, setMomentsTitle] = useState("我们的点滴"); // 新增：朋友圈标题状态
   const [anniversaryDate, setAnniversaryDate] = useState("2023-01-01");
 
   // Logic for Polaroid (No Repeats)
@@ -524,6 +523,7 @@ export default function App() {
     const savedPinned = localStorage.getItem('pinnedPhotos'); if(savedPinned) try { setPinnedPhotos(JSON.parse(savedPinned)); } catch(e) {}
     const savedCameraIcon = localStorage.getItem('cameraIcon'); if(savedCameraIcon) setCameraIcon(savedCameraIcon);
     const savedTitle = localStorage.getItem('appTitle'); if(savedTitle) setAppTitle(savedTitle);
+    const savedMomentsTitle = localStorage.getItem('momentsTitle'); if(savedMomentsTitle) setMomentsTitle(savedMomentsTitle); // 加载朋友圈标题
     const savedMessages = localStorage.getItem('messages'); if(savedMessages) try { setMessages(JSON.parse(savedMessages)); } catch(e) {}
     const savedCover = localStorage.getItem('momentsCover'); if(savedCover) setMomentsCover(savedCover);
     const savedAnniversary = localStorage.getItem('anniversaryDate'); if(savedAnniversary) setAnniversaryDate(savedAnniversary);
@@ -539,6 +539,7 @@ export default function App() {
   useSafeStorage('cameraIcon', cameraIcon);
   useSafeStorage('momentsCover', momentsCover);
   useEffect(() => localStorage.setItem('appTitle', appTitle), [appTitle]);
+  useEffect(() => localStorage.setItem('momentsTitle', momentsTitle), [momentsTitle]); // 保存朋友圈标题
   useEffect(() => localStorage.setItem('anniversaryDate', anniversaryDate), [anniversaryDate]);
 
   const handleTakePhoto = () => {
@@ -555,7 +556,7 @@ export default function App() {
     
     // 如果没有可用照片了，提示
     if (availableImages.length === 0) {
-        alert("全吐干净啦~");
+        alert("全部吐完啦~");
         return;
     }
 
@@ -576,7 +577,10 @@ export default function App() {
     setPinnedPhotos(prev => [...prev, newPin]);
   };
 
-  const handleClearBoard = () => setPinnedPhotos([]);
+  const handleClearBoard = () => {
+      setPinnedPhotos([]);
+      setUsedPhotoIds([]); // 重置已吐出的照片记录
+  };
 
   const handleCameraIconUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -851,6 +855,8 @@ export default function App() {
                               uploadCaption={uploadCaption} setUploadCaption={setUploadCaption} uploadType={uploadType}
                               confirmUpload={confirmMomentsUpload} coverUrl={momentsCover} onUpdateCover={handleUpdateCover}
                               onDeleteMemory={handleDeleteMemory}
+                              momentsTitle={momentsTitle}
+                              setMomentsTitle={setMomentsTitle}
                           />
                        )}
                        {activePage === Page.CYCLE && <CycleViewContent periods={periods} nextPeriod={nextPeriod} addPeriod={addPeriod} deletePeriod={deletePeriod} />}
@@ -876,14 +882,14 @@ export default function App() {
       <Navbar active={activePage} setPage={setActivePage} />
     </div>
   );
-}
-// --- Content Components ---
+  // --- Content Components ---
 
 const MemoriesViewContent = ({
   memories, albums, setAlbums, handleLike, handleComment,
   onFileSelect, onTextPost, showUploadModal, setShowUploadModal,
   uploadImages, setUploadImages, uploadCaption, setUploadCaption,
-  uploadType, confirmUpload, coverUrl, onUpdateCover, onDeleteMemory
+  uploadType, confirmUpload, coverUrl, onUpdateCover, onDeleteMemory,
+  momentsTitle, setMomentsTitle // 接收新传入的 props
 }: any) => {
   const [activeTab, setActiveTab] = useState<'moments' | 'albums'>('moments');
   const [viewingImage, setViewingImage] = useState<string | null>(null);
@@ -893,6 +899,9 @@ const MemoriesViewContent = ({
   const [newAlbumName, setNewAlbumName] = useState('');
   const [commentInputs, setCommentInputs] = useState<{[key:string]: string}>({});
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  
+  // 新增：朋友圈标题编辑状态
+  const [isEditingMomentsTitle, setIsEditingMomentsTitle] = useState(false);
   
   const [isManageMode, setIsManageMode] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
@@ -1003,7 +1012,6 @@ const MemoriesViewContent = ({
           pressTimer.current = null;
       }
       if (!isLongPress.current) {
-          // 短按触发，这里使用更可靠的 ref click 或者 querySelector click
           const fileInput = document.getElementById('camera-file-input') as HTMLInputElement;
           if (fileInput) fileInput.click();
       }
@@ -1028,6 +1036,7 @@ const MemoriesViewContent = ({
       setActiveMenuId(activeMenuId === id ? null : id);
   };
   const handleCoverClick = (e: React.MouseEvent) => {
+      if (isEditingMomentsTitle) return; // 如果正在编辑标题，不触发换封面
       e.stopPropagation();
       setViewingImage(coverUrl);
       setViewerAction({
@@ -1114,9 +1123,30 @@ const MemoriesViewContent = ({
              
              <input id="cover-upload" type="file" className="hidden" onChange={onUpdateCover} accept="image/*" />
 
-            <div className="absolute -bottom-8 right-4 flex items-end gap-3 z-20 pointer-events-none">
-                 <div className="text-white font-bold text-lg drop-shadow-md pb-10 font-cute">我们的点滴</div>
-                 <div className="bg-white p-1 rounded-xl shadow-lg pointer-events-auto">
+            <div className="absolute -bottom-8 right-4 flex items-end gap-3 z-20">
+                 {/* 修改处：标题可双击编辑 */}
+                 <div className="pointer-events-auto" onClick={(e) => e.stopPropagation()}>
+                    {isEditingMomentsTitle ? (
+                         <input 
+                            value={momentsTitle}
+                            onChange={(e) => setMomentsTitle(e.target.value)}
+                            onBlur={() => setIsEditingMomentsTitle(false)}
+                            onKeyDown={(e) => { if(e.key === 'Enter') setIsEditingMomentsTitle(false); }}
+                            autoFocus
+                            className="text-white font-bold text-lg drop-shadow-md pb-10 font-cute bg-transparent outline-none border-b border-white w-40 text-right"
+                         />
+                    ) : (
+                         <div 
+                            onDoubleClick={() => setIsEditingMomentsTitle(true)}
+                            className="text-white font-bold text-lg drop-shadow-md pb-10 font-cute cursor-pointer select-none"
+                            title="双击修改标题"
+                         >
+                            {momentsTitle}
+                         </div>
+                    )}
+                 </div>
+
+                 <div className="bg-white p-1 rounded-xl shadow-lg pointer-events-none">
                     <div className="w-16 h-16 bg-rose-100 rounded-lg flex items-center justify-center overflow-hidden">
                         <span className="text-3xl">💑</span>
                     </div>
@@ -1133,7 +1163,6 @@ const MemoriesViewContent = ({
                >
                    <Camera size={20} />
                </button>
-               {/* 这里的 onChange 绑定了正确的 onFileSelect props */}
                <input id="camera-file-input" type="file" multiple accept="image/*" className="hidden" onChange={onFileSelect} />
             </div>
         </div>
@@ -1879,3 +1908,4 @@ const CalendarViewContent = ({ periods, conflicts, todos, addTodo, toggleTodo, s
         </div>
     );
 };
+}
