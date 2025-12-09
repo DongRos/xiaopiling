@@ -105,7 +105,9 @@ const Navbar = ({ active, setPage }: { active: Page, setPage: (p: Page) => void 
     { id: Page.CALENDAR, icon: <CalendarIcon size={24} />, label: '日历' },
   ];
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t border-rose-100 shadow-[0_-5px_15px_rgba(255,241,242,0.8)] z-[100] pb-[env(safe-area-inset-bottom)]">
+    <nav 
+      className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t border-rose-100 shadow-[0_-5px_15px_rgba(255,241,242,0.8)] z-[100]"
+      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
       {/* 建议给内部容器也增加一点高度缓冲，或者保持原样 */}
       <div className="flex justify-around items-center h-16 max-w-2xl mx-auto px-1">
         {navItems.map((item) => (
