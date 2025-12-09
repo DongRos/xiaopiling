@@ -56,10 +56,10 @@ const ImageViewer = ({ src, onClose, actions }: { src: string; onClose: () => vo
                {actions.map((action, idx) => (
                    <button 
                         key={idx}
-                        // 修改 1: 将 primary 按钮样式改为磨砂透明 (bg-white/20 backdrop-blur-md)
+                        // 1. 修复：改为深色磨砂 (bg-black/30) 以确保在纯白背景上可见
                         className={`px-6 py-2.5 rounded-full text-sm font-bold pointer-events-auto cursor-pointer flex items-center gap-2 backdrop-blur-md border border-white/20 transition active:scale-95 
                         ${action.primary 
-                            ? 'bg-white/20 text-white hover:bg-white/30 shadow-lg border-white/40' 
+                            ? 'bg-black/30 text-white hover:bg-black/40 shadow-lg' 
                             : 'bg-black/40 text-white hover:bg-black/60'}`} 
                         onClick={(e) => { e.stopPropagation(); action.onClick(); }}
                     >
@@ -615,16 +615,34 @@ export default function App() {
 
   const calculateNextPeriod = () => { if (!periods.length) return null; const next = new Date(parseLocalDate(periods[periods.length - 1].startDate)); next.setDate(next.getDate() + 28); const diffDays = Math.ceil((next.getTime() - new Date().getTime()) / 86400000); return { date: `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-${String(next.getDate()).padStart(2,'0')}`, daysLeft: diffDays }; };
   
+  // 2. 修复：自动重置 + 携带日期
   const handleTakePhoto = () => {
-    const allImages = [...memories.filter(m => m.type === 'media').flatMap(m => m.media.map(url => ({ url, caption: m.caption, id: m.id, source: 'memory' }))), ...albums.flatMap(a => a.media.map(m => ({ url: m.url, caption: m.caption || a.name, id: m.id, source: 'album' })))];
+    const allImages = [
+        ...memories.filter(m => m.type === 'media').flatMap(m => m.media.map(url => ({ 
+            url, 
+            caption: m.caption, 
+            id: m.id, 
+            source: 'memory',
+            date: m.date // 携带日期
+        }))), 
+        ...albums.flatMap(a => a.media.map(m => ({ 
+            url: m.url, 
+            caption: m.caption || a.name, 
+            id: m.id, 
+            source: 'album',
+            date: m.date // 携带日期
+        })))
+    ];
+
     if (!allImages.length) return alert("相册里还没有照片哦！");
     
     let available = allImages.filter(img => !usedPhotoIds.includes(img.url));
     
+    // 自动重置逻辑
     if (available.length === 0) {
         if (pinnedPhotos.length === 0) {
             setUsedPhotoIds([]);
-            available = allImages;
+            available = allImages; 
         } else {
             return alert("全部吐完啦~ 点清空按钮重置哦！");
         }
@@ -632,7 +650,18 @@ export default function App() {
 
     const randomImg = available[Math.floor(Math.random() * available.length)];
     setUsedPhotoIds(prev => [...prev, randomImg.url]);
-    setPinnedPhotos(prev => [...prev, { id: Date.now().toString(), memoryId: randomImg.id, source: randomImg.source as any, mediaUrl: randomImg.url, customCaption: randomImg.caption, x: (Math.random()*40)-20, y: (Math.random()*40)-20, rotation: (Math.random()*10)-5, scale: 1 }]);
+    setPinnedPhotos(prev => [...prev, { 
+        id: Date.now().toString(), 
+        memoryId: randomImg.id, 
+        source: randomImg.source as any, 
+        mediaUrl: randomImg.url, 
+        customCaption: randomImg.caption, 
+        x: (Math.random()*40)-20, 
+        y: (Math.random()*40)-20, 
+        rotation: (Math.random()*10)-5, 
+        scale: 1,
+        date: randomImg.date // 传递日期
+    }]);
   };
 
   const handleClearBoard = () => { setPinnedPhotos([]); setUsedPhotoIds([]); };
@@ -656,7 +685,10 @@ export default function App() {
                {activePage === Page.HOME && (
                 <div className="relative w-full h-full bg-rose-50 overflow-hidden">
                   <div className="absolute inset-0 z-0 pointer-events-none opacity-40" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23fbbf24' fill-opacity='0.2'%3E%3Cpath d='M20 20c-2 0-3-2-3-3s2-3 3-3 3 2 3 3-2 3-3 3zm10 0c-2 0-3-2-3-3s2-3 3-3 3 2 3 3-2 3-3 3zm-5 5c-3 0-5-2-5-4s2-3 5-3 5 2 5 3-2 4-5 4zM70 70l-5-5 5-5 5 5-5 5zm20-20c2 0 3 2 3 3s-2 3-3 3-3-2-3-3 2-3 3-3zm-10 0c2 0 3 2 3 3s-2 3-3 3-3-2-3-3 2-3 3-3zm5 5c3 0 5 2 5 4s-2 3-5 3-5-2-5-3 2-4 5-4z'/%3E%3C/g%3E%3C/svg%3E")`, backgroundSize: '100px 100px' }} />
-                  <div className="absolute inset-0 z-10 overflow-hidden">{pinnedPhotos.map((pin, i) => (<DraggablePhoto key={pin.id} pin={pin} onUpdate={(id:any, data:any) => setPinnedPhotos(prev => prev.map(p => p.id === id ? {...p, ...data} : p))} onDelete={(id:any) => setPinnedPhotos(prev => prev.filter(p => p.id !== id))} onBringToFront={handleBringToFront} isFresh={i === pinnedPhotos.length - 1 && Date.now() - parseInt(pin.id) < 2000} />))}</div>
+                  
+                  {/* 传递 date 属性 */}
+                  <div className="absolute inset-0 z-10 overflow-hidden">{pinnedPhotos.map((pin, i) => (<DraggablePhoto key={pin.id} pin={pin} onUpdate={(id:any, data:any) => setPinnedPhotos(prev => prev.map(p => p.id === id ? {...p, ...data} : p))} onDelete={(id:any) => setPinnedPhotos(prev => prev.filter(p => p.id !== id))} onBringToFront={handleBringToFront} isFresh={i === pinnedPhotos.length - 1 && Date.now() - parseInt(pin.id) < 2000} date={pin.date} />))}</div>
+                  
                   <header className="absolute top-0 left-0 right-0 pt-6 px-4 md:pt-8 md:px-8 flex justify-between items-start z-[70] pointer-events-none">
                     <div className="pointer-events-auto">
                       {isEditingTitle ? (<input value={appTitle} onChange={(e) => setAppTitle(e.target.value)} onBlur={() => setIsEditingTitle(false)} onKeyDown={(e) => { if(e.key === 'Enter') setIsEditingTitle(false); }} autoFocus className="text-4xl md:text-6xl font-cute text-rose-500 drop-shadow-sm -rotate-2 bg-transparent border-b-2 border-rose-300 outline-none w-48 md:w-80 text-center" />) : (
