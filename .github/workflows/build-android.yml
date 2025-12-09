@@ -1,0 +1,57 @@
+name: Build Android APK (小屁铃)
+
+on:
+  push:
+    branches:
+      - main  # 或者是 master，根据你的主分支名称修改
+  workflow_dispatch: # 允许手动点击按钮触发
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Create .env file
+        # 你的项目依赖 API Key，我们需要从 GitHub Secrets 注入
+        run: |
+          echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > .env.local
+          echo "VITE_GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env.local
+
+      - name: Build Web App
+        run: npm run build
+
+      - name: Sync Capacitor
+        # 将构建好的网页资源同步到安卓目录
+        run: npx cap sync android
+
+      - name: Build Android APK (Debug)
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: 小屁铃-Debug-App
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
