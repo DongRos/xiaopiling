@@ -56,7 +56,11 @@ const ImageViewer = ({ src, onClose, actions }: { src: string; onClose: () => vo
                {actions.map((action, idx) => (
                    <button 
                         key={idx}
-                        className={`px-6 py-2.5 rounded-full text-sm font-bold pointer-events-auto cursor-pointer flex items-center gap-2 backdrop-blur-md border border-white/20 transition active:scale-95 ${action.primary ? 'bg-rose-500 text-white hover:bg-rose-600 shadow-lg shadow-rose-500/30' : 'bg-black/40 text-white hover:bg-black/60'}`} 
+                        // 修改 1: 将 primary 按钮样式改为磨砂透明 (bg-white/20 backdrop-blur-md)
+                        className={`px-6 py-2.5 rounded-full text-sm font-bold pointer-events-auto cursor-pointer flex items-center gap-2 backdrop-blur-md border border-white/20 transition active:scale-95 
+                        ${action.primary 
+                            ? 'bg-white/20 text-white hover:bg-white/30 shadow-lg border-white/40' 
+                            : 'bg-black/40 text-white hover:bg-black/60'}`} 
                         onClick={(e) => { e.stopPropagation(); action.onClick(); }}
                     >
                        {action.label === '更换头像' || action.label === '更换封面' ? <Edit2 size={14} /> : <CheckCircle size={14} />}
@@ -120,7 +124,6 @@ const DraggablePhoto = ({ pin, onUpdate, onDelete, onBringToFront, isFresh = fal
   const [editValue, setEditValue] = useState('');
   const displayCaption = pin.customCaption || '美好回忆';
   
-  // 1. 修复：确保按下时触发置顶
   const handlePointerDown = () => {
       if (onBringToFront) onBringToFront(pin.id);
   };
@@ -129,7 +132,7 @@ const DraggablePhoto = ({ pin, onUpdate, onDelete, onBringToFront, isFresh = fal
     <motion.div 
         drag 
         dragMomentum={false} 
-        onPointerDown={handlePointerDown} // 绑定置顶事件
+        onPointerDown={handlePointerDown} 
         initial={isFresh ? { opacity: 0, y: 150, scale: 0.5 } : false} 
         animate={{ opacity: 1, scale: pin.scale, rotate: pin.rotation, x: pin.x, y: pin.y }} 
         whileHover={{ zIndex: 100 }} 
@@ -217,18 +220,16 @@ const MemoriesViewContent = ({
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [isEditingAlbumTitle, setIsEditingAlbumTitle] = useState(false);
   const [tempAlbumName, setTempAlbumName] = useState('');
-  // 3. 长按逻辑状态
   const pressTimer = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => { const h = () => setActiveMenuId(null); document.addEventListener('click', h); return () => document.removeEventListener('click', h); }, []);
   useEffect(() => { if(!isManageMode) setSelectedItems(new Set()); }, [isManageMode]);
 
-  // 3. 长按发布纯文字逻辑
   const handlePressStart = () => {
       pressTimer.current = setTimeout(() => {
           onTextPost();
           pressTimer.current = null;
-      }, 500); // 500ms 长按触发
+      }, 500); 
   };
 
   const handlePressEnd = (e: React.MouseEvent | React.TouchEvent) => {
@@ -236,7 +237,6 @@ const MemoriesViewContent = ({
       if (pressTimer.current) {
           clearTimeout(pressTimer.current);
           pressTimer.current = null;
-          // 短按触发文件选择
           document.getElementById('camera-file-input')?.click();
       }
   };
@@ -344,7 +344,6 @@ const MemoriesViewContent = ({
               </div>
               <div className="flex gap-2">{isManageMode ? <><button onClick={batchDeletePhotos} className="text-red-500 font-bold text-sm px-3 py-1 bg-red-50 rounded-full">删除({selectedItems.size})</button><button onClick={() => setIsManageMode(false)} className="text-gray-500 font-bold text-sm px-3 py-1">取消</button></> : <><button onClick={() => setIsManageMode(true)} className="p-2 hover:bg-gray-100 rounded-full text-gray-600"><Settings size={20} /></button><label className="p-2 bg-rose-50 text-rose-500 rounded-full cursor-pointer"><Plus size={24} /><input type="file" multiple accept="image/*" className="hidden" onChange={handleAlbumUpload} /></label></>}</div>
           </div>
-          {/* 2. 修复电脑端缩略图太大：添加 md:grid-cols-5 */}
           <div className="p-4 grid grid-cols-3 md:grid-cols-5 gap-2 overflow-y-auto">{selectedAlbum.media.map((item, idx) => (<div key={idx} className="aspect-square rounded-xl overflow-hidden bg-gray-100 relative group cursor-pointer" onClick={() => isManageMode ? setSelectedItems(prev => { const n = new Set(prev); n.has(item.id) ? n.delete(item.id) : n.add(item.id); return n; }) : handleViewImage(item.url, 'album')}><img src={item.url} className={`w-full h-full object-cover transition ${isManageMode && selectedItems.has(item.id) ? 'opacity-50 scale-90' : ''}`} loading="lazy" />{isManageMode && (<div className="absolute top-2 right-2">{selectedItems.has(item.id) ? <CheckCircle className="text-rose-500 fill-white" /> : <div className="w-5 h-5 rounded-full border-2 border-white/80" />}</div>)}</div>))}</div>
           {viewingImage && <ImageViewer src={viewingImage} onClose={() => setViewingImage(null)} actions={viewerActions} />}
       </div>
@@ -375,7 +374,6 @@ const MemoriesViewContent = ({
                  </div>
             </div>
 
-            {/* 3. 修复长按发文字：绑定 Press 事件 */}
             <div className="absolute top-4 right-4 z-30">
                 <button 
                     onMouseDown={handlePressStart}
@@ -623,11 +621,10 @@ export default function App() {
     
     let available = allImages.filter(img => !usedPhotoIds.includes(img.url));
     
-    // 如果没有可用照片，且当前桌面上也没有照片（说明被手动删光了），则重置历史记录
     if (available.length === 0) {
         if (pinnedPhotos.length === 0) {
             setUsedPhotoIds([]);
-            available = allImages; // 立即重置为全部可用
+            available = allImages;
         } else {
             return alert("全部吐完啦~ 点清空按钮重置哦！");
         }
@@ -640,7 +637,6 @@ export default function App() {
 
   const handleClearBoard = () => { setPinnedPhotos([]); setUsedPhotoIds([]); };
   
-  // 首页相纸置顶逻辑
   const handleBringToFront = (id: string) => {
       setPinnedPhotos(prev => {
           const index = prev.findIndex(p => p.id === id);
@@ -675,6 +671,13 @@ export default function App() {
                     </div>
                   </header>
                   <div className="absolute top-40 left-8 w-64 z-[60] flex flex-col gap-6 pointer-events-none hidden md:flex"><div className="pointer-events-auto transform transition hover:scale-105 origin-top-left"><MiniCalendar periods={periods} conflicts={conflicts} /></div><div className="bg-white/80 backdrop-blur-sm rounded-2xl p-4 shadow-lg border border-rose-50 pointer-events-auto transform transition hover:scale-105 origin-top-left"><h3 className="text-sm font-bold text-gray-600 mb-2 flex items-center gap-2 font-cute"><CheckSquare size={16} className="text-rose-400"/> 备忘录</h3><div className="space-y-2 max-h-40 overflow-y-auto pr-1">{todos.filter(t => !t.completed).length === 0 && <p className="text-xs text-gray-400 italic">暂无待办</p>}{todos.filter(t => !t.completed).slice(0, 5).map(todo => (<div key={todo.id} onClick={() => setTodos(todos.map(t => t.id === todo.id ? { ...t, completed: !t.completed } : t))} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer group p-1 hover:bg-rose-50 rounded"><div className="w-3.5 h-3.5 rounded border border-rose-300 flex items-center justify-center bg-white group-hover:border-rose-400 shrink-0">{todo.completed && <div className="w-2 h-2 bg-rose-400 rounded-full" />}</div><span className={`font-cute truncate ${todo.completed ? 'line-through text-gray-400' : ''}`}>{todo.text}</span></div>))}</div></div></div>
+                  {/* 新增: 手机端左上角迷你日历 */}
+                  <div className="absolute top-28 left-4 z-[50] md:hidden pointer-events-none origin-top-left transform scale-[0.6]">
+                        <div className="pointer-events-auto bg-white/20 backdrop-blur-md rounded-2xl p-2 border border-white/30 shadow-lg">
+                            <MiniCalendar periods={periods} conflicts={conflicts} />
+                        </div>
+                  </div>
+                  
                   <div className="absolute bottom-20 md:bottom-24 left-1/2 transform -translate-x-1/2 z-[70] flex justify-center pointer-events-none"><div className="pointer-events-auto"><PolaroidCamera onTakePhoto={handleTakePhoto} iconUrl={cameraIcon} onUploadIcon={(e:any) => { const f = e.target.files?.[0]; if(f) { const r = new FileReader(); r.onload = () => setCameraIcon(r.result as string); r.readAsDataURL(f); }}} onResetIcon={() => { setCameraIcon(DEFAULT_CAMERA_ICON); localStorage.removeItem('cameraIcon'); }} /></div></div>
                 </div>
                )}
