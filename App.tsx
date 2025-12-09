@@ -108,15 +108,15 @@ const DraggablePhoto = ({ pin, onUpdate, onDelete, isFresh = false, date }: any)
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const displayCaption = pin.customCaption || '美好回忆';
+  // 修复：去除小铅笔，直接单击文字编辑
   return (
     <motion.div drag dragMomentum={false} initial={isFresh ? { opacity: 0, y: 150, scale: 0.5 } : false} animate={{ opacity: 1, scale: pin.scale, rotate: pin.rotation, x: pin.x, y: pin.y }} whileHover={{ zIndex: 50 }} whileTap={{ cursor: 'grabbing', zIndex: 60 }} onDragEnd={(e, info) => onUpdate(pin.id, { x: pin.x + info.offset.x, y: pin.y + info.offset.y })} className={`absolute w-44 bg-white p-3 pb-4 shadow-xl flex flex-col items-center group ${isFresh ? 'z-20' : 'z-10'}`} style={{ top: '50%', left: '50%', marginTop: -110, marginLeft: -88 }}>
       <div className="w-full h-36 bg-gray-100 mb-2 overflow-hidden shadow-inner bg-black/5"><img src={pin.mediaUrl} className="w-full h-full object-cover pointer-events-none select-none" /></div>
       {isEditing ? (
         <input autoFocus className="w-full text-center font-cute text-gray-700 bg-rose-50 border-none focus:ring-0 text-sm p-1 rounded" value={editValue} onChange={(e) => setEditValue(e.target.value)} onBlur={() => { setIsEditing(false); onUpdate(pin.id, { customCaption: editValue }); }} onKeyDown={(e) => { if(e.key === 'Enter') { setIsEditing(false); onUpdate(pin.id, { customCaption: editValue }); }}} onClick={(e) => e.stopPropagation()} />
       ) : (
-        <div className="text-center w-full relative group/edit" onDoubleClick={(e) => { e.stopPropagation(); setEditValue(displayCaption); setIsEditing(true); }}>
-          <p className="font-cute text-gray-700 text-sm truncate px-1 cursor-text">{displayCaption}</p>
-          <button onClick={(e) => { e.stopPropagation(); setEditValue(displayCaption); setIsEditing(true); }} className="absolute -right-2 -top-1 p-1 bg-white rounded-full text-gray-400 shadow-sm z-30 opacity-80 hover:text-rose-500"><Edit2 size={12} /></button>
+        <div className="text-center w-full" onClick={(e) => { e.stopPropagation(); setEditValue(displayCaption); setIsEditing(true); }}>
+          <p className="font-cute text-gray-700 text-sm truncate px-1 cursor-text select-none">{displayCaption}</p>
           <p className="text-[10px] text-gray-400 font-sans mt-0.5">{date || 'Just now'}</p>
         </div>
       )}
@@ -170,7 +170,6 @@ const AnniversaryTimer = ({ startDate, onSetDate }: any) => {
         </div>
     );
 };
-
 // --- Page Content Components ---
 
 const MemoriesViewContent = ({
@@ -189,6 +188,9 @@ const MemoriesViewContent = ({
   const [isEditingMomentsTitle, setIsEditingMomentsTitle] = useState(false);
   const [isManageMode, setIsManageMode] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  // 相册重命名状态
+  const [isEditingAlbumTitle, setIsEditingAlbumTitle] = useState(false);
+  const [tempAlbumName, setTempAlbumName] = useState('');
 
   useEffect(() => { const h = () => setActiveMenuId(null); document.addEventListener('click', h); return () => document.removeEventListener('click', h); }, []);
   useEffect(() => { if(!isManageMode) setSelectedItems(new Set()); }, [isManageMode]);
@@ -226,11 +228,41 @@ const MemoriesViewContent = ({
       if (isEditingMomentsTitle) return;
       e.stopPropagation(); setViewingImage(coverUrl); setViewerAction({ label: '更换封面', handler: () => { document.getElementById('cover-upload')?.click(); setViewingImage(null); } });
   };
+  // 保存相册名称
+  const saveAlbumName = () => {
+      if (selectedAlbum && tempAlbumName.trim()) {
+          const updatedAlbum = { ...selectedAlbum, name: tempAlbumName };
+          setAlbums((prev: Album[]) => prev.map(a => a.id === selectedAlbum.id ? updatedAlbum : a));
+          setSelectedAlbum(updatedAlbum);
+      }
+      setIsEditingAlbumTitle(false);
+  };
 
   if (selectedAlbum) return (
       <div className="h-full bg-white flex flex-col pb-20">
           <div className="p-4 border-b flex items-center justify-between bg-white/80 backdrop-blur sticky top-0 z-10">
-              <div className="flex items-center gap-4"><button onClick={() => setSelectedAlbum(null)} className="p-2 hover:bg-gray-100 rounded-full"><ArrowLeft /></button><h2 className="text-xl font-bold font-cute">{selectedAlbum.name}</h2></div>
+              <div className="flex items-center gap-4">
+                  <button onClick={() => setSelectedAlbum(null)} className="p-2 hover:bg-gray-100 rounded-full"><ArrowLeft /></button>
+                  {/* 相册重命名功能 */}
+                  {isEditingAlbumTitle ? (
+                      <input 
+                          autoFocus
+                          value={tempAlbumName}
+                          onChange={(e) => setTempAlbumName(e.target.value)}
+                          onBlur={saveAlbumName}
+                          onKeyDown={(e) => { if(e.key === 'Enter') saveAlbumName(); }}
+                          className="text-xl font-bold font-cute bg-gray-50 border border-gray-200 rounded px-2 py-1 outline-none focus:ring-2 focus:ring-rose-200"
+                      />
+                  ) : (
+                      <h2 
+                          onClick={() => { setTempAlbumName(selectedAlbum.name); setIsEditingAlbumTitle(true); }}
+                          className="text-xl font-bold font-cute cursor-pointer hover:bg-gray-50 px-2 py-1 rounded transition"
+                          title="点击重命名"
+                      >
+                          {selectedAlbum.name}
+                      </h2>
+                  )}
+              </div>
               <div className="flex gap-2">{isManageMode ? <><button onClick={batchDeletePhotos} className="text-red-500 font-bold text-sm px-3 py-1 bg-red-50 rounded-full">删除({selectedItems.size})</button><button onClick={() => setIsManageMode(false)} className="text-gray-500 font-bold text-sm px-3 py-1">取消</button></> : <><button onClick={() => setIsManageMode(true)} className="p-2 hover:bg-gray-100 rounded-full text-gray-600"><Settings size={20} /></button><label className="p-2 bg-rose-50 text-rose-500 rounded-full cursor-pointer"><Plus size={24} /><input type="file" multiple accept="image/*" className="hidden" onChange={handleAlbumUpload} /></label></>}</div>
           </div>
           <div className="p-4 grid grid-cols-3 gap-2 overflow-y-auto">{selectedAlbum.media.map((item, idx) => (<div key={idx} className="aspect-square rounded-xl overflow-hidden bg-gray-100 relative group cursor-pointer" onClick={() => isManageMode ? setSelectedItems(prev => { const n = new Set(prev); n.has(item.id) ? n.delete(item.id) : n.add(item.id); return n; }) : (setViewingImage(item.url), setViewerAction({ label: '设为封面', handler: () => { setAlbums((prev: Album[]) => prev.map(a => a.id === selectedAlbum.id ? { ...a, coverUrl: item.url } : a)); setSelectedAlbum(prev => prev ? { ...prev, coverUrl: item.url } : null); setViewingImage(null); alert('封面已设置'); } }))}><img src={item.url} className={`w-full h-full object-cover transition ${isManageMode && selectedItems.has(item.id) ? 'opacity-50 scale-90' : ''}`} loading="lazy" />{isManageMode && (<div className="absolute top-2 right-2">{selectedItems.has(item.id) ? <CheckCircle className="text-rose-500 fill-white" /> : <div className="w-5 h-5 rounded-full border-2 border-white/80" />}</div>)}</div>))}</div>
@@ -245,13 +277,11 @@ const MemoriesViewContent = ({
              <input id="cover-upload" type="file" className="hidden" onChange={onUpdateCover} accept="image/*" />
             <div className="absolute -bottom-8 right-4 flex items-end gap-3 z-20">
                  <div className="pointer-events-auto" onClick={(e) => e.stopPropagation()}>
+                    {/* 修复：去除小铅笔，直接单击编辑 */}
                     {isEditingMomentsTitle ? (
                          <input value={momentsTitle} onChange={(e) => setMomentsTitle(e.target.value)} onBlur={() => setIsEditingMomentsTitle(false)} onKeyDown={(e) => { if(e.key === 'Enter') setIsEditingMomentsTitle(false); }} autoFocus className="text-white font-bold text-lg drop-shadow-md pb-10 font-cute bg-transparent outline-none border-b border-white w-40 text-right" />
                     ) : (
-                         <div className="flex items-center gap-2 pb-10">
-                            <div onDoubleClick={() => setIsEditingMomentsTitle(true)} className="text-white font-bold text-lg drop-shadow-md font-cute cursor-pointer select-none" title="双击修改标题">{momentsTitle}</div>
-                            <button onClick={() => setIsEditingMomentsTitle(true)} className="p-1.5 bg-black/20 rounded-full text-white/80 hover:bg-black/40 backdrop-blur-sm"><Edit2 size={14} /></button>
-                         </div>
+                         <div onClick={() => setIsEditingMomentsTitle(true)} className="text-white font-bold text-lg drop-shadow-md pb-10 font-cute cursor-pointer select-none" title="点击修改标题">{momentsTitle}</div>
                     )}
                  </div>
                  <div className="bg-white p-1 rounded-xl shadow-lg pointer-events-none"><div className="w-16 h-16 bg-rose-100 rounded-lg flex items-center justify-center overflow-hidden"><span className="text-3xl">💑</span></div></div>
@@ -327,6 +357,7 @@ const MemoriesViewContent = ({
     </div>
   );
 };
+
 const CycleViewContent = ({ periods, nextPeriod, addPeriod, deletePeriod }: any) => {
   const handleLogPeriod = () => { if(confirm(`记录今天 (${getBeijingDateString()}) 为大姨妈开始日？`)) addPeriod(getBeijingDateString()); };
   return (
@@ -391,21 +422,46 @@ const CalendarViewContent = ({ periods, conflicts, todos, addTodo, toggleTodo }:
     const [currentDate, setCurrentDate] = useState(new Date()); const [selectedDate, setSelectedDate] = useState(getBeijingDateString());
     const year = currentDate.getFullYear(); const month = currentDate.getMonth(); const days = Array(getFirstDayOfMonth(year, month)).fill(null).concat([...Array(getDaysInMonth(year, month)).keys()].map(i => i + 1));
     const dayTodos = todos.filter((t: TodoItem) => t.date === selectedDate); const dayConflicts = conflicts.filter((c: ConflictRecord) => c.date === selectedDate);
+    
+    // 经期预测逻辑：基于上一次记录 + 28天
+    const isPredictedPeriod = (d: string) => {
+        if(periods.length === 0) return false;
+        const lastPeriod = periods[periods.length - 1];
+        const lastStart = parseLocalDate(lastPeriod.startDate);
+        const predictedStart = new Date(lastStart);
+        predictedStart.setDate(lastStart.getDate() + 28);
+        const predictedEnd = new Date(predictedStart);
+        predictedEnd.setDate(predictedStart.getDate() + 5); // 假设5天
+        const curr = parseLocalDate(d);
+        return curr >= predictedStart && curr < predictedEnd;
+    };
+    
     const isPeriod = (d: string) => periods.some((p:any) => { const s = parseLocalDate(p.startDate); const e = new Date(s); e.setDate(s.getDate()+p.duration); const c = parseLocalDate(d); return c >= s && c < e; });
+    
     return (
         <div className="h-full bg-white flex flex-col pb-20"><h2 className="text-2xl font-bold font-cute text-gray-800 text-center pt-4">专属日历</h2>
             <div className="px-6 pt-2 pb-2 flex justify-between items-center"><h2 className="text-xl font-bold font-cute text-gray-800">{year}年 {month + 1}月</h2><div className="flex gap-2"><button onClick={() => setCurrentDate(new Date(year, month - 1, 1))} className="p-2 bg-gray-50 rounded-full hover:bg-rose-50 transition"><ChevronLeft size={20} /></button><button onClick={() => setCurrentDate(new Date(year, month + 1, 1))} className="p-2 bg-gray-50 rounded-full hover:bg-rose-50 transition"><ChevronRight size={20} /></button></div></div>
             <div className="px-4">
                 <div className="grid grid-cols-7 mb-2">{['日','一','二','三','四','五','六'].map(d => <div key={d} className="text-center text-xs text-gray-400 font-bold py-2">{d}</div>)}</div>
-                <div className="grid grid-cols-7 gap-y-2">{days.map((d, i) => { if (!d) return <div key={i} />; const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`; return (<div key={i} className="flex justify-center relative"><button onClick={() => setSelectedDate(dateStr)} className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold transition-all relative ${dateStr === selectedDate ? 'bg-gray-800 text-white shadow-lg scale-110 z-10' : 'text-gray-700 hover:bg-gray-50'} ${dateStr === getBeijingDateString() && dateStr !== selectedDate ? 'text-rose-500 font-bold' : ''}`}>{d}<div className="absolute bottom-1 flex gap-0.5">{isPeriod(dateStr) && <div className={`w-1 h-1 rounded-full bg-red-500`} />}{todos.some((t:any) => t.date === dateStr && !t.completed) && <div className={`w-1 h-1 rounded-full bg-yellow-400`} />}{conflicts.some((c:any) => c.date === dateStr) && <div className={`w-1 h-1 rounded-full bg-purple-500`} />}</div></button></div>) })}</div>
-                {/* Legend Added Here */}
+                <div className="grid grid-cols-7 gap-y-2">{days.map((d, i) => { 
+                    if (!d) return <div key={i} />; 
+                    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`; 
+                    const isPred = isPredictedPeriod(dateStr) && !isPeriod(dateStr);
+                    return (
+                        <div key={i} className="flex justify-center relative"><button onClick={() => setSelectedDate(dateStr)} className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold transition-all relative ${dateStr === selectedDate ? 'bg-gray-800 text-white shadow-lg scale-110 z-10' : 'text-gray-700 hover:bg-gray-50'} ${dateStr === getBeijingDateString() && dateStr !== selectedDate ? 'text-rose-500 font-bold' : ''}`}>{d}<div className="absolute bottom-1 flex gap-0.5">{isPeriod(dateStr) && <div className={`w-1 h-1 rounded-full bg-red-500`} />}{isPred && <div className={`w-1 h-1 rounded-full bg-blue-400`} />}{todos.some((t:any) => t.date === dateStr && !t.completed) && <div className={`w-1 h-1 rounded-full bg-yellow-400`} />}{conflicts.some((c:any) => c.date === dateStr) && <div className={`w-1 h-1 rounded-full bg-purple-500`} />}</div></button></div>
+                    ) })}</div>
+                {/* 新增图例：预测为蓝色小圆点 */}
                 <div className="flex justify-center gap-4 py-2 mt-2 border-t border-gray-50">
                     <div className="flex items-center gap-1 text-[10px] text-gray-400 font-bold"><div className="w-2 h-2 rounded-full bg-red-500"></div>经期</div>
+                    <div className="flex items-center gap-1 text-[10px] text-gray-400 font-bold"><div className="w-2 h-2 rounded-full bg-blue-400"></div>预测</div>
                     <div className="flex items-center gap-1 text-[10px] text-gray-400 font-bold"><div className="w-2 h-2 rounded-full bg-yellow-400"></div>待办</div>
                     <div className="flex items-center gap-1 text-[10px] text-gray-400 font-bold"><div className="w-2 h-2 rounded-full bg-purple-500"></div>吵架</div>
                 </div>
             </div>
-            <div className="flex-1 bg-gray-50 mt-2 rounded-t-3xl p-6 overflow-y-auto"><div className="flex justify-between items-center mb-4"><h3 className="font-bold text-gray-800 font-cute flex items-center gap-2"><span className="text-2xl">{selectedDate.split('-')[2]}</span><span className="text-sm text-gray-400">日事项</span></h3><button onClick={() => addTodo(prompt("添加待办事项:"), selectedDate)} className="text-rose-500 text-sm font-bold flex items-center gap-1 bg-white px-3 py-1.5 rounded-full shadow-sm"><Plus size={16} /> 添加</button></div><div className="space-y-3">{isPeriod(selectedDate) && (<div className="bg-red-100 text-red-600 p-3 rounded-xl text-sm font-bold flex items-center gap-2"><Heart size={16} fill="currentColor" /> 大姨妈造访中</div>)}{dayConflicts.map((c: ConflictRecord) => (<div key={c.id} className="bg-purple-50 text-purple-900 p-3 rounded-xl text-sm border border-purple-100"><div className="font-bold flex items-center gap-2 mb-1"><Gavel size={14} /> 喵喵法官裁决</div>{c.reason}</div>))}{dayTodos.map((todo: TodoItem) => (<div key={todo.id} onClick={() => toggleTodo(todo.id)} className="bg-white p-3 rounded-xl flex items-center gap-3 shadow-sm cursor-pointer active:scale-98 transition"><div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${todo.completed ? 'border-green-500 bg-green-500' : 'border-gray-200'}`}>{todo.completed && <CheckSquare size={12} className="text-white" />}</div><span className={`text-sm ${todo.completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{todo.text}</span></div>))}{!dayTodos.length && !dayConflicts.length && !isPeriod(selectedDate) && (<div className="text-center text-gray-400 text-sm py-8">今天没有安排哦 ~</div>)}</div></div>
+            <div className="flex-1 bg-gray-50 mt-2 rounded-t-3xl p-6 overflow-y-auto"><div className="flex justify-between items-center mb-4"><h3 className="font-bold text-gray-800 font-cute flex items-center gap-2"><span className="text-2xl">{selectedDate.split('-')[2]}</span><span className="text-sm text-gray-400">日事项</span></h3><button onClick={() => addTodo(prompt("添加待办事项:"), selectedDate)} className="text-rose-500 text-sm font-bold flex items-center gap-1 bg-white px-3 py-1.5 rounded-full shadow-sm"><Plus size={16} /> 添加</button></div><div className="space-y-3">
+            {/* 预测期提示 */}
+            {isPredictedPeriod(selectedDate) && !isPeriod(selectedDate) && (<div className="bg-blue-50 text-blue-500 p-3 rounded-xl text-sm font-bold flex items-center gap-2"><Sparkles size={16} fill="currentColor" /> 预计大姨妈</div>)}
+            {isPeriod(selectedDate) && (<div className="bg-red-100 text-red-600 p-3 rounded-xl text-sm font-bold flex items-center gap-2"><Heart size={16} fill="currentColor" /> 大姨妈造访中</div>)}{dayConflicts.map((c: ConflictRecord) => (<div key={c.id} className="bg-purple-50 text-purple-900 p-3 rounded-xl text-sm border border-purple-100"><div className="font-bold flex items-center gap-2 mb-1"><Gavel size={14} /> 喵喵法官裁决</div>{c.reason}</div>))}{dayTodos.map((todo: TodoItem) => (<div key={todo.id} onClick={() => toggleTodo(todo.id)} className="bg-white p-3 rounded-xl flex items-center gap-3 shadow-sm cursor-pointer active:scale-98 transition"><div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${todo.completed ? 'border-green-500 bg-green-500' : 'border-gray-200'}`}>{todo.completed && <CheckSquare size={12} className="text-white" />}</div><span className={`text-sm ${todo.completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{todo.text}</span></div>))}{!dayTodos.length && !dayConflicts.length && !isPeriod(selectedDate) && !isPredictedPeriod(selectedDate) && (<div className="text-center text-gray-400 text-sm py-8">今天没有安排哦 ~</div>)}</div></div>
         </div>
     );
 };
@@ -467,10 +523,8 @@ export default function App() {
                   <header className="absolute top-0 left-0 right-0 pt-6 px-4 md:pt-8 md:px-8 flex justify-between items-start z-[70] pointer-events-none">
                     <div className="pointer-events-auto">
                       {isEditingTitle ? (<input value={appTitle} onChange={(e) => setAppTitle(e.target.value)} onBlur={() => setIsEditingTitle(false)} onKeyDown={(e) => { if(e.key === 'Enter') setIsEditingTitle(false); }} autoFocus className="text-4xl md:text-6xl font-cute text-rose-500 drop-shadow-sm -rotate-2 bg-transparent border-b-2 border-rose-300 outline-none w-48 md:w-80 text-center" />) : (
-                          <div className="flex items-center gap-2">
-                             <h1 onDoubleClick={() => setIsEditingTitle(true)} className="text-4xl md:text-6xl font-cute text-rose-500 drop-shadow-sm -rotate-2 cursor-pointer select-none" title="双击修改">{appTitle}</h1>
-                             <button onClick={() => setIsEditingTitle(true)} className="p-1.5 bg-white/50 rounded-full text-rose-500 hover:bg-white backdrop-blur-sm shadow-sm"><Edit2 size={16} /></button>
-                          </div>
+                          // 修复：去除小铅笔，直接单击标题编辑
+                             <h1 onClick={() => setIsEditingTitle(true)} className="text-4xl md:text-6xl font-cute text-rose-500 drop-shadow-sm -rotate-2 cursor-pointer select-none hover:scale-105 transition" title="点击修改">{appTitle}</h1>
                       )}
                       <p className="text-rose-400 text-xs md:text-sm mt-1 font-cute ml-1 md:ml-2 tracking-widest bg-white/50 backdrop-blur-sm inline-block px-2 rounded-lg">LOVE SPACE</p>
                     </div>
