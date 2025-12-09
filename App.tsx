@@ -245,6 +245,7 @@ const MemoriesViewContent = ({
   const [isEditingAlbumTitle, setIsEditingAlbumTitle] = useState(false);
   const [tempAlbumName, setTempAlbumName] = useState('');
   const pressTimer = useRef<NodeJS.Timeout | null>(null);
+  const [history, setHistory] = useState<Page[]>([]);
 
   useEffect(() => { const h = () => setActiveMenuId(null); document.addEventListener('click', h); return () => document.removeEventListener('click', h); }, []);
   useEffect(() => { if(!isManageMode) setSelectedItems(new Set()); }, [isManageMode]);
@@ -627,6 +628,7 @@ export default function App() {
   const [uploadCaption, setUploadCaption] = useState('');
   const [uploadType, setUploadType] = useState<'text' | 'media'>('media');
   const [avatarUrl, setAvatarUrl] = useState<string>('');
+  const [history, setHistory] = useState<Page[]>([]);
 
   useEffect(() => {
     const savedMemories = localStorage.getItem('memories'); if (savedMemories) { try { const parsed = JSON.parse(savedMemories); if (Array.isArray(parsed)) setMemories(parsed.map((m: any) => ({ ...m, media: m.media || (m.url ? [m.url] : []), type: m.type || (m.url ? 'media' : 'text'), comments: m.comments || [] }))); } catch (e) {} } else { setMemories([{ id: '1', media: ['https://images.unsplash.com/photo-1518020382113-a7e8fc38eac9?auto=format&fit=crop&w=400&q=80'], caption: '可爱的狗勾', date: '2023-10-01', type: 'media', likes: 2, isLiked: false, comments: [] }]); }
@@ -639,31 +641,43 @@ export default function App() {
 
   // 处理安卓物理返回键
   useEffect(() => {
-    // 定义监听函数
     const handleBackButton = async () => {
-      if (activePage !== Page.HOME) {
-        // 如果当前不是首页，就返回首页
+      // 1. 优先检查历史记录：如果有上一页，就退回去
+      if (history.length > 0) {
+        const newHistory = [...history];
+        const prevPage = newHistory.pop(); // 取出最近的一个页面
+        setHistory(newHistory); // 更新历史记录
+        if (prevPage) setActivePage(prevPage); // 切换回去
+      } 
+      // 2. 如果没有历史记录（比如刚打开App），但不在首页，就回首页
+      else if (activePage !== Page.HOME) {
         setActivePage(Page.HOME);
-      } else {
-        // 如果已经是首页，则退出 App
+      } 
+      // 3. 既无历史，又在首页，才退出 App
+      else {
         const info = await CapacitorApp.getInfo();
         CapacitorApp.exitApp();
       }
     };
 
-    // 添加监听器
     let listenerHandle: any;
     const setupListener = async () => {
         listenerHandle = await CapacitorApp.addListener('backButton', handleBackButton);
     };
     setupListener();
 
-    // 清理监听器
     return () => {
         if (listenerHandle) listenerHandle.remove();
     };
-  }, [activePage]); // 依赖 activePage，这样能获取到最新的页面状态
-  const calculateNextPeriod = () => { if (!periods.length) return null; const next = new Date(parseLocalDate(periods[periods.length - 1].startDate)); next.setDate(next.getDate() + 28); const diffDays = Math.ceil((next.getTime() - new Date().getTime()) / 86400000); return { date: `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-${String(next.getDate()).padStart(2,'0')}`, daysLeft: diffDays }; };
+  }, [activePage, history]); // ⚠️注意：这里依赖项一定要加上 history
+  
+  // --- 新增：智能切换页面函数 ---
+  const handlePageChange = (newPage: Page) => {
+    if (newPage === activePage) return;
+    // 把当前页面压入历史栈
+    setHistory(prev => [...prev, activePage]); 
+    setActivePage(newPage);
+  };
   
   const handleTakePhoto = () => {
     const allImages = [
@@ -772,7 +786,7 @@ export default function App() {
             </motion.div>
          </AnimatePresence>
       </main>
-      <Navbar active={activePage} setPage={setActivePage} />
+      <Navbar active={activePage} setPage={handlePageChange} />
     </div>
   );
 }
