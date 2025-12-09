@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { App as CapacitorApp } from '@capacitor/app';
 import { createPortal } from 'react-dom';
 import { 
   Heart, Camera, Calendar as CalendarIcon, Zap, CheckSquare, Cat, Upload, Trash2, X,
@@ -245,7 +244,6 @@ const MemoriesViewContent = ({
   const [isEditingAlbumTitle, setIsEditingAlbumTitle] = useState(false);
   const [tempAlbumName, setTempAlbumName] = useState('');
   const pressTimer = useRef<NodeJS.Timeout | null>(null);
-  const [history, setHistory] = useState<Page[]>([]);
 
   useEffect(() => { const h = () => setActiveMenuId(null); document.addEventListener('click', h); return () => document.removeEventListener('click', h); }, []);
   useEffect(() => { if(!isManageMode) setSelectedItems(new Set()); }, [isManageMode]);
@@ -628,7 +626,6 @@ export default function App() {
   const [uploadCaption, setUploadCaption] = useState('');
   const [uploadType, setUploadType] = useState<'text' | 'media'>('media');
   const [avatarUrl, setAvatarUrl] = useState<string>('');
-  const [history, setHistory] = useState<Page[]>([]);
 
   useEffect(() => {
     const savedMemories = localStorage.getItem('memories'); if (savedMemories) { try { const parsed = JSON.parse(savedMemories); if (Array.isArray(parsed)) setMemories(parsed.map((m: any) => ({ ...m, media: m.media || (m.url ? [m.url] : []), type: m.type || (m.url ? 'media' : 'text'), comments: m.comments || [] }))); } catch (e) {} } else { setMemories([{ id: '1', media: ['https://images.unsplash.com/photo-1518020382113-a7e8fc38eac9?auto=format&fit=crop&w=400&q=80'], caption: '可爱的狗勾', date: '2023-10-01', type: 'media', likes: 2, isLiked: false, comments: [] }]); }
@@ -639,38 +636,7 @@ export default function App() {
   useSafeStorage('pinnedPhotos', pinnedPhotos); useSafeStorage('albums', albums); useSafeStorage('memories', memories); useSafeStorage('todos', todos); useSafeStorage('periods', periods); useSafeStorage('conflicts', conflicts); useSafeStorage('messages', messages); useSafeStorage('cameraIcon', cameraIcon); useSafeStorage('momentsCover', momentsCover); useSafeStorage('avatarUrl', avatarUrl);
   useEffect(() => localStorage.setItem('appTitle', appTitle), [appTitle]); useEffect(() => localStorage.setItem('momentsTitle', momentsTitle), [momentsTitle]); useEffect(() => localStorage.setItem('anniversaryDate', anniversaryDate), [anniversaryDate]);
 
-  // 处理安卓物理返回键
-  useEffect(() => {
-    const handleBackButton = async () => {
-      // 1. 优先检查历史记录：如果有上一页，就退回去
-      if (history.length > 0) {
-        const newHistory = [...history];
-        const prevPage = newHistory.pop(); // 取出最近的一个页面
-        setHistory(newHistory); // 更新历史记录
-        if (prevPage) setActivePage(prevPage); // 切换回去
-      } 
-      // 2. 如果没有历史记录（比如刚打开App），但不在首页，就回首页
-      else if (activePage !== Page.HOME) {
-        setActivePage(Page.HOME);
-      } 
-      // 3. 既无历史，又在首页，才退出 App
-      else {
-        const info = await CapacitorApp.getInfo();
-        CapacitorApp.exitApp();
-      }
-    };
-
-    let listenerHandle: any;
-    const setupListener = async () => {
-        listenerHandle = await CapacitorApp.addListener('backButton', handleBackButton);
-    };
-    setupListener();
-
-    return () => {
-        if (listenerHandle) listenerHandle.remove();
-    };
-  }, [activePage, history]); // ⚠️注意：这里依赖项一定要加上 history
-  
+  const calculateNextPeriod = () => { if (!periods.length) return null; const next = new Date(parseLocalDate(periods[periods.length - 1].startDate)); next.setDate(next.getDate() + 28); const diffDays = Math.ceil((next.getTime() - new Date().getTime()) / 86400000); return { date: `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-${String(next.getDate()).padStart(2,'0')}`, daysLeft: diffDays }; };
   
   const handleTakePhoto = () => {
     const allImages = [
@@ -703,15 +669,6 @@ export default function App() {
         }
     }
 
-
-    // --- 新增：智能切换页面函数 ---
-  const handlePageChange = (newPage: Page) => {
-    if (newPage === activePage) return;
-    // 把当前页面压入历史栈
-    setHistory(prev => [...prev, activePage]); 
-    setActivePage(newPage);
-  };
-    
     const randomImg = available[Math.floor(Math.random() * available.length)];
     setUsedPhotoIds(prev => [...prev, randomImg.url]);
     setPinnedPhotos(prev => [...prev, { 
@@ -788,7 +745,7 @@ export default function App() {
             </motion.div>
          </AnimatePresence>
       </main>
-      <Navbar active={activePage} setPage={handlePageChange} />
+      <Navbar active={activePage} setPage={setActivePage} />
     </div>
   );
 }
