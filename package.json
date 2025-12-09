@@ -14,7 +14,8 @@
     "framer-motion": "^12.23.25",
     "lucide-react": "^0.556.0",
     "react": "^19.2.1",
-    "react-dom": "^19.2.1"
+    "react-dom": "^19.2.1",
+    "@capacitor/app": "^6.0.0"
   },
   "devDependencies": {
     "@capacitor/android": "^8.0.0",
