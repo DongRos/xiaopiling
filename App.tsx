@@ -41,7 +41,6 @@ const DEFAULT_AVATAR = "https://cdn-icons-png.flaticon.com/512/4140/4140048.png"
 
 // --- Sub Components ---
 
-// 升级版 ImageViewer：支持 actions 数组，显示多个按钮
 const ImageViewer = ({ src, onClose, actions }: { src: string; onClose: () => void; actions?: { label: string, onClick: () => void, primary?: boolean }[] }) => {
   const [scale, setScale] = useState(1);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -52,7 +51,6 @@ const ImageViewer = ({ src, onClose, actions }: { src: string; onClose: () => vo
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[999] bg-black flex items-center justify-center overflow-hidden" onClick={onClose}>
       <motion.img src={src} drag={scale > 1} dragConstraints={{ left: -200*scale, right: 200*scale, top: -200*scale, bottom: 200*scale }} style={{ scale }} className="max-w-full max-h-full object-contain touch-none" onClick={(e) => e.stopPropagation()} onDoubleClick={handleDoubleTap} />
       
-      {/* 底部按钮组 */}
       {actions && actions.length > 0 && (
            <div className="absolute bottom-24 left-0 right-0 flex justify-center flex-wrap gap-4 pointer-events-none z-[1000]">
                {actions.map((action, idx) => (
@@ -122,7 +120,7 @@ const DraggablePhoto = ({ pin, onUpdate, onDelete, onBringToFront, isFresh = fal
   const [editValue, setEditValue] = useState('');
   const displayCaption = pin.customCaption || '美好回忆';
   
-  // 核心修改：点击时调用置顶
+  // 1. 修复：确保按下时触发置顶
   const handlePointerDown = () => {
       if (onBringToFront) onBringToFront(pin.id);
   };
@@ -131,7 +129,7 @@ const DraggablePhoto = ({ pin, onUpdate, onDelete, onBringToFront, isFresh = fal
     <motion.div 
         drag 
         dragMomentum={false} 
-        onPointerDown={handlePointerDown}
+        onPointerDown={handlePointerDown} // 绑定置顶事件
         initial={isFresh ? { opacity: 0, y: 150, scale: 0.5 } : false} 
         animate={{ opacity: 1, scale: pin.scale, rotate: pin.rotation, x: pin.x, y: pin.y }} 
         whileHover={{ zIndex: 100 }} 
@@ -219,9 +217,29 @@ const MemoriesViewContent = ({
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [isEditingAlbumTitle, setIsEditingAlbumTitle] = useState(false);
   const [tempAlbumName, setTempAlbumName] = useState('');
+  // 3. 长按逻辑状态
+  const pressTimer = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => { const h = () => setActiveMenuId(null); document.addEventListener('click', h); return () => document.removeEventListener('click', h); }, []);
   useEffect(() => { if(!isManageMode) setSelectedItems(new Set()); }, [isManageMode]);
+
+  // 3. 长按发布纯文字逻辑
+  const handlePressStart = () => {
+      pressTimer.current = setTimeout(() => {
+          onTextPost();
+          pressTimer.current = null;
+      }, 500); // 500ms 长按触发
+  };
+
+  const handlePressEnd = (e: React.MouseEvent | React.TouchEvent) => {
+      e.stopPropagation();
+      if (pressTimer.current) {
+          clearTimeout(pressTimer.current);
+          pressTimer.current = null;
+          // 短按触发文件选择
+          document.getElementById('camera-file-input')?.click();
+      }
+  };
 
   const createAlbum = () => {
     if(!newAlbumName.trim()) return;
@@ -253,14 +271,12 @@ const MemoriesViewContent = ({
       setSelectedAlbum(updatedAlbum); setIsManageMode(false);
   };
   
-  // 核心修复：背景点击处理
   const handleCoverClick = (e: React.MouseEvent) => {
       if (isEditingMomentsTitle) return;
       setViewingImage(coverUrl); 
       setViewerActions([{ label: '更换封面', onClick: () => { document.getElementById('cover-upload')?.click(); setViewingImage(null); } }]);
   };
 
-  // 2. 头像点击处理
   const handleAvatarClick = (e: React.MouseEvent) => {
       e.stopPropagation();
       setViewingImage(avatarUrl || DEFAULT_AVATAR);
@@ -279,12 +295,9 @@ const MemoriesViewContent = ({
       }
   };
 
-  // 3. 图片查看处理（区分相册和朋友圈）
   const handleViewImage = (url: string, context: 'album' | 'memory') => {
       setViewingImage(url);
       const actions = [];
-      
-      // 相册图片：可以设为封面
       if (context === 'album' && selectedAlbum) {
           actions.push({
               label: '设为封面',
@@ -296,8 +309,6 @@ const MemoriesViewContent = ({
               }
           });
       }
-
-      // 所有图片：都可以设为背景
       actions.push({
           label: '设为背景',
           primary: true,
@@ -308,7 +319,6 @@ const MemoriesViewContent = ({
               }
           }
       });
-
       setViewerActions(actions);
   };
 
@@ -334,7 +344,8 @@ const MemoriesViewContent = ({
               </div>
               <div className="flex gap-2">{isManageMode ? <><button onClick={batchDeletePhotos} className="text-red-500 font-bold text-sm px-3 py-1 bg-red-50 rounded-full">删除({selectedItems.size})</button><button onClick={() => setIsManageMode(false)} className="text-gray-500 font-bold text-sm px-3 py-1">取消</button></> : <><button onClick={() => setIsManageMode(true)} className="p-2 hover:bg-gray-100 rounded-full text-gray-600"><Settings size={20} /></button><label className="p-2 bg-rose-50 text-rose-500 rounded-full cursor-pointer"><Plus size={24} /><input type="file" multiple accept="image/*" className="hidden" onChange={handleAlbumUpload} /></label></>}</div>
           </div>
-          <div className="p-4 grid grid-cols-3 gap-2 overflow-y-auto">{selectedAlbum.media.map((item, idx) => (<div key={idx} className="aspect-square rounded-xl overflow-hidden bg-gray-100 relative group cursor-pointer" onClick={() => isManageMode ? setSelectedItems(prev => { const n = new Set(prev); n.has(item.id) ? n.delete(item.id) : n.add(item.id); return n; }) : handleViewImage(item.url, 'album')}><img src={item.url} className={`w-full h-full object-cover transition ${isManageMode && selectedItems.has(item.id) ? 'opacity-50 scale-90' : ''}`} loading="lazy" />{isManageMode && (<div className="absolute top-2 right-2">{selectedItems.has(item.id) ? <CheckCircle className="text-rose-500 fill-white" /> : <div className="w-5 h-5 rounded-full border-2 border-white/80" />}</div>)}</div>))}</div>
+          {/* 2. 修复电脑端缩略图太大：添加 md:grid-cols-5 */}
+          <div className="p-4 grid grid-cols-3 md:grid-cols-5 gap-2 overflow-y-auto">{selectedAlbum.media.map((item, idx) => (<div key={idx} className="aspect-square rounded-xl overflow-hidden bg-gray-100 relative group cursor-pointer" onClick={() => isManageMode ? setSelectedItems(prev => { const n = new Set(prev); n.has(item.id) ? n.delete(item.id) : n.add(item.id); return n; }) : handleViewImage(item.url, 'album')}><img src={item.url} className={`w-full h-full object-cover transition ${isManageMode && selectedItems.has(item.id) ? 'opacity-50 scale-90' : ''}`} loading="lazy" />{isManageMode && (<div className="absolute top-2 right-2">{selectedItems.has(item.id) ? <CheckCircle className="text-rose-500 fill-white" /> : <div className="w-5 h-5 rounded-full border-2 border-white/80" />}</div>)}</div>))}</div>
           {viewingImage && <ImageViewer src={viewingImage} onClose={() => setViewingImage(null)} actions={viewerActions} />}
       </div>
   );
@@ -342,7 +353,6 @@ const MemoriesViewContent = ({
   return (
     <div className="h-full bg-white overflow-y-auto pb-24 relative">
         <div className="relative group cursor-pointer" style={{ height: '320px' }}>
-             {/* 修复：将点击事件绑定在单独的背景层，避免父子级点击穿透问题 */}
              <div className="absolute inset-0 z-0" onClick={handleCoverClick}>
                  <img src={coverUrl} alt="Cover" className="w-full h-full object-cover" />
                  <div className="absolute inset-0 bg-black/10 pointer-events-none" />
@@ -358,7 +368,6 @@ const MemoriesViewContent = ({
                          <div onClick={() => setIsEditingMomentsTitle(true)} className="text-white font-bold text-lg drop-shadow-md pb-10 font-cute cursor-pointer select-none" title="点击修改标题">{momentsTitle}</div>
                     )}
                  </div>
-                 {/* 2. 头像点击 */}
                  <div className="bg-white p-1 rounded-xl shadow-lg pointer-events-auto cursor-pointer relative z-30" onClick={handleAvatarClick}>
                     <div className="w-16 h-16 bg-rose-100 rounded-lg flex items-center justify-center overflow-hidden">
                         {avatarUrl ? <img src={avatarUrl} className="w-full h-full object-cover" /> : <span className="text-3xl">💑</span>}
@@ -366,9 +375,16 @@ const MemoriesViewContent = ({
                  </div>
             </div>
 
-            {/* 1. 发布按钮：独立层级 */}
+            {/* 3. 修复长按发文字：绑定 Press 事件 */}
             <div className="absolute top-4 right-4 z-30">
-                <button onClick={(e) => { e.stopPropagation(); document.getElementById('camera-file-input')?.click(); }} className="bg-black/20 p-2 rounded-full text-white hover:bg-black/40 backdrop-blur-sm pointer-events-auto transition-transform active:scale-90">
+                <button 
+                    onMouseDown={handlePressStart}
+                    onMouseUp={handlePressEnd}
+                    onTouchStart={handlePressStart}
+                    onTouchEnd={handlePressEnd}
+                    onContextMenu={(e) => e.preventDefault()}
+                    className="bg-black/20 p-2 rounded-full text-white hover:bg-black/40 backdrop-blur-sm pointer-events-auto transition-transform active:scale-90 select-none"
+                >
                     <Camera size={20} />
                 </button>
                 <input id="camera-file-input" type="file" multiple accept="image/*" className="hidden" onChange={onFileSelect} />
@@ -548,7 +564,6 @@ const CalendarViewContent = ({ periods, conflicts, todos, addTodo, toggleTodo, o
             <div className="flex-1 bg-gray-50 mt-2 rounded-t-3xl p-6 overflow-y-auto"><div className="flex justify-between items-center mb-4"><h3 className="font-bold text-gray-800 font-cute flex items-center gap-2"><span className="text-2xl">{selectedDate.split('-')[2]}</span><span className="text-sm text-gray-400">日事项</span></h3><button onClick={() => addTodo(prompt("添加待办事项:"), selectedDate)} className="text-rose-500 text-sm font-bold flex items-center gap-1 bg-white px-3 py-1.5 rounded-full shadow-sm"><Plus size={16} /> 添加</button></div><div className="space-y-3">
             {isPredictedPeriod(selectedDate) && !isPeriod(selectedDate) && (<div className="bg-blue-50 text-blue-500 p-3 rounded-xl text-sm font-bold flex items-center gap-2"><Sparkles size={16} fill="currentColor" /> 预计大姨妈</div>)}
             {isPeriod(selectedDate) && (<div className="bg-red-100 text-red-600 p-3 rounded-xl text-sm font-bold flex items-center gap-2"><Heart size={16} fill="currentColor" /> 大姨妈造访中</div>)}
-            {/* 5. 日历事项删除 */}
             {dayConflicts.map((c: ConflictRecord) => (
                 <div key={c.id} className="bg-purple-50 text-purple-900 p-3 rounded-xl text-sm border border-purple-100 relative group">
                     <div className="font-bold flex items-center gap-2 mb-1"><Gavel size={14} /> 喵喵法官裁决</div>
@@ -589,7 +604,6 @@ export default function App() {
   const [uploadImages, setUploadImages] = useState<string[]>([]);
   const [uploadCaption, setUploadCaption] = useState('');
   const [uploadType, setUploadType] = useState<'text' | 'media'>('media');
-  // 4. 新增头像状态
   const [avatarUrl, setAvatarUrl] = useState<string>('');
 
   useEffect(() => {
@@ -603,7 +617,6 @@ export default function App() {
 
   const calculateNextPeriod = () => { if (!periods.length) return null; const next = new Date(parseLocalDate(periods[periods.length - 1].startDate)); next.setDate(next.getDate() + 28); const diffDays = Math.ceil((next.getTime() - new Date().getTime()) / 86400000); return { date: `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-${String(next.getDate()).padStart(2,'0')}`, daysLeft: diffDays }; };
   
-  // 4. 优化拍立得逻辑：手动删除完后自动重置
   const handleTakePhoto = () => {
     const allImages = [...memories.filter(m => m.type === 'media').flatMap(m => m.media.map(url => ({ url, caption: m.caption, id: m.id, source: 'memory' }))), ...albums.flatMap(a => a.media.map(m => ({ url: m.url, caption: m.caption || a.name, id: m.id, source: 'album' })))];
     if (!allImages.length) return alert("相册里还没有照片哦！");
