@@ -12,7 +12,7 @@ import { judgeConflict, extractTodosFromText } from './services/ai';
 import { Memory, PinnedPhoto, PeriodEntry, TodoItem, ConflictRecord, Page, Message, Album, AlbumMedia } from './types';
 // @ts-ignore
 import pailideIcon from './pailide.png';
-
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 // --- Helper Functions ---
 const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
 const getFirstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
@@ -42,46 +42,123 @@ const DEFAULT_AVATAR = "https://cdn-icons-png.flaticon.com/512/4140/4140048.png"
 // --- Sub Components ---
 
 // 2. 修改：ImageViewer - 取消X按钮，点击任意处关闭，添加缩放退出动画
-const ImageViewer = ({ src, onClose, actions }: { src: string; onClose: () => void; actions?: { label: string, onClick: () => void, primary?: boolean }[] }) => {
+const ImageViewer = ({ images, initialIndex, onClose, actions }: { images: string[]; initialIndex: number; onClose: () => void; actions?: { label: string, onClick: () => void, primary?: boolean }[] }) => {
+  const [index, setIndex] = useState(initialIndex);
   const [scale, setScale] = useState(1);
-  const containerRef = useRef<HTMLDivElement>(null);
+  // 用来记录双指缩放的初始距离
+  const initialDistance = useRef<number | null>(null);
+  const initialScale = useRef<number>(1);
+
+  const currentSrc = images[index];
+
+  // 切换图片
+  const handlePrev = (e?: any) => { e?.stopPropagation(); if (index > 0) { setIndex(index - 1); setScale(1); } };
+  const handleNext = (e?: any) => { e?.stopPropagation(); if (index < images.length - 1) { setIndex(index + 1); setScale(1); } };
+
+  // 双击缩放
+  const handleDoubleTap = (e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation();
+    setScale(prev => prev > 1 ? 1 : 2.5);
+  };
+
+  // --- 手势处理逻辑 ---
   
-  const handleDoubleTap = (e: React.MouseEvent | React.TouchEvent) => { e.stopPropagation(); setScale(prev => prev > 1 ? 1 : 2.5); };
+  // 1. 触摸开始：如果是双指，记录初始距离
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      const touch1 = e.touches[0];
+      const touch2 = e.touches[1];
+      // 计算两点距离公式: sqrt((x2-x1)^2 + (y2-y1)^2)
+      const dist = Math.hypot(touch1.pageX - touch2.pageX, touch1.pageY - touch2.pageY);
+      initialDistance.current = dist;
+      initialScale.current = scale;
+    }
+  };
+
+  // 2. 触摸移动：计算新距离，更新缩放
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && initialDistance.current) {
+      const touch1 = e.touches[0];
+      const touch2 = e.touches[1];
+      const dist = Math.hypot(touch1.pageX - touch2.pageX, touch1.pageY - touch2.pageY);
+      
+      // 新缩放比例 = (当前距离 / 初始距离) * 初始缩放比例
+      let newScale = (dist / initialDistance.current) * initialScale.current;
+      
+      // 限制缩放范围
+      newScale = Math.max(1, Math.min(newScale, 4)); 
+      setScale(newScale);
+    }
+  };
+
+  // 3. 触摸结束：重置
+  const handleTouchEnd = () => {
+    initialDistance.current = null;
+    if (scale < 1) setScale(1); // 修正回弹
+  };
 
   return createPortal(
     <motion.div 
       initial={{ opacity: 0 }} 
       animate={{ opacity: 1 }} 
       exit={{ opacity: 0 }} 
-      className="fixed inset-0 z-[999] bg-black flex items-center justify-center overflow-hidden" 
-      onClick={onClose} // 点击背景关闭
+      className="fixed inset-0 z-[999] bg-black flex items-center justify-center overflow-hidden touch-none" 
+      onClick={onClose}
     >
+      {/* 只有在未缩放且不是第一张时才允许向左滑，同理向右 */}
       <motion.img 
-        src={src} 
-        drag={scale > 1} 
-        dragConstraints={{ left: -200*scale, right: 200*scale, top: -200*scale, bottom: 200*scale }} 
-        style={{ scale }} 
-        // 添加缩放动画配置
-        initial={{ scale: 0.8, opacity: 0 }}
-        animate={{ scale: scale, opacity: 1 }}
-        exit={{ scale: 0.8, opacity: 0, transition: { duration: 0.2 } }}
-        className="max-w-full max-h-full object-contain touch-none" 
-        onClick={onClose} // 点击图片也关闭
+        key={currentSrc} // key变化触发切图动画
+        src={currentSrc}
+        
+        // 核心：如果放大了，允许任意拖拽查看细节；如果没放大(scale=1)，只允许X轴拖拽(切图)
+        drag={scale > 1 ? true : "x"} 
+        dragConstraints={scale > 1 ? { left: -200*scale, right: 200*scale, top: -200*scale, bottom: 200*scale } : { left: 0, right: 0 }}
+        dragElastic={0.2} // 增加一点弹性阻尼
+        
+        // 处理切图滑动
+        onDragEnd={(e, { offset, velocity }) => {
+            if (scale === 1) {
+                const swipeThreshold = 50;
+                if (offset.x > swipeThreshold) {
+                    handlePrev();
+                } else if (offset.x < -swipeThreshold) {
+                    handleNext();
+                }
+            }
+        }}
+
+        // 绑定手势
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
         onDoubleClick={handleDoubleTap}
+        onClick={(e) => e.stopPropagation()} // 防止点击图片关闭
+
+        animate={{ scale: scale, x: 0 }} // 切图时重置x坐标
+        transition={{ type: "spring", stiffness: 300, damping: 30 }}
+        
+        className="max-w-full max-h-full object-contain pointer-events-auto"
+        style={{ touchAction: 'none' }} // 关键：禁止浏览器默认缩放
       />
       
+      {/* 左右切换按钮 (电脑端或辅助) */}
+      {index > 0 && <button className="absolute left-4 top-1/2 -translate-y-1/2 p-2 bg-white/20 rounded-full text-white hover:bg-white/40 z-[1001]" onClick={handlePrev}><ChevronLeft /></button>}
+      {index < images.length - 1 && <button className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-white/20 rounded-full text-white hover:bg-white/40 z-[1001]" onClick={handleNext}><ChevronRight /></button>}
+
+      {/* 图片计数器 */}
+      <div className="absolute top-10 left-0 right-0 text-center pointer-events-none">
+          <span className="bg-black/50 text-white px-3 py-1 rounded-full text-xs backdrop-blur-md">{index + 1} / {images.length}</span>
+      </div>
+
       {actions && actions.length > 0 && (
            <div 
              className="absolute bottom-24 left-0 right-0 flex justify-center flex-wrap gap-4 pointer-events-none z-[1000]"
-             onClick={(e) => e.stopPropagation()} // 阻止冒泡，防止点击按钮关闭图片
+             onClick={(e) => e.stopPropagation()}
            >
                {actions.map((action, idx) => (
                    <button 
                         key={idx}
-                        className={`px-6 py-2.5 rounded-full text-sm font-bold pointer-events-auto cursor-pointer flex items-center gap-2 backdrop-blur-md border border-white/20 transition active:scale-95 
-                        ${action.primary 
-                            ? 'bg-black/30 text-white hover:bg-black/40 shadow-lg' 
-                            : 'bg-black/40 text-white hover:bg-black/60'}`} 
+                        className={`px-6 py-2.5 rounded-full text-sm font-bold pointer-events-auto cursor-pointer flex items-center gap-2 backdrop-blur-md border border-white/20 transition active:scale-95 ${action.primary ? 'bg-black/30 text-white hover:bg-black/40 shadow-lg' : 'bg-black/40 text-white hover:bg-black/60'}`} 
                         onClick={(e) => { e.stopPropagation(); action.onClick(); }}
                     >
                        {action.label === '更换头像' || action.label === '更换封面' ? <Edit2 size={14} /> : <CheckCircle size={14} />}
@@ -90,7 +167,6 @@ const ImageViewer = ({ src, onClose, actions }: { src: string; onClose: () => vo
                ))}
            </div>
       )}
-      {/* 已移除 X 按钮 */}
     </motion.div>, document.body
   );
 };
@@ -327,16 +403,29 @@ const MemoriesViewContent = ({
       }
   };
 
-  const handleViewImage = (url: string, context: 'album' | 'memory') => {
-      setViewingImage(url);
+  const handleViewImage = (url: string, context: 'album' | 'memory', list?: string[]) => {
+      // 如果调用时没传 list（兼容旧逻辑），尝试自动查找
+      let imageList: string[] = list || [url]; 
+      
+      // 如果没传list，且是相册模式，且有选中的相册，就用相册的图
+      if (!list && context === 'album' && selectedAlbum) {
+          imageList = selectedAlbum.media.map(m => m.url);
+      }
+      // 注意：memory 模式下，因为 memory 是列表循环的，最好在调用 handleViewImage 时直接把 memory.media 传进来
+      
+      const index = imageList.indexOf(url);
+      setViewingImage({ list: imageList, index: index === -1 ? 0 : index });
+
       const actions = [];
+      // ... (保留之前的 actions 逻辑，但注意 setViewingImage(null) 要适配新类型)
+      // 下面这几行 actions 逻辑里的 setViewingImage(null) 保持不变即可
       if (context === 'album' && selectedAlbum) {
           actions.push({
               label: '设为封面',
               onClick: () => {
                   setAlbums((prev: Album[]) => prev.map(a => a.id === selectedAlbum.id ? { ...a, coverUrl: url } : a));
                   setSelectedAlbum(prev => prev ? { ...prev, coverUrl: url } : null);
-                  setViewingImage(null);
+                  setViewingImage(null); // 关闭
                   alert('已设为相册封面');
               }
           });
@@ -347,7 +436,7 @@ const MemoriesViewContent = ({
           onClick: () => {
               if(confirm('将这张图片设为朋友圈背景？')) {
                   setMomentsCover(url);
-                  setViewingImage(null);
+                  setViewingImage(null); // 关闭
               }
           }
       });
@@ -376,8 +465,8 @@ const MemoriesViewContent = ({
               </div>
               <div className="flex gap-2">{isManageMode ? <><button onClick={batchDeletePhotos} className="text-red-500 font-bold text-sm px-3 py-1 bg-red-50 rounded-full">删除({selectedItems.size})</button><button onClick={() => setIsManageMode(false)} className="text-gray-500 font-bold text-sm px-3 py-1">取消</button></> : <><button onClick={() => setIsManageMode(true)} className="p-2 hover:bg-gray-100 rounded-full text-gray-600"><Settings size={20} /></button><label className="p-2 bg-rose-50 text-rose-500 rounded-full cursor-pointer"><Plus size={24} /><input type="file" multiple accept="image/*" className="hidden" onChange={handleAlbumUpload} /></label></>}</div>
           </div>
-          <div className="p-4 grid grid-cols-3 md:grid-cols-5 gap-2 overflow-y-auto">{selectedAlbum.media.map((item, idx) => (<div key={idx} className="aspect-square rounded-xl overflow-hidden bg-gray-100 relative group cursor-pointer" onClick={() => isManageMode ? setSelectedItems(prev => { const n = new Set(prev); n.has(item.id) ? n.delete(item.id) : n.add(item.id); return n; }) : handleViewImage(item.url, 'album')}><img src={item.url} className={`w-full h-full object-cover transition ${isManageMode && selectedItems.has(item.id) ? 'opacity-50 scale-90' : ''}`} loading="lazy" />{isManageMode && (<div className="absolute top-2 right-2">{selectedItems.has(item.id) ? <CheckCircle className="text-rose-500 fill-white" /> : <div className="w-5 h-5 rounded-full border-2 border-white/80" />}</div>)}</div>))}</div>
-          {viewingImage && <ImageViewer src={viewingImage} onClose={() => setViewingImage(null)} actions={viewerActions} />}
+          <div className="p-4 grid grid-cols-3 md:grid-cols-5 gap-2 overflow-y-auto">{selectedAlbum.media.map((item, idx) => (<div key={idx} className="aspect-square rounded-xl overflow-hidden bg-gray-100 relative group cursor-pointer" onClick={() => isManageMode ? setSelectedItems(prev => { const n = new Set(prev); n.has(item.id) ? n.delete(item.id) : n.add(item.id); return n; }) : handleViewImage(item.url, 'album', selectedAlbum.media.map(m => m.url))}><img src={item.url} className={`w-full h-full object-cover transition ${isManageMode && selectedItems.has(item.id) ? 'opacity-50 scale-90' : ''}`} loading="lazy" />{isManageMode && (<div className="absolute top-2 right-2">{selectedItems.has(item.id) ? <CheckCircle className="text-rose-500 fill-white" /> : <div className="w-5 h-5 rounded-full border-2 border-white/80" />}</div>)}</div>))}</div>
+          {viewingImage && <ImageViewer images={viewingImage?.list || []} initialIndex={viewingImage?.index || 0} onClose={() => setViewingImage(null)} actions={viewerActions} />}
       </div>
   );
 
@@ -438,7 +527,7 @@ const MemoriesViewContent = ({
                           <div className="flex-1 min-w-0">
                               <h4 className="font-bold text-gray-800 font-cute text-sm mb-1 text-blue-900">我们</h4>
                               <p className="mb-2 text-gray-800 text-sm leading-relaxed">{memory.caption}</p>
-                              {memory.type === 'media' && memory.media.length > 0 && (<div className={`grid gap-1 mb-2 max-w-[80%] ${memory.media.length === 1 ? 'grid-cols-1' : memory.media.length === 4 ? 'grid-cols-2 w-2/3' : 'grid-cols-3'}`}>{memory.media.map((url: string, idx: number) => (<div key={idx} onClick={() => handleViewImage(url, 'memory')} className={`aspect-square bg-gray-100 cursor-pointer overflow-hidden ${memory.media.length === 1 ? 'max-w-[200px] max-h-[200px]' : ''}`}><img src={url} className="w-full h-full object-cover" alt="Memory" /></div>))}</div>)}
+                              {memory.type === 'media' && memory.media.length > 0 && (<div className={`grid gap-1 mb-2 max-w-[80%] ${memory.media.length === 1 ? 'grid-cols-1' : memory.media.length === 4 ? 'grid-cols-2 w-2/3' : 'grid-cols-3'}`}>{memory.media.map((url: string, idx: number) => (<div key={idx} onClick={() => handleViewImage(url, 'memory', memory.media)} className={`aspect-square bg-gray-100 cursor-pointer overflow-hidden ${memory.media.length === 1 ? 'max-w-[200px] max-h-[200px]' : ''}`}><img src={url} className="w-full h-full object-cover" alt="Memory" /></div>))}</div>)}
                               <div className="flex justify-between items-center mt-2 relative">
                                   <div className="flex items-center gap-3"><span className="text-xs text-gray-400">{memory.date}</span><button onClick={() => onDeleteMemory(memory.id)} className="text-xs text-blue-900 hover:underline">删除</button></div>
                                   <div className="relative"><button onClick={(e) => { e.stopPropagation(); setActiveMenuId(activeMenuId === memory.id ? null : memory.id); }} className="bg-gray-50 p-1 rounded-sm text-blue-800 hover:bg-gray-100"><MoreHorizontal size={16} /></button><AnimatePresence>{activeMenuId === memory.id && (<motion.div initial={{ opacity: 0, scale: 0.9, x: 10 }} animate={{ opacity: 1, scale: 1, x: 0 }} exit={{ opacity: 0, scale: 0.9, x: 10 }} className="absolute right-8 top-0 bg-gray-800 text-white rounded-md flex items-center overflow-hidden shadow-xl z-10" onClick={(e) => e.stopPropagation()}><button onClick={() => { handleLike(memory.id); setActiveMenuId(null); }} className="flex items-center gap-1 px-4 py-2 hover:bg-gray-700 text-xs font-bold min-w-[80px] justify-center"><Heart size={14} fill={memory.isLiked ? "red" : "none"} color={memory.isLiked ? "red" : "white"} />{memory.isLiked ? '取消' : '赞'}</button><div className="w-[1px] h-4 bg-gray-600"></div><button onClick={() => { const input = prompt('请输入评论'); if(input) { handleComment(memory.id, input); setActiveMenuId(null); } }} className="flex items-center gap-1 px-4 py-2 hover:bg-gray-700 text-xs font-bold min-w-[80px] justify-center"><MessageCircle size={14} />评论</button></motion.div>)}</AnimatePresence></div>
