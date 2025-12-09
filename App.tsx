@@ -609,7 +609,28 @@ const CycleViewContent = ({ periods, nextPeriod, addPeriod, deletePeriod }: any)
                 <h2 className="text-gray-500 font-bold mb-2 font-cute">距离下次大姨妈还有</h2>
                 <div className="text-6xl font-black text-rose-500 my-4 font-cute">{nextPeriod ? nextPeriod.daysLeft : '?'}<span className="text-lg text-gray-400 ml-2 font-bold">天</span></div>
                 {nextPeriod && <p className="text-gray-400 text-sm">预计日期: {nextPeriod.date}</p>}
-                <button onClick={handleLogPeriod} className="mt-8 bg-rose-500 text-white px-8 py-3 rounded-full font-bold shadow-lg shadow-rose-200 hover:scale-105 transition-transform active:scale-95 flex items-center gap-2 mx-auto cursor-pointer z-50 relative"><Heart fill="white" size={20} /> 大姨妈来了</button>
+                <div className="flex flex-col items-center z-50 relative">
+    {/* 原有的按钮 */}
+    <button onClick={handleLogPeriod} className="mt-8 bg-rose-500 text-white px-8 py-3 rounded-full font-bold shadow-lg shadow-rose-200 hover:scale-105 transition-transform active:scale-95 flex items-center gap-2 mx-auto cursor-pointer"><Heart fill="white" size={20} /> 大姨妈来了</button>
+    
+    {/* 新增：补录日期功能 */}
+    <label className="mt-4 text-xs text-rose-400/80 font-bold cursor-pointer hover:text-rose-500 transition relative py-2 px-4 rounded-lg hover:bg-rose-50">
+        📅 补录其他日期
+        <input 
+            type="date" 
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
+            onChange={(e) => {
+                const date = e.target.value;
+                if (date) {
+                    if (confirm(`确定补录 ${date} 为经期开始日？`)) {
+                        addPeriod(date);
+                    }
+                    e.target.value = ''; // 重置，以便下次还能选同一天
+                }
+            }} 
+        />
+    </label>
+</div>
              </div>
              <div className="absolute top-0 right-0 -mt-10 -mr-10 w-40 h-40 bg-rose-50 rounded-full opacity-50 pointer-events-none" /><div className="absolute bottom-0 left-0 -mb-10 -ml-10 w-32 h-32 bg-rose-50 rounded-full opacity-50 pointer-events-none" />
         </div>
