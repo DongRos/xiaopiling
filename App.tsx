@@ -403,8 +403,11 @@ const MemoriesViewContent = ({
                 <button 
                     onMouseDown={handlePressStart}
                     onMouseUp={handlePressEnd}
+                    onTouchStart={handlePressStart} // 新增：手机端触摸开始
+                    onTouchEnd={handlePressEnd}     // 新增：手机端触摸结束
                     onContextMenu={(e) => e.preventDefault()}
                     className="bg-black/20 p-2 rounded-full text-white hover:bg-black/40 backdrop-blur-sm pointer-events-auto transition-transform active:scale-90 select-none"
+                    style={{ WebkitTouchCallout: 'none', userSelect: 'none' }} // 新增：防止长按弹出系统菜单
                 >
                     <Camera size={20} />
                 </button>
@@ -627,6 +630,64 @@ export default function App() {
   const [uploadType, setUploadType] = useState<'text' | 'media'>('media');
   const [avatarUrl, setAvatarUrl] = useState<string>('');
 
+
+  // --- 新增代码开始：处理物理返回键和双击退出 ---
+  useEffect(() => {
+    // 1. 初始化：进入 App 时，替换当前状态为 HOME，确保有一个历史状态
+    window.history.replaceState({ page: Page.HOME }, document.title);
+
+    let lastBackPressTime = 0;
+
+    const handlePopState = (event: PopStateEvent) => {
+      // 获取当前要回退到的页面状态
+      const state = event.state;
+      
+      if (state && state.page) {
+        // 如果历史记录里有页面状态，就跳转到那个页面（实现返回上一级）
+        setActivePage(state.page);
+      } else {
+        // 如果历史记录空了（通常意味着退回到了入口），或者是 HOME 页再次返回
+        // 这里的逻辑模拟“主页双击退出”
+        
+        const now = Date.now();
+        // 如果当前是主页，且两次按键间隔小于 2秒
+        if (activePage === Page.HOME && (now - lastBackPressTime < 2000)) {
+           // 允许浏览器默认行为（即关闭 App/WebView）
+           // 注意：在某些打包环境下，可能需要调用 navigator.app.exitApp()，但通常 history.back() 到底就退出了
+           return; 
+        } else if (activePage === Page.HOME) {
+           // 第一次在主页按返回
+           lastBackPressTime = now;
+           // 重新把 Home 状态推回去，阻止 App 立即退出，并提示用户
+           window.history.pushState({ page: Page.HOME }, document.title);
+           // 提示用户（你可以换成更好看的 Toast 组件）
+           const toast = document.createElement('div');
+           toast.innerText = "再按一次退出小屁铃";
+           toast.style.cssText = "position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);color:white;padding:10px 20px;border-radius:20px;z-index:9999;font-size:14px;";
+           document.body.appendChild(toast);
+           setTimeout(() => document.body.removeChild(toast), 2000);
+        } else {
+           // 如果当前不是主页（但在历史栈底部），强制回到主页
+           setActivePage(Page.HOME);
+           window.history.replaceState({ page: Page.HOME }, document.title);
+        }
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [activePage]);
+
+  // 封装一个切换页面的函数，替代直接 setPage
+  // 作用：每次切换页面，都往历史记录里推入一个状态
+  const navigateTo = (page: Page) => {
+    if (page === activePage) return;
+    window.history.pushState({ page }, document.title);
+    setActivePage(page);
+  };
+  // --- 新增代码结束 ---
+  
+  
   useEffect(() => {
     const savedMemories = localStorage.getItem('memories'); if (savedMemories) { try { const parsed = JSON.parse(savedMemories); if (Array.isArray(parsed)) setMemories(parsed.map((m: any) => ({ ...m, media: m.media || (m.url ? [m.url] : []), type: m.type || (m.url ? 'media' : 'text'), comments: m.comments || [] }))); } catch (e) {} } else { setMemories([{ id: '1', media: ['https://images.unsplash.com/photo-1518020382113-a7e8fc38eac9?auto=format&fit=crop&w=400&q=80'], caption: '可爱的狗勾', date: '2023-10-01', type: 'media', likes: 2, isLiked: false, comments: [] }]); }
     try { setAlbums(JSON.parse(localStorage.getItem('albums') || '[]')); setTodos(JSON.parse(localStorage.getItem('todos') || '[]')); setPeriods(JSON.parse(localStorage.getItem('periods') || '[]')); setConflicts(JSON.parse(localStorage.getItem('conflicts') || '[]')); setPinnedPhotos(JSON.parse(localStorage.getItem('pinnedPhotos') || '[]')); setMessages(JSON.parse(localStorage.getItem('messages') || '[]')); } catch(e){}
@@ -718,7 +779,7 @@ export default function App() {
                     </div>
                     <div className="flex flex-col md:flex-row gap-2 md:gap-4 items-end pointer-events-auto">
                         <AnniversaryTimer startDate={anniversaryDate} onSetDate={() => { const d = prompt("纪念日 (YYYY-MM-DD)", anniversaryDate); if(d) setAnniversaryDate(d); }} />
-                        <div className="bg-white/90 backdrop-blur-sm rounded-xl md:rounded-2xl shadow-lg border-2 border-rose-100 p-2 flex flex-col items-center min-w-[70px] cursor-pointer" onClick={() => setActivePage(Page.CYCLE)}><span className="text-[9px] text-rose-400 font-bold uppercase font-cute">姨妈倒计时</span>{calculateNextPeriod() ? (<div className="text-center"><span className="text-lg font-bold text-rose-500 font-cute">{calculateNextPeriod()?.daysLeft}</span><span className="text-[9px] text-gray-400 ml-0.5 font-bold">天</span></div>) : (<span className="text-[9px] text-gray-400 mt-1">无数据</span>)}</div>
+                        <div className="bg-white/90 backdrop-blur-sm rounded-xl md:rounded-2xl shadow-lg border-2 border-rose-100 p-2 flex flex-col items-center min-w-[70px] cursor-pointer" onClick={() => navigateTo(Page.CYCLE)}><span className="text-[9px] text-rose-400 font-bold uppercase font-cute">姨妈倒计时</span>{calculateNextPeriod() ? (<div className="text-center"><span className="text-lg font-bold text-rose-500 font-cute">{calculateNextPeriod()?.daysLeft}</span><span className="text-[9px] text-gray-400 ml-0.5 font-bold">天</span></div>) : (<span className="text-[9px] text-gray-400 mt-1">无数据</span>)}</div>
                         {pinnedPhotos.length > 0 && (<button onClick={handleClearBoard} className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border-2 border-rose-100 p-2 text-gray-400 hover:text-rose-500 min-h-[50px] min-w-[50px] flex flex-col items-center justify-center"><Trash2 size={20} /><span className="text-[9px] font-bold mt-1 font-cute">清空</span></button>)}
                     </div>
                   </header>
@@ -745,7 +806,7 @@ export default function App() {
             </motion.div>
          </AnimatePresence>
       </main>
-      <Navbar active={activePage} setPage={setActivePage} />
+      <Navbar active={activePage} setPage={navigateTo} />
     </div>
   );
 }
