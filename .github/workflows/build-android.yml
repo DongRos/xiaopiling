@@ -52,6 +52,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: 小屁铃-Debug-App
+          name: Xiaopiling-App
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
