@@ -41,7 +41,7 @@ const DEFAULT_AVATAR = "https://cdn-icons-png.flaticon.com/512/4140/4140048.png"
 
 // --- Sub Components ---
 
-// 2. 修改：ImageViewer - 取消X按钮，点击任意处关闭
+// 2. 修改：ImageViewer - 取消X按钮，点击任意处关闭，添加缩放退出动画
 const ImageViewer = ({ src, onClose, actions }: { src: string; onClose: () => void; actions?: { label: string, onClick: () => void, primary?: boolean }[] }) => {
   const [scale, setScale] = useState(1);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -52,7 +52,7 @@ const ImageViewer = ({ src, onClose, actions }: { src: string; onClose: () => vo
     <motion.div 
       initial={{ opacity: 0 }} 
       animate={{ opacity: 1 }} 
-      exit={{ opacity: 0 }} // 保持退出时的淡出动画
+      exit={{ opacity: 0 }} 
       className="fixed inset-0 z-[999] bg-black flex items-center justify-center overflow-hidden" 
       onClick={onClose} // 点击背景关闭
     >
@@ -61,17 +61,19 @@ const ImageViewer = ({ src, onClose, actions }: { src: string; onClose: () => vo
         drag={scale > 1} 
         dragConstraints={{ left: -200*scale, right: 200*scale, top: -200*scale, bottom: 200*scale }} 
         style={{ scale }} 
+        // 添加缩放动画配置
+        initial={{ scale: 0.8, opacity: 0 }}
+        animate={{ scale: scale, opacity: 1 }}
+        exit={{ scale: 0.8, opacity: 0, transition: { duration: 0.2 } }}
         className="max-w-full max-h-full object-contain touch-none" 
         onClick={onClose} // 点击图片也关闭
         onDoubleClick={handleDoubleTap}
-        layoutId={`image-${src}`} // 可选：如果源也有 layoutId 可以实现更平滑的共享元素动画
       />
       
-      {/* 按钮组：需要阻止冒泡，防止点击按钮时触发关闭 */}
       {actions && actions.length > 0 && (
            <div 
              className="absolute bottom-24 left-0 right-0 flex justify-center flex-wrap gap-4 pointer-events-none z-[1000]"
-             onClick={(e) => e.stopPropagation()} 
+             onClick={(e) => e.stopPropagation()} // 阻止冒泡，防止点击按钮关闭图片
            >
                {actions.map((action, idx) => (
                    <button 
@@ -88,7 +90,7 @@ const ImageViewer = ({ src, onClose, actions }: { src: string; onClose: () => vo
                ))}
            </div>
       )}
-      {/* 已移除底部的 X 关闭按钮 */}
+      {/* 已移除 X 按钮 */}
     </motion.div>, document.body
   );
 };
@@ -137,14 +139,14 @@ const PolaroidCamera = ({ onTakePhoto, iconUrl, onUploadIcon, onResetIcon }: any
   );
 };
 
-// 1. 修复：拍立得置顶逻辑 (onPointerDown)
+// 1. 修复：强化置顶逻辑，添加 onTouchStart 支持手机端
 const DraggablePhoto = ({ pin, onUpdate, onDelete, onBringToFront, isFresh = false, date }: any) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const displayCaption = pin.customCaption || '美好回忆';
   
-  // 确保按下时触发置顶
-  const handlePointerDown = () => {
+  // 核心修复：处理置顶
+  const handleInteractStart = () => {
       if (onBringToFront) onBringToFront(pin.id);
   };
 
@@ -152,7 +154,8 @@ const DraggablePhoto = ({ pin, onUpdate, onDelete, onBringToFront, isFresh = fal
     <motion.div 
         drag 
         dragMomentum={false} 
-        onPointerDown={handlePointerDown} 
+        onPointerDown={handleInteractStart} // 电脑端/通用
+        onTouchStart={handleInteractStart}  // 手机端强制触发
         initial={isFresh ? { opacity: 0, y: 150, scale: 0.5 } : false} 
         animate={{ opacity: 1, scale: pin.scale, rotate: pin.rotation, x: pin.x, y: pin.y }} 
         whileHover={{ zIndex: 100 }} 
