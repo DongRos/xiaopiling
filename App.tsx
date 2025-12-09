@@ -5,7 +5,7 @@ import {
   ChevronLeft, ChevronRight, MessageCircle, ZoomIn, ZoomOut, Palette, RotateCcw, Pin,
   Star, Plus, MessageSquareHeart, Send, Loader2, Image as ImageIcon, FolderPlus, Grid,
   ArrowLeft, Edit2, Sparkles, Gavel, ShieldCheck, Lightbulb, Clock, MoreHorizontal,
-  MoreVertical, CheckCircle, Settings, Menu
+  MoreVertical, CheckCircle, Settings, Menu, User
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { judgeConflict, extractTodosFromText } from './services/ai';
@@ -37,6 +37,7 @@ const useSafeStorage = (key: string, value: any) => {
 
 const DEFAULT_CAMERA_ICON = pailideIcon || "https://images.unsplash.com/photo-1526045431048-f857369baa09?auto=format&fit=crop&w=600&q=80";
 const DEFAULT_COVER = "https://images.unsplash.com/photo-1516962215378-7fa2e137ae91?auto=format&fit=crop&w=1000&q=80";
+const DEFAULT_AVATAR = "https://cdn-icons-png.flaticon.com/512/4140/4140048.png";
 
 // --- Sub Components ---
 const ImageViewer = ({ src, onClose, onAction, actionLabel }: { src: string; onClose: () => void; onAction?: () => void; actionLabel?: string }) => {
@@ -50,7 +51,7 @@ const ImageViewer = ({ src, onClose, onAction, actionLabel }: { src: string; onC
       <motion.img src={src} drag={scale > 1} dragConstraints={{ left: -200*scale, right: 200*scale, top: -200*scale, bottom: 200*scale }} style={{ scale }} className="max-w-full max-h-full object-contain touch-none" onClick={(e) => e.stopPropagation()} onDoubleClick={handleDoubleTap} />
       {onAction && actionLabel && (
            <div className="absolute bottom-24 left-0 right-0 flex justify-center pointer-events-none z-[1000]">
-               <div className="bg-white/20 backdrop-blur-md px-6 py-3 rounded-full text-white text-sm font-bold pointer-events-auto cursor-pointer border border-white/30 flex items-center gap-2" onClick={(e) => { e.stopPropagation(); onAction(); }}>
+               <div className="bg-white/20 backdrop-blur-md px-6 py-3 rounded-full text-white text-sm font-bold pointer-events-auto cursor-pointer border border-white/30 flex items-center gap-2 hover:bg-white/30 transition" onClick={(e) => { e.stopPropagation(); onAction(); }}>
                    <Edit2 size={14} /> {actionLabel}
                </div>
            </div>
@@ -104,13 +105,29 @@ const PolaroidCamera = ({ onTakePhoto, iconUrl, onUploadIcon, onResetIcon }: any
   );
 };
 
-const DraggablePhoto = ({ pin, onUpdate, onDelete, isFresh = false, date }: any) => {
+const DraggablePhoto = ({ pin, onUpdate, onDelete, onBringToFront, isFresh = false, date }: any) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const displayCaption = pin.customCaption || '美好回忆';
-  // 修复：去除小铅笔，直接单击文字编辑
+  
+  // 处理按下事件：置顶
+  const handleMouseDown = () => {
+      onBringToFront(pin.id);
+  };
+
   return (
-    <motion.div drag dragMomentum={false} initial={isFresh ? { opacity: 0, y: 150, scale: 0.5 } : false} animate={{ opacity: 1, scale: pin.scale, rotate: pin.rotation, x: pin.x, y: pin.y }} whileHover={{ zIndex: 50 }} whileTap={{ cursor: 'grabbing', zIndex: 60 }} onDragEnd={(e, info) => onUpdate(pin.id, { x: pin.x + info.offset.x, y: pin.y + info.offset.y })} className={`absolute w-44 bg-white p-3 pb-4 shadow-xl flex flex-col items-center group ${isFresh ? 'z-20' : 'z-10'}`} style={{ top: '50%', left: '50%', marginTop: -110, marginLeft: -88 }}>
+    <motion.div 
+        drag 
+        dragMomentum={false} 
+        onPointerDown={handleMouseDown} // 2. 修改：点击/触摸时置顶
+        initial={isFresh ? { opacity: 0, y: 150, scale: 0.5 } : false} 
+        animate={{ opacity: 1, scale: pin.scale, rotate: pin.rotation, x: pin.x, y: pin.y }} 
+        whileHover={{ zIndex: 100 }} // 临时提高层级
+        whileTap={{ cursor: 'grabbing', zIndex: 101 }} 
+        onDragEnd={(e, info) => onUpdate(pin.id, { x: pin.x + info.offset.x, y: pin.y + info.offset.y })} 
+        className={`absolute w-44 bg-white p-3 pb-4 shadow-xl flex flex-col items-center group ${isFresh ? 'z-50' : 'z-10'}`} 
+        style={{ top: '50%', left: '50%', marginTop: -110, marginLeft: -88 }}
+    >
       <div className="w-full h-36 bg-gray-100 mb-2 overflow-hidden shadow-inner bg-black/5"><img src={pin.mediaUrl} className="w-full h-full object-cover pointer-events-none select-none" /></div>
       {isEditing ? (
         <input autoFocus className="w-full text-center font-cute text-gray-700 bg-rose-50 border-none focus:ring-0 text-sm p-1 rounded" value={editValue} onChange={(e) => setEditValue(e.target.value)} onBlur={() => { setIsEditing(false); onUpdate(pin.id, { customCaption: editValue }); }} onKeyDown={(e) => { if(e.key === 'Enter') { setIsEditing(false); onUpdate(pin.id, { customCaption: editValue }); }}} onClick={(e) => e.stopPropagation()} />
@@ -175,7 +192,7 @@ const AnniversaryTimer = ({ startDate, onSetDate }: any) => {
 const MemoriesViewContent = ({
   memories, albums, setAlbums, handleLike, handleComment, onFileSelect, onTextPost, showUploadModal, setShowUploadModal,
   uploadImages, setUploadImages, uploadCaption, setUploadCaption, uploadType, confirmUpload, coverUrl, onUpdateCover, onDeleteMemory,
-  momentsTitle, setMomentsTitle 
+  momentsTitle, setMomentsTitle, avatarUrl, setAvatarUrl, setMomentsCover
 }: any) => {
   const [activeTab, setActiveTab] = useState<'moments' | 'albums'>('moments');
   const [viewingImage, setViewingImage] = useState<string | null>(null);
@@ -188,7 +205,6 @@ const MemoriesViewContent = ({
   const [isEditingMomentsTitle, setIsEditingMomentsTitle] = useState(false);
   const [isManageMode, setIsManageMode] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
-  // 相册重命名状态
   const [isEditingAlbumTitle, setIsEditingAlbumTitle] = useState(false);
   const [tempAlbumName, setTempAlbumName] = useState('');
 
@@ -226,9 +242,43 @@ const MemoriesViewContent = ({
   };
   const handleCoverClick = (e: React.MouseEvent) => {
       if (isEditingMomentsTitle) return;
+      // 点击背景查看背景大图，并提供“更换封面”选项
       e.stopPropagation(); setViewingImage(coverUrl); setViewerAction({ label: '更换封面', handler: () => { document.getElementById('cover-upload')?.click(); setViewingImage(null); } });
   };
-  // 保存相册名称
+  
+  // 4. 头像全屏查看和更换
+  const handleAvatarClick = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setViewingImage(avatarUrl);
+      setViewerAction({ 
+          label: '更换头像', 
+          handler: () => { document.getElementById('avatar-upload')?.click(); setViewingImage(null); }
+      });
+  };
+
+  const handleAvatarUpdate = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) {
+          const reader = new FileReader();
+          reader.onload = () => setAvatarUrl(reader.result as string);
+          reader.readAsDataURL(file);
+      }
+  };
+
+  // 5. 查看图片时提供“设为背景”
+  const handleViewImage = (url: string) => {
+      setViewingImage(url);
+      setViewerAction({
+          label: '设为背景',
+          handler: () => {
+              if (confirm('将这张图片设为朋友圈背景？')) {
+                  setMomentsCover(url);
+                  setViewingImage(null);
+              }
+          }
+      });
+  };
+
   const saveAlbumName = () => {
       if (selectedAlbum && tempAlbumName.trim()) {
           const updatedAlbum = { ...selectedAlbum, name: tempAlbumName };
@@ -243,29 +293,15 @@ const MemoriesViewContent = ({
           <div className="p-4 border-b flex items-center justify-between bg-white/80 backdrop-blur sticky top-0 z-10">
               <div className="flex items-center gap-4">
                   <button onClick={() => setSelectedAlbum(null)} className="p-2 hover:bg-gray-100 rounded-full"><ArrowLeft /></button>
-                  {/* 相册重命名功能 */}
                   {isEditingAlbumTitle ? (
-                      <input 
-                          autoFocus
-                          value={tempAlbumName}
-                          onChange={(e) => setTempAlbumName(e.target.value)}
-                          onBlur={saveAlbumName}
-                          onKeyDown={(e) => { if(e.key === 'Enter') saveAlbumName(); }}
-                          className="text-xl font-bold font-cute bg-gray-50 border border-gray-200 rounded px-2 py-1 outline-none focus:ring-2 focus:ring-rose-200"
-                      />
+                      <input autoFocus value={tempAlbumName} onChange={(e) => setTempAlbumName(e.target.value)} onBlur={saveAlbumName} onKeyDown={(e) => { if(e.key === 'Enter') saveAlbumName(); }} className="text-xl font-bold font-cute bg-gray-50 border border-gray-200 rounded px-2 py-1 outline-none focus:ring-2 focus:ring-rose-200" />
                   ) : (
-                      <h2 
-                          onClick={() => { setTempAlbumName(selectedAlbum.name); setIsEditingAlbumTitle(true); }}
-                          className="text-xl font-bold font-cute cursor-pointer hover:bg-gray-50 px-2 py-1 rounded transition"
-                          title="点击重命名"
-                      >
-                          {selectedAlbum.name}
-                      </h2>
+                      <h2 onClick={() => { setTempAlbumName(selectedAlbum.name); setIsEditingAlbumTitle(true); }} className="text-xl font-bold font-cute cursor-pointer hover:bg-gray-50 px-2 py-1 rounded transition" title="点击重命名">{selectedAlbum.name}</h2>
                   )}
               </div>
               <div className="flex gap-2">{isManageMode ? <><button onClick={batchDeletePhotos} className="text-red-500 font-bold text-sm px-3 py-1 bg-red-50 rounded-full">删除({selectedItems.size})</button><button onClick={() => setIsManageMode(false)} className="text-gray-500 font-bold text-sm px-3 py-1">取消</button></> : <><button onClick={() => setIsManageMode(true)} className="p-2 hover:bg-gray-100 rounded-full text-gray-600"><Settings size={20} /></button><label className="p-2 bg-rose-50 text-rose-500 rounded-full cursor-pointer"><Plus size={24} /><input type="file" multiple accept="image/*" className="hidden" onChange={handleAlbumUpload} /></label></>}</div>
           </div>
-          <div className="p-4 grid grid-cols-3 gap-2 overflow-y-auto">{selectedAlbum.media.map((item, idx) => (<div key={idx} className="aspect-square rounded-xl overflow-hidden bg-gray-100 relative group cursor-pointer" onClick={() => isManageMode ? setSelectedItems(prev => { const n = new Set(prev); n.has(item.id) ? n.delete(item.id) : n.add(item.id); return n; }) : (setViewingImage(item.url), setViewerAction({ label: '设为封面', handler: () => { setAlbums((prev: Album[]) => prev.map(a => a.id === selectedAlbum.id ? { ...a, coverUrl: item.url } : a)); setSelectedAlbum(prev => prev ? { ...prev, coverUrl: item.url } : null); setViewingImage(null); alert('封面已设置'); } }))}><img src={item.url} className={`w-full h-full object-cover transition ${isManageMode && selectedItems.has(item.id) ? 'opacity-50 scale-90' : ''}`} loading="lazy" />{isManageMode && (<div className="absolute top-2 right-2">{selectedItems.has(item.id) ? <CheckCircle className="text-rose-500 fill-white" /> : <div className="w-5 h-5 rounded-full border-2 border-white/80" />}</div>)}</div>))}</div>
+          <div className="p-4 grid grid-cols-3 gap-2 overflow-y-auto">{selectedAlbum.media.map((item, idx) => (<div key={idx} className="aspect-square rounded-xl overflow-hidden bg-gray-100 relative group cursor-pointer" onClick={() => isManageMode ? setSelectedItems(prev => { const n = new Set(prev); n.has(item.id) ? n.delete(item.id) : n.add(item.id); return n; }) : handleViewImage(item.url)}><img src={item.url} className={`w-full h-full object-cover transition ${isManageMode && selectedItems.has(item.id) ? 'opacity-50 scale-90' : ''}`} loading="lazy" />{isManageMode && (<div className="absolute top-2 right-2">{selectedItems.has(item.id) ? <CheckCircle className="text-rose-500 fill-white" /> : <div className="w-5 h-5 rounded-full border-2 border-white/80" />}</div>)}</div>))}</div>
           {viewingImage && <ImageViewer src={viewingImage} onClose={() => setViewingImage(null)} onAction={viewerAction?.handler} actionLabel={viewerAction?.label} />}
       </div>
   );
@@ -277,16 +313,21 @@ const MemoriesViewContent = ({
              <input id="cover-upload" type="file" className="hidden" onChange={onUpdateCover} accept="image/*" />
             <div className="absolute -bottom-8 right-4 flex items-end gap-3 z-20">
                  <div className="pointer-events-auto" onClick={(e) => e.stopPropagation()}>
-                    {/* 修复：去除小铅笔，直接单击编辑 */}
                     {isEditingMomentsTitle ? (
                          <input value={momentsTitle} onChange={(e) => setMomentsTitle(e.target.value)} onBlur={() => setIsEditingMomentsTitle(false)} onKeyDown={(e) => { if(e.key === 'Enter') setIsEditingMomentsTitle(false); }} autoFocus className="text-white font-bold text-lg drop-shadow-md pb-10 font-cute bg-transparent outline-none border-b border-white w-40 text-right" />
                     ) : (
                          <div onClick={() => setIsEditingMomentsTitle(true)} className="text-white font-bold text-lg drop-shadow-md pb-10 font-cute cursor-pointer select-none" title="点击修改标题">{momentsTitle}</div>
                     )}
                  </div>
-                 <div className="bg-white p-1 rounded-xl shadow-lg pointer-events-none"><div className="w-16 h-16 bg-rose-100 rounded-lg flex items-center justify-center overflow-hidden"><span className="text-3xl">💑</span></div></div>
+                 {/* 4. 头像区域：可点击 */}
+                 <div className="bg-white p-1 rounded-xl shadow-lg pointer-events-auto cursor-pointer" onClick={handleAvatarClick}>
+                    <div className="w-16 h-16 bg-rose-100 rounded-lg flex items-center justify-center overflow-hidden">
+                        {avatarUrl ? <img src={avatarUrl} className="w-full h-full object-cover" /> : <span className="text-3xl">💑</span>}
+                    </div>
+                 </div>
             </div>
-            <div className="absolute top-4 right-4 z-30"><button onClick={() => document.getElementById('camera-file-input')?.click()} className="bg-black/20 p-2 rounded-full text-white hover:bg-black/40 backdrop-blur-sm pointer-events-auto transition-transform active:scale-90"><Camera size={20} /></button><input id="camera-file-input" type="file" multiple accept="image/*" className="hidden" onChange={onFileSelect} /></div>
+            {/* 3. 修复发布按钮点击误触背景：添加 stopPropagation */}
+            <div className="absolute top-4 right-4 z-30"><button onClick={(e) => { e.stopPropagation(); document.getElementById('camera-file-input')?.click(); }} className="bg-black/20 p-2 rounded-full text-white hover:bg-black/40 backdrop-blur-sm pointer-events-auto transition-transform active:scale-90"><Camera size={20} /></button><input id="camera-file-input" type="file" multiple accept="image/*" className="hidden" onChange={onFileSelect} /></div>
         </div>
 
       <div className="mt-14 mb-4 border-b border-gray-100 pb-1 relative bg-white sticky top-0 z-30 flex justify-center">
@@ -299,11 +340,14 @@ const MemoriesViewContent = ({
               <div className="space-y-8">
                   {memories.map((memory: Memory) => (
                       <div key={memory.id} className="flex gap-3 pb-6 border-b border-gray-50 last:border-0">
-                          <div className="w-10 h-10 rounded-lg bg-rose-100 flex items-center justify-center text-xl shrink-0">🐶</div>
+                          {/* 这里的小头像也可以关联 */}
+                          <div className="w-10 h-10 rounded-lg bg-rose-100 overflow-hidden shrink-0" onClick={handleAvatarClick}>
+                              {avatarUrl ? <img src={avatarUrl} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xl">🐶</div>}
+                          </div>
                           <div className="flex-1 min-w-0">
                               <h4 className="font-bold text-gray-800 font-cute text-sm mb-1 text-blue-900">我们</h4>
                               <p className="mb-2 text-gray-800 text-sm leading-relaxed">{memory.caption}</p>
-                              {memory.type === 'media' && memory.media.length > 0 && (<div className={`grid gap-1 mb-2 max-w-[80%] ${memory.media.length === 1 ? 'grid-cols-1' : memory.media.length === 4 ? 'grid-cols-2 w-2/3' : 'grid-cols-3'}`}>{memory.media.map((url: string, idx: number) => (<div key={idx} onClick={() => { setViewingImage(url); setViewerAction(null); }} className={`aspect-square bg-gray-100 cursor-pointer overflow-hidden ${memory.media.length === 1 ? 'max-w-[200px] max-h-[200px]' : ''}`}><img src={url} className="w-full h-full object-cover" alt="Memory" /></div>))}</div>)}
+                              {memory.type === 'media' && memory.media.length > 0 && (<div className={`grid gap-1 mb-2 max-w-[80%] ${memory.media.length === 1 ? 'grid-cols-1' : memory.media.length === 4 ? 'grid-cols-2 w-2/3' : 'grid-cols-3'}`}>{memory.media.map((url: string, idx: number) => (<div key={idx} onClick={() => handleViewImage(url)} className={`aspect-square bg-gray-100 cursor-pointer overflow-hidden ${memory.media.length === 1 ? 'max-w-[200px] max-h-[200px]' : ''}`}><img src={url} className="w-full h-full object-cover" alt="Memory" /></div>))}</div>)}
                               <div className="flex justify-between items-center mt-2 relative">
                                   <div className="flex items-center gap-3"><span className="text-xs text-gray-400">{memory.date}</span><button onClick={() => onDeleteMemory(memory.id)} className="text-xs text-blue-900 hover:underline">删除</button></div>
                                   <div className="relative"><button onClick={(e) => { e.stopPropagation(); setActiveMenuId(activeMenuId === memory.id ? null : memory.id); }} className="bg-gray-50 p-1 rounded-sm text-blue-800 hover:bg-gray-100"><MoreHorizontal size={16} /></button><AnimatePresence>{activeMenuId === memory.id && (<motion.div initial={{ opacity: 0, scale: 0.9, x: 10 }} animate={{ opacity: 1, scale: 1, x: 0 }} exit={{ opacity: 0, scale: 0.9, x: 10 }} className="absolute right-8 top-0 bg-gray-800 text-white rounded-md flex items-center overflow-hidden shadow-xl z-10" onClick={(e) => e.stopPropagation()}><button onClick={() => { handleLike(memory.id); setActiveMenuId(null); }} className="flex items-center gap-1 px-4 py-2 hover:bg-gray-700 text-xs font-bold min-w-[80px] justify-center"><Heart size={14} fill={memory.isLiked ? "red" : "none"} color={memory.isLiked ? "red" : "white"} />{memory.isLiked ? '取消' : '赞'}</button><div className="w-[1px] h-4 bg-gray-600"></div><button onClick={() => { const input = prompt('请输入评论'); if(input) { handleComment(memory.id, input); setActiveMenuId(null); } }} className="flex items-center gap-1 px-4 py-2 hover:bg-gray-700 text-xs font-bold min-w-[80px] justify-center"><MessageCircle size={14} />评论</button></motion.div>)}</AnimatePresence></div>
@@ -354,6 +398,7 @@ const MemoriesViewContent = ({
         </div>
       )}
       {viewingImage && <ImageViewer src={viewingImage} onClose={() => setViewingImage(null)} onAction={viewerAction?.handler} actionLabel={viewerAction?.label} />}
+      <input id="avatar-upload" type="file" className="hidden" onChange={handleAvatarUpdate} accept="image/*" />
     </div>
   );
 };
@@ -418,12 +463,11 @@ const BoardViewContent = ({ messages, onPost, onPin, onFav, onDelete, onAddTodo,
     );
 };
 
-const CalendarViewContent = ({ periods, conflicts, todos, addTodo, toggleTodo }: any) => {
+const CalendarViewContent = ({ periods, conflicts, todos, addTodo, toggleTodo, onDeleteTodo, onDeleteConflict }: any) => {
     const [currentDate, setCurrentDate] = useState(new Date()); const [selectedDate, setSelectedDate] = useState(getBeijingDateString());
     const year = currentDate.getFullYear(); const month = currentDate.getMonth(); const days = Array(getFirstDayOfMonth(year, month)).fill(null).concat([...Array(getDaysInMonth(year, month)).keys()].map(i => i + 1));
     const dayTodos = todos.filter((t: TodoItem) => t.date === selectedDate); const dayConflicts = conflicts.filter((c: ConflictRecord) => c.date === selectedDate);
     
-    // 经期预测逻辑：基于上一次记录 + 28天
     const isPredictedPeriod = (d: string) => {
         if(periods.length === 0) return false;
         const lastPeriod = periods[periods.length - 1];
@@ -431,7 +475,7 @@ const CalendarViewContent = ({ periods, conflicts, todos, addTodo, toggleTodo }:
         const predictedStart = new Date(lastStart);
         predictedStart.setDate(lastStart.getDate() + 28);
         const predictedEnd = new Date(predictedStart);
-        predictedEnd.setDate(predictedStart.getDate() + 5); // 假设5天
+        predictedEnd.setDate(predictedStart.getDate() + 5); 
         const curr = parseLocalDate(d);
         return curr >= predictedStart && curr < predictedEnd;
     };
@@ -450,7 +494,6 @@ const CalendarViewContent = ({ periods, conflicts, todos, addTodo, toggleTodo }:
                     return (
                         <div key={i} className="flex justify-center relative"><button onClick={() => setSelectedDate(dateStr)} className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold transition-all relative ${dateStr === selectedDate ? 'bg-gray-800 text-white shadow-lg scale-110 z-10' : 'text-gray-700 hover:bg-gray-50'} ${dateStr === getBeijingDateString() && dateStr !== selectedDate ? 'text-rose-500 font-bold' : ''}`}>{d}<div className="absolute bottom-1 flex gap-0.5">{isPeriod(dateStr) && <div className={`w-1 h-1 rounded-full bg-red-500`} />}{isPred && <div className={`w-1 h-1 rounded-full bg-blue-400`} />}{todos.some((t:any) => t.date === dateStr && !t.completed) && <div className={`w-1 h-1 rounded-full bg-yellow-400`} />}{conflicts.some((c:any) => c.date === dateStr) && <div className={`w-1 h-1 rounded-full bg-purple-500`} />}</div></button></div>
                     ) })}</div>
-                {/* 新增图例：预测为蓝色小圆点 */}
                 <div className="flex justify-center gap-4 py-2 mt-2 border-t border-gray-50">
                     <div className="flex items-center gap-1 text-[10px] text-gray-400 font-bold"><div className="w-2 h-2 rounded-full bg-red-500"></div>经期</div>
                     <div className="flex items-center gap-1 text-[10px] text-gray-400 font-bold"><div className="w-2 h-2 rounded-full bg-blue-400"></div>预测</div>
@@ -459,9 +502,24 @@ const CalendarViewContent = ({ periods, conflicts, todos, addTodo, toggleTodo }:
                 </div>
             </div>
             <div className="flex-1 bg-gray-50 mt-2 rounded-t-3xl p-6 overflow-y-auto"><div className="flex justify-between items-center mb-4"><h3 className="font-bold text-gray-800 font-cute flex items-center gap-2"><span className="text-2xl">{selectedDate.split('-')[2]}</span><span className="text-sm text-gray-400">日事项</span></h3><button onClick={() => addTodo(prompt("添加待办事项:"), selectedDate)} className="text-rose-500 text-sm font-bold flex items-center gap-1 bg-white px-3 py-1.5 rounded-full shadow-sm"><Plus size={16} /> 添加</button></div><div className="space-y-3">
-            {/* 预测期提示 */}
             {isPredictedPeriod(selectedDate) && !isPeriod(selectedDate) && (<div className="bg-blue-50 text-blue-500 p-3 rounded-xl text-sm font-bold flex items-center gap-2"><Sparkles size={16} fill="currentColor" /> 预计大姨妈</div>)}
-            {isPeriod(selectedDate) && (<div className="bg-red-100 text-red-600 p-3 rounded-xl text-sm font-bold flex items-center gap-2"><Heart size={16} fill="currentColor" /> 大姨妈造访中</div>)}{dayConflicts.map((c: ConflictRecord) => (<div key={c.id} className="bg-purple-50 text-purple-900 p-3 rounded-xl text-sm border border-purple-100"><div className="font-bold flex items-center gap-2 mb-1"><Gavel size={14} /> 喵喵法官裁决</div>{c.reason}</div>))}{dayTodos.map((todo: TodoItem) => (<div key={todo.id} onClick={() => toggleTodo(todo.id)} className="bg-white p-3 rounded-xl flex items-center gap-3 shadow-sm cursor-pointer active:scale-98 transition"><div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${todo.completed ? 'border-green-500 bg-green-500' : 'border-gray-200'}`}>{todo.completed && <CheckSquare size={12} className="text-white" />}</div><span className={`text-sm ${todo.completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{todo.text}</span></div>))}{!dayTodos.length && !dayConflicts.length && !isPeriod(selectedDate) && !isPredictedPeriod(selectedDate) && (<div className="text-center text-gray-400 text-sm py-8">今天没有安排哦 ~</div>)}</div></div>
+            {isPeriod(selectedDate) && (<div className="bg-red-100 text-red-600 p-3 rounded-xl text-sm font-bold flex items-center gap-2"><Heart size={16} fill="currentColor" /> 大姨妈造访中</div>)}
+            {/* 1. 日历项增加删除按钮 */}
+            {dayConflicts.map((c: ConflictRecord) => (
+                <div key={c.id} className="bg-purple-50 text-purple-900 p-3 rounded-xl text-sm border border-purple-100 relative group">
+                    <div className="font-bold flex items-center gap-2 mb-1"><Gavel size={14} /> 喵喵法官裁决</div>
+                    {c.reason}
+                    <button onClick={() => onDeleteConflict(c.id)} className="absolute top-2 right-2 text-purple-300 hover:text-purple-600"><X size={16} /></button>
+                </div>
+            ))}
+            {dayTodos.map((todo: TodoItem) => (
+                <div key={todo.id} onClick={() => toggleTodo(todo.id)} className="bg-white p-3 rounded-xl flex items-center gap-3 shadow-sm cursor-pointer active:scale-98 transition relative group">
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${todo.completed ? 'border-green-500 bg-green-500' : 'border-gray-200'}`}>{todo.completed && <CheckSquare size={12} className="text-white" />}</div>
+                    <span className={`text-sm flex-1 ${todo.completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{todo.text}</span>
+                    <button onClick={(e) => { e.stopPropagation(); onDeleteTodo(todo.id); }} className="text-gray-300 hover:text-red-500 p-1"><X size={16} /></button>
+                </div>
+            ))}
+            {!dayTodos.length && !dayConflicts.length && !isPeriod(selectedDate) && !isPredictedPeriod(selectedDate) && (<div className="text-center text-gray-400 text-sm py-8">今天没有安排哦 ~</div>)}</div></div>
         </div>
     );
 };
@@ -487,14 +545,16 @@ export default function App() {
   const [uploadImages, setUploadImages] = useState<string[]>([]);
   const [uploadCaption, setUploadCaption] = useState('');
   const [uploadType, setUploadType] = useState<'text' | 'media'>('media');
+  // 4. 新增头像状态
+  const [avatarUrl, setAvatarUrl] = useState<string>('');
 
   useEffect(() => {
     const savedMemories = localStorage.getItem('memories'); if (savedMemories) { try { const parsed = JSON.parse(savedMemories); if (Array.isArray(parsed)) setMemories(parsed.map((m: any) => ({ ...m, media: m.media || (m.url ? [m.url] : []), type: m.type || (m.url ? 'media' : 'text'), comments: m.comments || [] }))); } catch (e) {} } else { setMemories([{ id: '1', media: ['https://images.unsplash.com/photo-1518020382113-a7e8fc38eac9?auto=format&fit=crop&w=400&q=80'], caption: '可爱的狗勾', date: '2023-10-01', type: 'media', likes: 2, isLiked: false, comments: [] }]); }
     try { setAlbums(JSON.parse(localStorage.getItem('albums') || '[]')); setTodos(JSON.parse(localStorage.getItem('todos') || '[]')); setPeriods(JSON.parse(localStorage.getItem('periods') || '[]')); setConflicts(JSON.parse(localStorage.getItem('conflicts') || '[]')); setPinnedPhotos(JSON.parse(localStorage.getItem('pinnedPhotos') || '[]')); setMessages(JSON.parse(localStorage.getItem('messages') || '[]')); } catch(e){}
-    setCameraIcon(localStorage.getItem('cameraIcon') || DEFAULT_CAMERA_ICON); setAppTitle(localStorage.getItem('appTitle') || "小屁铃"); setMomentsTitle(localStorage.getItem('momentsTitle') || "我们的点滴"); setMomentsCover(localStorage.getItem('momentsCover') || DEFAULT_COVER); setAnniversaryDate(localStorage.getItem('anniversaryDate') || "2023-01-01");
+    setCameraIcon(localStorage.getItem('cameraIcon') || DEFAULT_CAMERA_ICON); setAppTitle(localStorage.getItem('appTitle') || "小屁铃"); setMomentsTitle(localStorage.getItem('momentsTitle') || "我们的点滴"); setMomentsCover(localStorage.getItem('momentsCover') || DEFAULT_COVER); setAnniversaryDate(localStorage.getItem('anniversaryDate') || "2023-01-01"); setAvatarUrl(localStorage.getItem('avatarUrl') || '');
   }, []);
 
-  useSafeStorage('pinnedPhotos', pinnedPhotos); useSafeStorage('albums', albums); useSafeStorage('memories', memories); useSafeStorage('todos', todos); useSafeStorage('periods', periods); useSafeStorage('conflicts', conflicts); useSafeStorage('messages', messages); useSafeStorage('cameraIcon', cameraIcon); useSafeStorage('momentsCover', momentsCover);
+  useSafeStorage('pinnedPhotos', pinnedPhotos); useSafeStorage('albums', albums); useSafeStorage('memories', memories); useSafeStorage('todos', todos); useSafeStorage('periods', periods); useSafeStorage('conflicts', conflicts); useSafeStorage('messages', messages); useSafeStorage('cameraIcon', cameraIcon); useSafeStorage('momentsCover', momentsCover); useSafeStorage('avatarUrl', avatarUrl);
   useEffect(() => localStorage.setItem('appTitle', appTitle), [appTitle]); useEffect(() => localStorage.setItem('momentsTitle', momentsTitle), [momentsTitle]); useEffect(() => localStorage.setItem('anniversaryDate', anniversaryDate), [anniversaryDate]);
 
   const calculateNextPeriod = () => { if (!periods.length) return null; const next = new Date(parseLocalDate(periods[periods.length - 1].startDate)); next.setDate(next.getDate() + 28); const diffDays = Math.ceil((next.getTime() - new Date().getTime()) / 86400000); return { date: `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-${String(next.getDate()).padStart(2,'0')}`, daysLeft: diffDays }; };
@@ -510,6 +570,18 @@ export default function App() {
   };
 
   const handleClearBoard = () => { setPinnedPhotos([]); setUsedPhotoIds([]); };
+  
+  // 2. 首页置顶逻辑：将点击的照片移到数组末尾
+  const handleBringToFront = (id: string) => {
+      setPinnedPhotos(prev => {
+          const index = prev.findIndex(p => p.id === id);
+          if (index === -1 || index === prev.length - 1) return prev;
+          const newPhotos = [...prev];
+          const [moved] = newPhotos.splice(index, 1);
+          newPhotos.push(moved);
+          return newPhotos;
+      });
+  };
 
   return (
     <div className="font-sans text-gray-800 bg-cream min-h-[100dvh]">
@@ -519,11 +591,10 @@ export default function App() {
                {activePage === Page.HOME && (
                 <div className="relative w-full h-full bg-rose-50 overflow-hidden">
                   <div className="absolute inset-0 z-0 pointer-events-none opacity-40" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23fbbf24' fill-opacity='0.2'%3E%3Cpath d='M20 20c-2 0-3-2-3-3s2-3 3-3 3 2 3 3-2 3-3 3zm10 0c-2 0-3-2-3-3s2-3 3-3 3 2 3 3-2 3-3 3zm-5 5c-3 0-5-2-5-4s2-3 5-3 5 2 5 3-2 4-5 4zM70 70l-5-5 5-5 5 5-5 5zm20-20c2 0 3 2 3 3s-2 3-3 3-3-2-3-3 2-3 3-3zm-10 0c2 0 3 2 3 3s-2 3-3 3-3-2-3-3 2-3 3-3zm5 5c3 0 5 2 5 4s-2 3-5 3-5-2-5-3 2-4 5-4z'/%3E%3C/g%3E%3C/svg%3E")`, backgroundSize: '100px 100px' }} />
-                  <div className="absolute inset-0 z-10 overflow-hidden">{pinnedPhotos.map((pin, i) => (<DraggablePhoto key={pin.id} pin={pin} onUpdate={(id:any, data:any) => setPinnedPhotos(prev => prev.map(p => p.id === id ? {...p, ...data} : p))} onDelete={(id:any) => setPinnedPhotos(prev => prev.filter(p => p.id !== id))} isFresh={i === pinnedPhotos.length - 1 && Date.now() - parseInt(pin.id) < 2000} />))}</div>
+                  <div className="absolute inset-0 z-10 overflow-hidden">{pinnedPhotos.map((pin, i) => (<DraggablePhoto key={pin.id} pin={pin} onUpdate={(id:any, data:any) => setPinnedPhotos(prev => prev.map(p => p.id === id ? {...p, ...data} : p))} onDelete={(id:any) => setPinnedPhotos(prev => prev.filter(p => p.id !== id))} onBringToFront={handleBringToFront} isFresh={i === pinnedPhotos.length - 1 && Date.now() - parseInt(pin.id) < 2000} />))}</div>
                   <header className="absolute top-0 left-0 right-0 pt-6 px-4 md:pt-8 md:px-8 flex justify-between items-start z-[70] pointer-events-none">
                     <div className="pointer-events-auto">
                       {isEditingTitle ? (<input value={appTitle} onChange={(e) => setAppTitle(e.target.value)} onBlur={() => setIsEditingTitle(false)} onKeyDown={(e) => { if(e.key === 'Enter') setIsEditingTitle(false); }} autoFocus className="text-4xl md:text-6xl font-cute text-rose-500 drop-shadow-sm -rotate-2 bg-transparent border-b-2 border-rose-300 outline-none w-48 md:w-80 text-center" />) : (
-                          // 修复：去除小铅笔，直接单击标题编辑
                              <h1 onClick={() => setIsEditingTitle(true)} className="text-4xl md:text-6xl font-cute text-rose-500 drop-shadow-sm -rotate-2 cursor-pointer select-none hover:scale-105 transition" title="点击修改">{appTitle}</h1>
                       )}
                       <p className="text-rose-400 text-xs md:text-sm mt-1 font-cute ml-1 md:ml-2 tracking-widest bg-white/50 backdrop-blur-sm inline-block px-2 rounded-lg">LOVE SPACE</p>
@@ -540,11 +611,11 @@ export default function App() {
                )}
                {activePage !== Page.HOME && (
                    <div className="h-full relative">
-                       {activePage === Page.MEMORIES && (<MemoriesViewContent memories={memories} albums={albums} setAlbums={setAlbums} handleLike={(id:string) => setMemories(memories.map(m => m.id === id ? { ...m, likes: m.isLiked ? m.likes - 1 : m.likes + 1, isLiked: !m.isLiked } : m))} handleComment={(id:string, t:string) => setMemories(memories.map(m => m.id === id ? { ...m, comments: [...m.comments, { id: Date.now().toString(), text: t, author: 'me', date: getBeijingDateString() }] } : m))} onFileSelect={(e:any) => { const f = e.target.files; if(f?.length) { Array.from(f).slice(0, 9-uploadImages.length).forEach((file:any) => { const r = new FileReader(); r.onload = () => setUploadImages(p => [...p, r.result as string]); r.readAsDataURL(file); }); setUploadType('media'); setShowUploadModal(true); } }} onTextPost={() => { setUploadType('text'); setUploadImages([]); setShowUploadModal(true); }} showUploadModal={showUploadModal} setShowUploadModal={setShowUploadModal} uploadImages={uploadImages} setUploadImages={setUploadImages} uploadCaption={uploadCaption} setUploadCaption={setUploadCaption} uploadType={uploadType} confirmUpload={() => { if((uploadType === 'media' && !uploadImages.length) || (uploadType === 'text' && !uploadCaption.trim())) return; setMemories([{ id: Date.now().toString(), media: uploadImages, caption: uploadCaption, date: getBeijingDateString(), type: uploadType, likes: 0, isLiked: false, comments: [] }, ...memories]); setShowUploadModal(false); setUploadImages([]); setUploadCaption(''); setUploadType('media'); }} coverUrl={momentsCover} onUpdateCover={(e:any) => { const f = e.target.files?.[0]; if(f) { const r = new FileReader(); r.onload = () => setMomentsCover(r.result as string); r.readAsDataURL(f); }}} onDeleteMemory={(id:string) => { if(confirm("删除?")) setMemories(memories.filter(m => m.id !== id)); }} momentsTitle={momentsTitle} setMomentsTitle={setMomentsTitle} />)}
+                       {activePage === Page.MEMORIES && (<MemoriesViewContent memories={memories} albums={albums} setAlbums={setAlbums} handleLike={(id:string) => setMemories(memories.map(m => m.id === id ? { ...m, likes: m.isLiked ? m.likes - 1 : m.likes + 1, isLiked: !m.isLiked } : m))} handleComment={(id:string, t:string) => setMemories(memories.map(m => m.id === id ? { ...m, comments: [...m.comments, { id: Date.now().toString(), text: t, author: 'me', date: getBeijingDateString() }] } : m))} onFileSelect={(e:any) => { const f = e.target.files; if(f?.length) { Array.from(f).slice(0, 9-uploadImages.length).forEach((file:any) => { const r = new FileReader(); r.onload = () => setUploadImages(p => [...p, r.result as string]); r.readAsDataURL(file); }); setUploadType('media'); setShowUploadModal(true); } }} onTextPost={() => { setUploadType('text'); setUploadImages([]); setShowUploadModal(true); }} showUploadModal={showUploadModal} setShowUploadModal={setShowUploadModal} uploadImages={uploadImages} setUploadImages={setUploadImages} uploadCaption={uploadCaption} setUploadCaption={setUploadCaption} uploadType={uploadType} confirmUpload={() => { if((uploadType === 'media' && !uploadImages.length) || (uploadType === 'text' && !uploadCaption.trim())) return; setMemories([{ id: Date.now().toString(), media: uploadImages, caption: uploadCaption, date: getBeijingDateString(), type: uploadType, likes: 0, isLiked: false, comments: [] }, ...memories]); setShowUploadModal(false); setUploadImages([]); setUploadCaption(''); setUploadType('media'); }} coverUrl={momentsCover} onUpdateCover={(e:any) => { const f = e.target.files?.[0]; if(f) { const r = new FileReader(); r.onload = () => setMomentsCover(r.result as string); r.readAsDataURL(f); }}} onDeleteMemory={(id:string) => { if(confirm("删除?")) setMemories(memories.filter(m => m.id !== id)); }} momentsTitle={momentsTitle} setMomentsTitle={setMomentsTitle} avatarUrl={avatarUrl} setAvatarUrl={setAvatarUrl} setMomentsCover={setMomentsCover} />)}
                        {activePage === Page.CYCLE && <CycleViewContent periods={periods} nextPeriod={calculateNextPeriod()} addPeriod={(d:string) => setPeriods([...periods, { startDate: d, duration: 5 }].sort((a,b)=>parseLocalDate(a.startDate).getTime()-parseLocalDate(b.startDate).getTime()))} deletePeriod={(i:number) => { if(confirm("删除?")) { const n = [...periods]; n.splice(i,1); setPeriods(n); }}} />}
                        {activePage === Page.CONFLICT && <ConflictViewContent judgeConflict={judgeConflict} conflicts={conflicts} setConflicts={setConflicts} />}
                        {activePage === Page.BOARD && (<BoardViewContent messages={messages} onPost={(c:string) => setMessages([{ id: Date.now().toString(), content: c, date: getBeijingDateString(), time: new Date().toTimeString().slice(0,5), isPinned: false, isFavorite: false }, ...messages])} onPin={(id:string) => setMessages(messages.map(m => m.id === id ? { ...m, isPinned: !m.isPinned } : m))} onFav={(id:string) => setMessages(messages.map(m => m.id === id ? { ...m, isFavorite: !m.isFavorite } : m))} onDelete={(id:string) => { if(confirm("删除?")) setMessages(messages.filter(m => m.id !== id)); }} onAddTodo={(t:string, d:string) => setTodos([...todos, { id: Date.now().toString(), text: t, completed: false, assignee: 'both', date: d || getBeijingDateString() }])} setMessages={setMessages} />)}
-                       {activePage === Page.CALENDAR && (<CalendarViewContent periods={periods} conflicts={conflicts} todos={todos} addTodo={(t:string, d:string) => setTodos([...todos, { id: Date.now().toString(), text: t, completed: false, assignee: 'both', date: d }])} toggleTodo={(id:string) => setTodos(todos.map(t => t.id === id ? { ...t, completed: !t.completed } : t))} setTodos={setTodos} />)}
+                       {activePage === Page.CALENDAR && (<CalendarViewContent periods={periods} conflicts={conflicts} todos={todos} addTodo={(t:string, d:string) => setTodos([...todos, { id: Date.now().toString(), text: t, completed: false, assignee: 'both', date: d }])} toggleTodo={(id:string) => setTodos(todos.map(t => t.id === id ? { ...t, completed: !t.completed } : t))} setTodos={setTodos} onDeleteTodo={(id:string) => { if(confirm("删除此待办？")) setTodos(todos.filter(t => t.id !== id)); }} onDeleteConflict={(id:string) => { if(confirm("删除此记录？")) setConflicts(conflicts.filter(c => c.id !== id)); }} />)}
                    </div>
                )}
             </motion.div>
