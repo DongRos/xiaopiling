@@ -5,7 +5,7 @@ import {
   ChevronLeft, ChevronRight, MessageCircle, ZoomIn, ZoomOut, Palette, RotateCcw, Pin,
   Star, Plus, MessageSquareHeart, Send, Loader2, Image as ImageIcon, FolderPlus, Grid,
   ArrowLeft, Edit2, Sparkles, Gavel, ShieldCheck, Lightbulb, Clock, MoreHorizontal,
-  MoreVertical, CheckCircle, Settings, Menu, User
+  MoreVertical, CheckCircle, Settings, Menu, User, RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { judgeConflict, extractTodosFromText } from './services/ai';
@@ -40,7 +40,9 @@ const DEFAULT_COVER = "https://images.unsplash.com/photo-1516962215378-7fa2e137a
 const DEFAULT_AVATAR = "https://cdn-icons-png.flaticon.com/512/4140/4140048.png";
 
 // --- Sub Components ---
-const ImageViewer = ({ src, onClose, onAction, actionLabel }: { src: string; onClose: () => void; onAction?: () => void; actionLabel?: string }) => {
+
+// 升级版 ImageViewer：支持 actions 数组，显示多个按钮
+const ImageViewer = ({ src, onClose, actions }: { src: string; onClose: () => void; actions?: { label: string, onClick: () => void, primary?: boolean }[] }) => {
   const [scale, setScale] = useState(1);
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -49,14 +51,24 @@ const ImageViewer = ({ src, onClose, onAction, actionLabel }: { src: string; onC
   return createPortal(
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[999] bg-black flex items-center justify-center overflow-hidden" onClick={onClose}>
       <motion.img src={src} drag={scale > 1} dragConstraints={{ left: -200*scale, right: 200*scale, top: -200*scale, bottom: 200*scale }} style={{ scale }} className="max-w-full max-h-full object-contain touch-none" onClick={(e) => e.stopPropagation()} onDoubleClick={handleDoubleTap} />
-      {onAction && actionLabel && (
-           <div className="absolute bottom-24 left-0 right-0 flex justify-center pointer-events-none z-[1000]">
-               <div className="bg-white/20 backdrop-blur-md px-6 py-3 rounded-full text-white text-sm font-bold pointer-events-auto cursor-pointer border border-white/30 flex items-center gap-2 hover:bg-white/30 transition" onClick={(e) => { e.stopPropagation(); onAction(); }}>
-                   <Edit2 size={14} /> {actionLabel}
-               </div>
+      
+      {/* 底部按钮组 */}
+      {actions && actions.length > 0 && (
+           <div className="absolute bottom-24 left-0 right-0 flex justify-center flex-wrap gap-4 pointer-events-none z-[1000]">
+               {actions.map((action, idx) => (
+                   <button 
+                        key={idx}
+                        className={`px-6 py-2.5 rounded-full text-sm font-bold pointer-events-auto cursor-pointer flex items-center gap-2 backdrop-blur-md border border-white/20 transition active:scale-95 ${action.primary ? 'bg-rose-500 text-white hover:bg-rose-600 shadow-lg shadow-rose-500/30' : 'bg-black/40 text-white hover:bg-black/60'}`} 
+                        onClick={(e) => { e.stopPropagation(); action.onClick(); }}
+                    >
+                       {action.label === '更换头像' || action.label === '更换封面' ? <Edit2 size={14} /> : <CheckCircle size={14} />}
+                       {action.label}
+                   </button>
+               ))}
            </div>
       )}
-      <div className="absolute bottom-10 left-0 right-0 flex justify-center gap-4 pointer-events-none"><button className="pointer-events-auto bg-white/20 backdrop-blur-md p-3 rounded-full text-white" onClick={onClose}><X size={24}/></button></div>
+
+      <div className="absolute bottom-10 left-0 right-0 flex justify-center gap-4 pointer-events-none"><button className="pointer-events-auto bg-white/20 backdrop-blur-md p-3 rounded-full text-white hover:bg-white/30" onClick={onClose}><X size={24}/></button></div>
     </motion.div>, document.body
   );
 };
@@ -110,19 +122,19 @@ const DraggablePhoto = ({ pin, onUpdate, onDelete, onBringToFront, isFresh = fal
   const [editValue, setEditValue] = useState('');
   const displayCaption = pin.customCaption || '美好回忆';
   
-  // 处理按下事件：置顶
-  const handleMouseDown = () => {
-      onBringToFront(pin.id);
+  // 核心修改：点击时调用置顶
+  const handlePointerDown = () => {
+      if (onBringToFront) onBringToFront(pin.id);
   };
 
   return (
     <motion.div 
         drag 
         dragMomentum={false} 
-        onPointerDown={handleMouseDown} // 2. 修改：点击/触摸时置顶
+        onPointerDown={handlePointerDown}
         initial={isFresh ? { opacity: 0, y: 150, scale: 0.5 } : false} 
         animate={{ opacity: 1, scale: pin.scale, rotate: pin.rotation, x: pin.x, y: pin.y }} 
-        whileHover={{ zIndex: 100 }} // 临时提高层级
+        whileHover={{ zIndex: 100 }} 
         whileTap={{ cursor: 'grabbing', zIndex: 101 }} 
         onDragEnd={(e, info) => onUpdate(pin.id, { x: pin.x + info.offset.x, y: pin.y + info.offset.y })} 
         className={`absolute w-44 bg-white p-3 pb-4 shadow-xl flex flex-col items-center group ${isFresh ? 'z-50' : 'z-10'}`} 
@@ -196,7 +208,7 @@ const MemoriesViewContent = ({
 }: any) => {
   const [activeTab, setActiveTab] = useState<'moments' | 'albums'>('moments');
   const [viewingImage, setViewingImage] = useState<string | null>(null);
-  const [viewerAction, setViewerAction] = useState<{ label: string, handler: () => void } | null>(null);
+  const [viewerActions, setViewerActions] = useState<{ label: string, onClick: () => void, primary?: boolean }[]>([]);
   const [isCreatingAlbum, setIsCreatingAlbum] = useState(false);
   const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null);
   const [newAlbumName, setNewAlbumName] = useState('');
@@ -240,22 +252,24 @@ const MemoriesViewContent = ({
       setAlbums((prev: Album[]) => prev.map(a => a.id === selectedAlbum.id ? updatedAlbum : a));
       setSelectedAlbum(updatedAlbum); setIsManageMode(false);
   };
+  
+  // 核心修复：背景点击处理
   const handleCoverClick = (e: React.MouseEvent) => {
       if (isEditingMomentsTitle) return;
-      // 点击背景查看背景大图，并提供“更换封面”选项
-      e.stopPropagation(); setViewingImage(coverUrl); setViewerAction({ label: '更换封面', handler: () => { document.getElementById('cover-upload')?.click(); setViewingImage(null); } });
-  };
-  
-  // 4. 头像全屏查看和更换
-  const handleAvatarClick = (e: React.MouseEvent) => {
-      e.stopPropagation();
-      setViewingImage(avatarUrl);
-      setViewerAction({ 
-          label: '更换头像', 
-          handler: () => { document.getElementById('avatar-upload')?.click(); setViewingImage(null); }
-      });
+      setViewingImage(coverUrl); 
+      setViewerActions([{ label: '更换封面', onClick: () => { document.getElementById('cover-upload')?.click(); setViewingImage(null); } }]);
   };
 
+  // 2. 头像点击处理
+  const handleAvatarClick = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setViewingImage(avatarUrl || DEFAULT_AVATAR);
+      setViewerActions([{ 
+          label: '更换头像', 
+          onClick: () => { document.getElementById('avatar-upload')?.click(); setViewingImage(null); }
+      }]);
+  };
+  
   const handleAvatarUpdate = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) {
@@ -265,18 +279,37 @@ const MemoriesViewContent = ({
       }
   };
 
-  // 5. 查看图片时提供“设为背景”
-  const handleViewImage = (url: string) => {
+  // 3. 图片查看处理（区分相册和朋友圈）
+  const handleViewImage = (url: string, context: 'album' | 'memory') => {
       setViewingImage(url);
-      setViewerAction({
+      const actions = [];
+      
+      // 相册图片：可以设为封面
+      if (context === 'album' && selectedAlbum) {
+          actions.push({
+              label: '设为封面',
+              onClick: () => {
+                  setAlbums((prev: Album[]) => prev.map(a => a.id === selectedAlbum.id ? { ...a, coverUrl: url } : a));
+                  setSelectedAlbum(prev => prev ? { ...prev, coverUrl: url } : null);
+                  setViewingImage(null);
+                  alert('已设为相册封面');
+              }
+          });
+      }
+
+      // 所有图片：都可以设为背景
+      actions.push({
           label: '设为背景',
-          handler: () => {
-              if (confirm('将这张图片设为朋友圈背景？')) {
+          primary: true,
+          onClick: () => {
+              if(confirm('将这张图片设为朋友圈背景？')) {
                   setMomentsCover(url);
                   setViewingImage(null);
               }
           }
       });
+
+      setViewerActions(actions);
   };
 
   const saveAlbumName = () => {
@@ -301,16 +334,22 @@ const MemoriesViewContent = ({
               </div>
               <div className="flex gap-2">{isManageMode ? <><button onClick={batchDeletePhotos} className="text-red-500 font-bold text-sm px-3 py-1 bg-red-50 rounded-full">删除({selectedItems.size})</button><button onClick={() => setIsManageMode(false)} className="text-gray-500 font-bold text-sm px-3 py-1">取消</button></> : <><button onClick={() => setIsManageMode(true)} className="p-2 hover:bg-gray-100 rounded-full text-gray-600"><Settings size={20} /></button><label className="p-2 bg-rose-50 text-rose-500 rounded-full cursor-pointer"><Plus size={24} /><input type="file" multiple accept="image/*" className="hidden" onChange={handleAlbumUpload} /></label></>}</div>
           </div>
-          <div className="p-4 grid grid-cols-3 gap-2 overflow-y-auto">{selectedAlbum.media.map((item, idx) => (<div key={idx} className="aspect-square rounded-xl overflow-hidden bg-gray-100 relative group cursor-pointer" onClick={() => isManageMode ? setSelectedItems(prev => { const n = new Set(prev); n.has(item.id) ? n.delete(item.id) : n.add(item.id); return n; }) : handleViewImage(item.url)}><img src={item.url} className={`w-full h-full object-cover transition ${isManageMode && selectedItems.has(item.id) ? 'opacity-50 scale-90' : ''}`} loading="lazy" />{isManageMode && (<div className="absolute top-2 right-2">{selectedItems.has(item.id) ? <CheckCircle className="text-rose-500 fill-white" /> : <div className="w-5 h-5 rounded-full border-2 border-white/80" />}</div>)}</div>))}</div>
-          {viewingImage && <ImageViewer src={viewingImage} onClose={() => setViewingImage(null)} onAction={viewerAction?.handler} actionLabel={viewerAction?.label} />}
+          <div className="p-4 grid grid-cols-3 gap-2 overflow-y-auto">{selectedAlbum.media.map((item, idx) => (<div key={idx} className="aspect-square rounded-xl overflow-hidden bg-gray-100 relative group cursor-pointer" onClick={() => isManageMode ? setSelectedItems(prev => { const n = new Set(prev); n.has(item.id) ? n.delete(item.id) : n.add(item.id); return n; }) : handleViewImage(item.url, 'album')}><img src={item.url} className={`w-full h-full object-cover transition ${isManageMode && selectedItems.has(item.id) ? 'opacity-50 scale-90' : ''}`} loading="lazy" />{isManageMode && (<div className="absolute top-2 right-2">{selectedItems.has(item.id) ? <CheckCircle className="text-rose-500 fill-white" /> : <div className="w-5 h-5 rounded-full border-2 border-white/80" />}</div>)}</div>))}</div>
+          {viewingImage && <ImageViewer src={viewingImage} onClose={() => setViewingImage(null)} actions={viewerActions} />}
       </div>
   );
 
   return (
     <div className="h-full bg-white overflow-y-auto pb-24 relative">
-        <div className="relative group cursor-pointer" style={{ height: '320px' }} onClick={handleCoverClick}>
-             <div className="w-full h-full overflow-hidden relative"><img src={coverUrl} alt="Cover" className="w-full h-full object-cover" /><div className="absolute inset-0 bg-black/10 pointer-events-none" /></div>
+        <div className="relative group cursor-pointer" style={{ height: '320px' }}>
+             {/* 修复：将点击事件绑定在单独的背景层，避免父子级点击穿透问题 */}
+             <div className="absolute inset-0 z-0" onClick={handleCoverClick}>
+                 <img src={coverUrl} alt="Cover" className="w-full h-full object-cover" />
+                 <div className="absolute inset-0 bg-black/10 pointer-events-none" />
+             </div>
+
              <input id="cover-upload" type="file" className="hidden" onChange={onUpdateCover} accept="image/*" />
+            
             <div className="absolute -bottom-8 right-4 flex items-end gap-3 z-20">
                  <div className="pointer-events-auto" onClick={(e) => e.stopPropagation()}>
                     {isEditingMomentsTitle ? (
@@ -319,15 +358,21 @@ const MemoriesViewContent = ({
                          <div onClick={() => setIsEditingMomentsTitle(true)} className="text-white font-bold text-lg drop-shadow-md pb-10 font-cute cursor-pointer select-none" title="点击修改标题">{momentsTitle}</div>
                     )}
                  </div>
-                 {/* 4. 头像区域：可点击 */}
-                 <div className="bg-white p-1 rounded-xl shadow-lg pointer-events-auto cursor-pointer" onClick={handleAvatarClick}>
+                 {/* 2. 头像点击 */}
+                 <div className="bg-white p-1 rounded-xl shadow-lg pointer-events-auto cursor-pointer relative z-30" onClick={handleAvatarClick}>
                     <div className="w-16 h-16 bg-rose-100 rounded-lg flex items-center justify-center overflow-hidden">
                         {avatarUrl ? <img src={avatarUrl} className="w-full h-full object-cover" /> : <span className="text-3xl">💑</span>}
                     </div>
                  </div>
             </div>
-            {/* 3. 修复发布按钮点击误触背景：添加 stopPropagation */}
-            <div className="absolute top-4 right-4 z-30"><button onClick={(e) => { e.stopPropagation(); document.getElementById('camera-file-input')?.click(); }} className="bg-black/20 p-2 rounded-full text-white hover:bg-black/40 backdrop-blur-sm pointer-events-auto transition-transform active:scale-90"><Camera size={20} /></button><input id="camera-file-input" type="file" multiple accept="image/*" className="hidden" onChange={onFileSelect} /></div>
+
+            {/* 1. 发布按钮：独立层级 */}
+            <div className="absolute top-4 right-4 z-30">
+                <button onClick={(e) => { e.stopPropagation(); document.getElementById('camera-file-input')?.click(); }} className="bg-black/20 p-2 rounded-full text-white hover:bg-black/40 backdrop-blur-sm pointer-events-auto transition-transform active:scale-90">
+                    <Camera size={20} />
+                </button>
+                <input id="camera-file-input" type="file" multiple accept="image/*" className="hidden" onChange={onFileSelect} />
+            </div>
         </div>
 
       <div className="mt-14 mb-4 border-b border-gray-100 pb-1 relative bg-white sticky top-0 z-30 flex justify-center">
@@ -340,14 +385,13 @@ const MemoriesViewContent = ({
               <div className="space-y-8">
                   {memories.map((memory: Memory) => (
                       <div key={memory.id} className="flex gap-3 pb-6 border-b border-gray-50 last:border-0">
-                          {/* 这里的小头像也可以关联 */}
-                          <div className="w-10 h-10 rounded-lg bg-rose-100 overflow-hidden shrink-0" onClick={handleAvatarClick}>
+                          <div className="w-10 h-10 rounded-lg bg-rose-100 overflow-hidden shrink-0 cursor-pointer" onClick={handleAvatarClick}>
                               {avatarUrl ? <img src={avatarUrl} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xl">🐶</div>}
                           </div>
                           <div className="flex-1 min-w-0">
                               <h4 className="font-bold text-gray-800 font-cute text-sm mb-1 text-blue-900">我们</h4>
                               <p className="mb-2 text-gray-800 text-sm leading-relaxed">{memory.caption}</p>
-                              {memory.type === 'media' && memory.media.length > 0 && (<div className={`grid gap-1 mb-2 max-w-[80%] ${memory.media.length === 1 ? 'grid-cols-1' : memory.media.length === 4 ? 'grid-cols-2 w-2/3' : 'grid-cols-3'}`}>{memory.media.map((url: string, idx: number) => (<div key={idx} onClick={() => handleViewImage(url)} className={`aspect-square bg-gray-100 cursor-pointer overflow-hidden ${memory.media.length === 1 ? 'max-w-[200px] max-h-[200px]' : ''}`}><img src={url} className="w-full h-full object-cover" alt="Memory" /></div>))}</div>)}
+                              {memory.type === 'media' && memory.media.length > 0 && (<div className={`grid gap-1 mb-2 max-w-[80%] ${memory.media.length === 1 ? 'grid-cols-1' : memory.media.length === 4 ? 'grid-cols-2 w-2/3' : 'grid-cols-3'}`}>{memory.media.map((url: string, idx: number) => (<div key={idx} onClick={() => handleViewImage(url, 'memory')} className={`aspect-square bg-gray-100 cursor-pointer overflow-hidden ${memory.media.length === 1 ? 'max-w-[200px] max-h-[200px]' : ''}`}><img src={url} className="w-full h-full object-cover" alt="Memory" /></div>))}</div>)}
                               <div className="flex justify-between items-center mt-2 relative">
                                   <div className="flex items-center gap-3"><span className="text-xs text-gray-400">{memory.date}</span><button onClick={() => onDeleteMemory(memory.id)} className="text-xs text-blue-900 hover:underline">删除</button></div>
                                   <div className="relative"><button onClick={(e) => { e.stopPropagation(); setActiveMenuId(activeMenuId === memory.id ? null : memory.id); }} className="bg-gray-50 p-1 rounded-sm text-blue-800 hover:bg-gray-100"><MoreHorizontal size={16} /></button><AnimatePresence>{activeMenuId === memory.id && (<motion.div initial={{ opacity: 0, scale: 0.9, x: 10 }} animate={{ opacity: 1, scale: 1, x: 0 }} exit={{ opacity: 0, scale: 0.9, x: 10 }} className="absolute right-8 top-0 bg-gray-800 text-white rounded-md flex items-center overflow-hidden shadow-xl z-10" onClick={(e) => e.stopPropagation()}><button onClick={() => { handleLike(memory.id); setActiveMenuId(null); }} className="flex items-center gap-1 px-4 py-2 hover:bg-gray-700 text-xs font-bold min-w-[80px] justify-center"><Heart size={14} fill={memory.isLiked ? "red" : "none"} color={memory.isLiked ? "red" : "white"} />{memory.isLiked ? '取消' : '赞'}</button><div className="w-[1px] h-4 bg-gray-600"></div><button onClick={() => { const input = prompt('请输入评论'); if(input) { handleComment(memory.id, input); setActiveMenuId(null); } }} className="flex items-center gap-1 px-4 py-2 hover:bg-gray-700 text-xs font-bold min-w-[80px] justify-center"><MessageCircle size={14} />评论</button></motion.div>)}</AnimatePresence></div>
@@ -397,7 +441,7 @@ const MemoriesViewContent = ({
             </div>
         </div>
       )}
-      {viewingImage && <ImageViewer src={viewingImage} onClose={() => setViewingImage(null)} onAction={viewerAction?.handler} actionLabel={viewerAction?.label} />}
+      {viewingImage && <ImageViewer src={viewingImage} onClose={() => setViewingImage(null)} actions={viewerActions} />}
       <input id="avatar-upload" type="file" className="hidden" onChange={handleAvatarUpdate} accept="image/*" />
     </div>
   );
@@ -504,7 +548,7 @@ const CalendarViewContent = ({ periods, conflicts, todos, addTodo, toggleTodo, o
             <div className="flex-1 bg-gray-50 mt-2 rounded-t-3xl p-6 overflow-y-auto"><div className="flex justify-between items-center mb-4"><h3 className="font-bold text-gray-800 font-cute flex items-center gap-2"><span className="text-2xl">{selectedDate.split('-')[2]}</span><span className="text-sm text-gray-400">日事项</span></h3><button onClick={() => addTodo(prompt("添加待办事项:"), selectedDate)} className="text-rose-500 text-sm font-bold flex items-center gap-1 bg-white px-3 py-1.5 rounded-full shadow-sm"><Plus size={16} /> 添加</button></div><div className="space-y-3">
             {isPredictedPeriod(selectedDate) && !isPeriod(selectedDate) && (<div className="bg-blue-50 text-blue-500 p-3 rounded-xl text-sm font-bold flex items-center gap-2"><Sparkles size={16} fill="currentColor" /> 预计大姨妈</div>)}
             {isPeriod(selectedDate) && (<div className="bg-red-100 text-red-600 p-3 rounded-xl text-sm font-bold flex items-center gap-2"><Heart size={16} fill="currentColor" /> 大姨妈造访中</div>)}
-            {/* 1. 日历项增加删除按钮 */}
+            {/* 5. 日历事项删除 */}
             {dayConflicts.map((c: ConflictRecord) => (
                 <div key={c.id} className="bg-purple-50 text-purple-900 p-3 rounded-xl text-sm border border-purple-100 relative group">
                     <div className="font-bold flex items-center gap-2 mb-1"><Gavel size={14} /> 喵喵法官裁决</div>
@@ -559,11 +603,23 @@ export default function App() {
 
   const calculateNextPeriod = () => { if (!periods.length) return null; const next = new Date(parseLocalDate(periods[periods.length - 1].startDate)); next.setDate(next.getDate() + 28); const diffDays = Math.ceil((next.getTime() - new Date().getTime()) / 86400000); return { date: `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-${String(next.getDate()).padStart(2,'0')}`, daysLeft: diffDays }; };
   
+  // 4. 优化拍立得逻辑：手动删除完后自动重置
   const handleTakePhoto = () => {
     const allImages = [...memories.filter(m => m.type === 'media').flatMap(m => m.media.map(url => ({ url, caption: m.caption, id: m.id, source: 'memory' }))), ...albums.flatMap(a => a.media.map(m => ({ url: m.url, caption: m.caption || a.name, id: m.id, source: 'album' })))];
     if (!allImages.length) return alert("相册里还没有照片哦！");
-    const available = allImages.filter(img => !usedPhotoIds.includes(img.url));
-    if (!available.length) return alert("全部吐完啦~ 点清空按钮重置哦！");
+    
+    let available = allImages.filter(img => !usedPhotoIds.includes(img.url));
+    
+    // 如果没有可用照片，且当前桌面上也没有照片（说明被手动删光了），则重置历史记录
+    if (available.length === 0) {
+        if (pinnedPhotos.length === 0) {
+            setUsedPhotoIds([]);
+            available = allImages; // 立即重置为全部可用
+        } else {
+            return alert("全部吐完啦~ 点清空按钮重置哦！");
+        }
+    }
+
     const randomImg = available[Math.floor(Math.random() * available.length)];
     setUsedPhotoIds(prev => [...prev, randomImg.url]);
     setPinnedPhotos(prev => [...prev, { id: Date.now().toString(), memoryId: randomImg.id, source: randomImg.source as any, mediaUrl: randomImg.url, customCaption: randomImg.caption, x: (Math.random()*40)-20, y: (Math.random()*40)-20, rotation: (Math.random()*10)-5, scale: 1 }]);
@@ -571,7 +627,7 @@ export default function App() {
 
   const handleClearBoard = () => { setPinnedPhotos([]); setUsedPhotoIds([]); };
   
-  // 2. 首页置顶逻辑：将点击的照片移到数组末尾
+  // 首页相纸置顶逻辑
   const handleBringToFront = (id: string) => {
       setPinnedPhotos(prev => {
           const index = prev.findIndex(p => p.id === id);
