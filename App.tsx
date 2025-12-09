@@ -309,7 +309,7 @@ const MemoriesViewContent = ({
   momentsTitle, setMomentsTitle, avatarUrl, setAvatarUrl, setMomentsCover
 }: any) => {
   const [activeTab, setActiveTab] = useState<'moments' | 'albums'>('moments');
-  const [viewingImage, setViewingImage] = useState<string | null>(null);
+  const [viewingImage, setViewingImage] = useState<{ list: string[], index: number } | null>(null);
   const [viewerActions, setViewerActions] = useState<{ label: string, onClick: () => void, primary?: boolean }[]>([]);
   const [isCreatingAlbum, setIsCreatingAlbum] = useState(false);
   const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null);
@@ -586,7 +586,14 @@ const MemoriesViewContent = ({
             </div>
         </div>
       )}
-      {viewingImage && <ImageViewer src={viewingImage} onClose={() => setViewingImage(null)} actions={viewerActions} />}
+      {viewingImage && typeof viewingImage === 'object' && 'list' in viewingImage && (
+        <ImageViewer 
+            images={viewingImage.list} 
+            initialIndex={viewingImage.index} 
+            onClose={() => setViewingImage(null)} 
+            actions={viewerActions} 
+        />
+      )}
       <input id="avatar-upload" type="file" className="hidden" onChange={handleAvatarUpdate} accept="image/*" />
     </div>
   );
