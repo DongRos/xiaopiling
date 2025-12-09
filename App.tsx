@@ -254,7 +254,7 @@ const MemoriesViewContent = ({
       pressTimer.current = setTimeout(() => {
           onTextPost();
           pressTimer.current = null;
-      }, 500); 
+      }, 300); 
   };
 
   const handlePressEnd = (e: React.MouseEvent | React.TouchEvent) => {
@@ -399,7 +399,7 @@ const MemoriesViewContent = ({
                  </div>
             </div>
 
-            <div className="absolute top-6 right-4 z-30">
+            <div className="absolute top-8 right-4 z-30">
                 <button 
                     onMouseDown={handlePressStart}
                     onMouseUp={handlePressEnd}
@@ -488,7 +488,7 @@ const CycleViewContent = ({ periods, nextPeriod, addPeriod, deletePeriod }: any)
   const handleLogPeriod = () => { if(confirm(`记录今天 (${getBeijingDateString()}) 为大姨妈开始日？`)) addPeriod(getBeijingDateString()); };
   return (
     <div className="p-6 space-y-6 pb-[calc(6rem+env(safe-area-inset-bottom))] h-full overflow-y-auto">
-        <h2 className="text-2xl font-bold font-cute text-rose-500 text-center mb-2">经期记录</h2>
+        <h2 className="text-2xl font-bold font-cute text-rose-500 text-center mb-2 mt-4">经期记录</h2>
         <div className="bg-white rounded-3xl p-8 shadow-xl text-center border-2 border-rose-100 relative overflow-hidden">
              <div className="relative z-10">
                 <h2 className="text-gray-500 font-bold mb-2 font-cute">距离下次大姨妈还有</h2>
