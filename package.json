@@ -15,7 +15,7 @@
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "@capacitor/app": "^6.0.0",
-    "@capacitor/core": "^6.0.0",
+    "@capacitor/core": "^6.0.0"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
@@ -24,6 +24,6 @@
     "typescript": "~5.8.2",
     "vite": "^6.2.0",
     "@capacitor/android": "^6.0.0",
-    "@capacitor/cli": "^6.0.0",
+    "@capacitor/cli": "^6.0.0"
   }
 }
