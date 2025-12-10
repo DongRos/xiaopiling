@@ -615,13 +615,40 @@ const CycleViewContent = ({ periods, nextPeriod, addPeriod, deletePeriod, update
                 {/* 按钮区域：包含大姨妈按钮和补录日期 */}
                 <div className="flex flex-col items-center z-50 relative">
                     <button onClick={handleLogPeriod} className="mt-8 bg-rose-500 text-white px-8 py-3 rounded-full font-bold shadow-lg shadow-rose-200 hover:scale-105 transition-transform active:scale-95 flex items-center gap-2 mx-auto cursor-pointer"><Heart fill="white" size={20} /> 大姨妈来了</button>
-                    <label className="mt-4 text-xs text-rose-400/80 font-bold cursor-pointer hover:text-rose-500 transition relative py-2 px-4 rounded-lg hover:bg-rose-50 select-none">
+                    <label 
+                        className="mt-4 text-xs text-rose-400/80 font-bold cursor-pointer hover:text-rose-500 transition relative py-2 px-4 rounded-lg hover:bg-rose-50 select-none"
+                        // 1. 电脑端逻辑：点击 Label 文字时，手动触发内部 input 的选择器
+                        onClick={(e) => {
+                            const input = e.currentTarget.querySelector('input');
+                            // 只有当点击的目标不是 input 本身时（即点击的是文字），才手动触发
+                            // 这样可以避免和手机端的原生点击冲突
+                            if (input && e.target !== input) {
+                                try { input.showPicker(); } catch (err) { }
+                            }
+                        }}
+                    >
                         📅 补录其他日期
                         <input 
                             type="date" 
-                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
-                            onClick={(e) => { try { (e.target as HTMLInputElement).showPicker(); } catch (err) { } }}
-                            onChange={(e) => { const date = e.target.value; if (date) { setTimeout(() => { if (confirm(`确定补录 ${date} 为经期开始日？`)) { addPeriod(date); } }, 50); e.target.value = ''; } }} 
+                            // 2. 核心修复：添加 md:w-0 md:h-0
+                            // 手机端：保持 w-full h-full，全覆盖，方便手指点击
+                            // 电脑端：变为 0宽0高，不覆盖文字。彻底解决鼠标滑动误触导致的自动选择问题
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer md:w-0 md:h-0"
+                            
+                            // 3. 手机端逻辑：阻止冒泡，防止触发外层 Label 的 onClick
+                            onClick={(e) => e.stopPropagation()}
+                            
+                            onChange={(e) => { 
+                                const date = e.target.value; 
+                                if (date) { 
+                                    setTimeout(() => { 
+                                        if (confirm(`确定补录 ${date} 为经期开始日？`)) { 
+                                            addPeriod(date); 
+                                        } 
+                                    }, 50); 
+                                    e.target.value = ''; 
+                                } 
+                            }} 
                         />
                     </label>
                 </div>
