@@ -1,4 +1,4 @@
-import Bmob from "bmob.js";
+import Bmob from "hydrogen-js-sdk";
 
 // 初始化 Bmob
 // 请替换为你自己的 Secret Key 和 API 安全码
