@@ -1,5 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+// --- 新增引用开始 ---
+import Bmob, { uploadFile } from './services/bmob'; // 引入Bmob
+import { QRCodeSVG } from 'qrcode.react';           // 引入二维码
+import { Html5QrcodeScanner } from 'html5-qrcode';  // 引入扫码
+// --- 新增引用结束 ---
 import { 
   Heart, Camera, Calendar as CalendarIcon, Zap, CheckSquare, Cat, Upload, Trash2, X,
   ChevronLeft, ChevronRight, MessageCircle, ZoomIn, ZoomOut, Palette, RotateCcw, Pin,
@@ -783,8 +788,209 @@ const CalendarViewContent = ({ periods, conflicts, todos, addTodo, toggleTodo, o
     );
 };
 
+// 新增组件 1: 登录注册页
+const AuthPage = () => {
+  const [isLogin, setIsLogin] = useState(true);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      if (isLogin) {
+        await Bmob.User.login(username, password);
+        window.location.reload();
+      } else {
+        const params = { username, password, avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}` };
+        await Bmob.User.register(params);
+        alert('注册成功，请登录');
+        setIsLogin(true);
+      }
+    } catch (err: any) {
+      alert('操作失败: ' + (err.error || err.message));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-rose-50 p-6">
+      <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-sm text-center">
+        <h1 className="text-2xl font-bold font-cute mb-2 text-gray-800">小屁铃</h1>
+        <p className="text-gray-400 text-sm mb-8">我们的专属空间</p>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input className="w-full bg-gray-50 border border-gray-100 rounded-xl p-3 outline-none" placeholder="账号" value={username} onChange={e => setUsername(e.target.value)} required />
+          <input className="w-full bg-gray-50 border border-gray-100 rounded-xl p-3 outline-none" type="password" placeholder="密码" value={password} onChange={e => setPassword(e.target.value)} required />
+          <button disabled={loading} className="w-full bg-rose-500 text-white py-3 rounded-xl font-bold hover:bg-rose-600 transition">
+             {loading ? <Loader2 className="animate-spin mx-auto"/> : (isLogin ? '登录' : '注册')}
+          </button>
+        </form>
+        <button onClick={() => setIsLogin(!isLogin)} className="mt-4 text-xs text-gray-400 underline">{isLogin ? '没有账号？去注册' : '已有账号？去登录'}</button>
+      </div>
+    </div>
+  );
+};
+
+// 新增组件 2: 个人中心与绑定
+const ProfilePage = ({ user, onLogout }: { user: any, onLogout: () => void }) => {
+  const [showScanner, setShowScanner] = useState(false);
+  
+  const onScan = async (decodedText: string) => {
+    if (decodedText.startsWith('BIND:')) {
+      const partnerId = decodedText.split(':')[1];
+      if (partnerId === user.objectId) return alert('不能绑定自己');
+      // 生成共同ID (简单排序拼接)
+      const ids = [user.objectId, partnerId].sort();
+      const commonId = `${ids[0]}_${ids[1]}`;
+      
+      const q = Bmob.Query('_User');
+      q.set('id', user.objectId);
+      q.set('coupleId', commonId);
+      await q.save();
+      alert(`绑定成功! 共同ID: ${commonId}`);
+      setShowScanner(false);
+      window.location.reload();
+    }
+  };
+
+  return (
+    <div className="p-6 bg-gray-50 min-h-screen pb-24">
+       <div className="bg-white rounded-3xl p-6 text-center shadow-sm mb-6">
+          <img src={user.avatarUrl} className="w-24 h-24 rounded-full border-4 border-rose-100 object-cover mx-auto" />
+          <h2 className="text-xl font-bold mt-4">{user.username}</h2>
+          <div className="mt-2 text-gray-400 text-sm">{user.coupleId ? '❤️ 恋爱中' : '🐶 单身狗'}</div>
+       </div>
+
+       {!user.coupleId && (
+         <div className="bg-white rounded-3xl p-6 shadow-sm mb-6 text-center">
+            {showScanner ? (
+                <div id="reader" className="rounded-xl overflow-hidden"><ScannerMounter onSuccess={onScan}/></div> 
+            ) : (
+                <>
+                  <div className="flex justify-center mb-4"><QRCodeSVG value={`BIND:${user.objectId}`} size={150} /></div>
+                  <button onClick={() => setShowScanner(true)} className="bg-rose-500 text-white px-6 py-2 rounded-full">扫描 TA 的二维码</button>
+                </>
+            )}
+         </div>
+       )}
+       <button onClick={onLogout} className="w-full bg-white text-red-500 py-4 rounded-3xl font-bold shadow-sm flex items-center justify-center gap-2"><LogOut size={20}/> 退出登录</button>
+    </div>
+  )
+}
+const ScannerMounter = ({onSuccess}: any) => {
+    useEffect(() => { const s = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 }, false); s.render(onSuccess, console.log); return ()=>s.clear(); }, []);
+    return null;
+}
+
+
 // --- Main App ---
-export default function App() {
+const MainApp = ({ user }: { user: any }) => {
+
+
+  // === 插入的新组件开始 ===
+
+  // 1. 登录注册页
+  const AuthPage = () => {
+    const [isLogin, setIsLogin] = useState(true);
+    const [username, setUsername] = useState('');
+    const [password, setPassword] = useState('');
+    const [loading, setLoading] = useState(false);
+  
+    const handleSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      setLoading(true);
+      try {
+        if (isLogin) {
+          await Bmob.User.login(username, password);
+          window.location.reload();
+        } else {
+          const params = { username, password, avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}` };
+          await Bmob.User.register(params);
+          alert('注册成功，请登录');
+          setIsLogin(true);
+        }
+      } catch (err: any) {
+        alert('操作失败: ' + (err.error || err.message));
+      } finally {
+        setLoading(false);
+      }
+    };
+  
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-rose-50 p-6">
+        <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-sm text-center">
+          <h1 className="text-2xl font-bold font-cute mb-2 text-gray-800">小屁铃</h1>
+          <p className="text-gray-400 text-sm mb-8">我们的专属空间 (云端版)</p>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <input className="w-full bg-gray-50 border border-gray-100 rounded-xl p-3 outline-none" placeholder="账号" value={username} onChange={e => setUsername(e.target.value)} required />
+            <input className="w-full bg-gray-50 border border-gray-100 rounded-xl p-3 outline-none" type="password" placeholder="密码" value={password} onChange={e => setPassword(e.target.value)} required />
+            <button disabled={loading} className="w-full bg-rose-500 text-white py-3 rounded-xl font-bold hover:bg-rose-600 transition">
+               {loading ? <Loader2 className="animate-spin mx-auto"/> : (isLogin ? '登录' : '注册')}
+            </button>
+          </form>
+          <button onClick={() => setIsLogin(!isLogin)} className="mt-4 text-xs text-gray-400 underline">{isLogin ? '没有账号？去注册' : '已有账号？去登录'}</button>
+        </div>
+      </div>
+    );
+  };
+  
+  // 2. 个人中心 & 绑定组件
+  const ProfilePage = ({ user, onLogout }: { user: any, onLogout: () => void }) => {
+    const [showScanner, setShowScanner] = useState(false);
+    
+    const onScan = async (decodedText: string) => {
+      if (decodedText.startsWith('BIND:')) {
+        const partnerId = decodedText.split(':')[1];
+        if (partnerId === user.objectId) return alert('不能绑定自己');
+        
+        const ids = [user.objectId, partnerId].sort();
+        const commonId = `${ids[0]}_${ids[1]}`;
+        
+        const q = Bmob.Query('_User');
+        q.set('id', user.objectId);
+        q.set('coupleId', commonId);
+        await q.save();
+        
+        alert(`绑定成功! 共同ID: ${commonId}`);
+        setShowScanner(false);
+        window.location.reload();
+      }
+    };
+  
+    return (
+      <div className="p-6 bg-gray-50 min-h-screen pb-24">
+         <div className="bg-white rounded-3xl p-6 text-center shadow-sm mb-6">
+            <img src={user.avatarUrl} className="w-24 h-24 rounded-full border-4 border-rose-100 object-cover mx-auto" />
+            <h2 className="text-xl font-bold mt-4">{user.username}</h2>
+            <div className="mt-2 text-gray-400 text-sm">{user.coupleId ? '❤️ 恋爱中' : '🐶 单身狗'}</div>
+         </div>
+  
+         {!user.coupleId && (
+           <div className="bg-white rounded-3xl p-6 shadow-sm mb-6 text-center">
+              {showScanner ? (
+                  <div id="reader" className="rounded-xl overflow-hidden"><ScannerMounter onSuccess={onScan}/></div> 
+              ) : (
+                  <>
+                    <div className="flex justify-center mb-4"><QRCodeSVG value={`BIND:${user.objectId}`} size={150} /></div>
+                    <button onClick={() => setShowScanner(true)} className="bg-rose-500 text-white px-6 py-2 rounded-full">扫描 TA 的二维码</button>
+                  </>
+              )}
+           </div>
+         )}
+         <button onClick={onLogout} className="w-full bg-white text-red-500 py-4 rounded-3xl font-bold shadow-sm flex items-center justify-center gap-2"><LogOut size={20}/> 退出登录</button>
+      </div>
+    )
+  }
+  const ScannerMounter = ({onSuccess}: any) => {
+      useEffect(() => { const s = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 }, false); s.render(onSuccess, console.log); return ()=>s.clear(); }, []);
+      return null;
+  }
+  // === 插入结束 ===  
+
+  
+  
   const [activePage, setActivePage] = useState<Page>(Page.HOME);
   const [memories, setMemories] = useState<Memory[]>([]);
   const [albums, setAlbums] = useState<Album[]>([]);
@@ -864,14 +1070,70 @@ export default function App() {
   // --- 新增代码结束 ---
   
   
-  useEffect(() => {
-    const savedMemories = localStorage.getItem('memories'); if (savedMemories) { try { const parsed = JSON.parse(savedMemories); if (Array.isArray(parsed)) setMemories(parsed.map((m: any) => ({ ...m, media: m.media || (m.url ? [m.url] : []), type: m.type || (m.url ? 'media' : 'text'), comments: m.comments || [] }))); } catch (e) {} } else { setMemories([{ id: '1', media: ['https://images.unsplash.com/photo-1518020382113-a7e8fc38eac9?auto=format&fit=crop&w=400&q=80'], caption: '可爱的狗勾', date: '2023-10-01', type: 'media', likes: 2, isLiked: false, comments: [] }]); }
-    try { setAlbums(JSON.parse(localStorage.getItem('albums') || '[]')); setTodos(JSON.parse(localStorage.getItem('todos') || '[]')); setPeriods(JSON.parse(localStorage.getItem('periods') || '[]')); setConflicts(JSON.parse(localStorage.getItem('conflicts') || '[]')); setPinnedPhotos(JSON.parse(localStorage.getItem('pinnedPhotos') || '[]')); setMessages(JSON.parse(localStorage.getItem('messages') || '[]')); } catch(e){}
-    setCameraIcon(localStorage.getItem('cameraIcon') || DEFAULT_CAMERA_ICON); setAppTitle(localStorage.getItem('appTitle') || "小屁铃"); setMomentsTitle(localStorage.getItem('momentsTitle') || "我们的点滴"); setMomentsCover(localStorage.getItem('momentsCover') || DEFAULT_COVER); setAnniversaryDate(localStorage.getItem('anniversaryDate') || "2023-01-01"); setAvatarUrl(localStorage.getItem('avatarUrl') || '');
-  }, []);
+  // ================= Bmob 云端数据加载逻辑 (开始) =================
 
-  useSafeStorage('pinnedPhotos', pinnedPhotos); useSafeStorage('albums', albums); useSafeStorage('memories', memories); useSafeStorage('todos', todos); useSafeStorage('periods', periods); useSafeStorage('conflicts', conflicts); useSafeStorage('messages', messages); useSafeStorage('cameraIcon', cameraIcon); useSafeStorage('momentsCover', momentsCover); useSafeStorage('avatarUrl', avatarUrl);
-  useEffect(() => localStorage.setItem('appTitle', appTitle), [appTitle]); useEffect(() => localStorage.setItem('momentsTitle', momentsTitle), [momentsTitle]); useEffect(() => localStorage.setItem('anniversaryDate', anniversaryDate), [anniversaryDate]);
+  // 1. 定义查询辅助函数 (自动判断是查两人共享的，还是查自己的)
+  const getQuery = (tableName: string) => {
+      const q = Bmob.Query(tableName);
+      if (user.coupleId) q.equalTo('coupleId', '==', user.coupleId);
+      else q.equalTo('creatorId', '==', user.objectId);
+      return q;
+  };
+
+  useEffect(() => {
+    // 设置头像 (从登录用户数据中获取)
+    if (user.avatarUrl) setAvatarUrl(user.avatarUrl);
+
+    // 定义加载数据的异步函数
+    const loadData = async () => {
+       // --- 加载朋友圈 (Memory) ---
+       getQuery('Memory').order('-createdAt').find().then((res: any) => {
+           setMemories(res.map((m: any) => ({
+               ...m, 
+               id: m.objectId, // Bmob的主键叫objectId，转换成你原本用的 id
+               date: m.createdAt ? m.createdAt.slice(0, 10) : getBeijingDateString(), 
+               media: m.images || [], // 兼容处理：Bmob里叫images，本地叫media
+               comments: m.comments || [] 
+           })));
+       });
+
+       // --- 加载相册 (Album) ---
+       getQuery('Album').order('-createdAt').find().then((res: any) => {
+            setAlbums(res.map((a: any) => ({ ...a, id: a.objectId })));
+       });
+
+       // --- 加载留言板 (Message) ---
+       getQuery('Message').order('-createdAt').find().then((res: any) => 
+           setMessages(res.map((m: any) => ({...m, id: m.objectId}))));
+
+       // --- 加载首页照片墙 (PinnedPhoto) ---
+       getQuery('PinnedPhoto').find().then((res:any) => 
+           setPinnedPhotos(res.map((p:any)=>({...p, id: p.objectId}))));
+
+       // --- 加载经期 (Period) ---
+       getQuery('Period').find().then((res:any) => setPeriods(res));
+
+       // --- 加载冲突记录 (Conflict) ---
+       getQuery('Conflict').order('-createdAt').find().then((res:any) => 
+           setConflicts(res.map((c:any)=>({...c, id: c.objectId}))));
+
+       // --- 加载待办 (Todo) ---
+       getQuery('Todo').find().then((res:any) => 
+           setTodos(res.map((t:any)=>({...t, id: t.objectId}))));
+    };
+
+    // 1. 立即执行一次加载
+    loadData();
+    
+    // 2. 开启轮询：每5秒自动同步一次 (实现简单的实时效果)
+    const timer = setInterval(loadData, 5000);
+
+    // 页面销毁时清除定时器
+    return () => clearInterval(timer);
+  }, [user]); // 依赖 user：当切换账号时会自动重新加载
+
+  // ================= Bmob 云端数据加载逻辑 (结束) =================
+  // 注意：原有的 useSafeStorage 已被删除，因为不需要存本地了
 
   const calculateNextPeriod = () => { if (!periods.length) return null; const next = new Date(parseLocalDate(periods[periods.length - 1].startDate)); next.setDate(next.getDate() + 28); const diffDays = Math.ceil((next.getTime() - new Date().getTime()) / 86400000); return { date: `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-${String(next.getDate()).padStart(2,'0')}`, daysLeft: diffDays }; };
   
@@ -997,4 +1259,28 @@ export default function App() {
       <Navbar active={activePage} setPage={navigateTo} />
     </div>
   );
+}
+
+
+
+
+export default function App() {
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // 检查 Bmob 登录状态
+    const current = Bmob.User.current();
+    if (current) {
+        setUser(current);
+    }
+    setLoading(false);
+  }, []);
+
+  if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-rose-500"/></div>;
+
+  // 没登录 -> 显示登录页；登录了 -> 显示主程序
+  if (!user) return <AuthPage />;
+
+  return <MainApp user={user} />;
 }
