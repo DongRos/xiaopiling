@@ -615,42 +615,47 @@ const CycleViewContent = ({ periods, nextPeriod, addPeriod, deletePeriod, update
                 {/* 按钮区域：包含大姨妈按钮和补录日期 */}
                 <div className="flex flex-col items-center z-50 relative">
                     <button onClick={handleLogPeriod} className="mt-8 bg-rose-500 text-white px-8 py-3 rounded-full font-bold shadow-lg shadow-rose-200 hover:scale-105 transition-transform active:scale-95 flex items-center gap-2 mx-auto cursor-pointer"><Heart fill="white" size={20} /> 大姨妈来了</button>
-                    <label 
-                        className="mt-4 text-xs text-rose-400/80 font-bold cursor-pointer hover:text-rose-500 transition relative py-2 px-4 rounded-lg hover:bg-rose-50 select-none"
-                        // 1. 电脑端逻辑：点击 Label 文字时，手动触发内部 input 的选择器
+                    <div 
+                        className="mt-4 text-xs text-rose-400/80 font-bold cursor-pointer hover:text-rose-500 transition relative py-2 px-4 rounded-lg hover:bg-rose-50 select-none flex items-center justify-center"
+                        // 2. 电脑端逻辑：点击文字区域时，手动弹出日历
                         onClick={(e) => {
+                            // 查找内部的 input 元素
                             const input = e.currentTarget.querySelector('input');
-                            // 只有当点击的目标不是 input 本身时（即点击的是文字），才手动触发
-                            // 这样可以避免和手机端的原生点击冲突
+                            // 只有点击的不是 input 本身（即点击的是文字）时才触发
                             if (input && e.target !== input) {
-                                try { input.showPicker(); } catch (err) { }
+                                try { 
+                                    input.showPicker(); 
+                                } catch (err) { 
+                                    console.log("Browser doesn't support showPicker");
+                                }
                             }
                         }}
                     >
                         📅 补录其他日期
                         <input 
                             type="date" 
-                            // 2. 核心修复：添加 md:w-0 md:h-0
-                            // 手机端：保持 w-full h-full，全覆盖，方便手指点击
-                            // 电脑端：变为 0宽0高，不覆盖文字。彻底解决鼠标滑动误触导致的自动选择问题
-                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer md:w-0 md:h-0"
+                            // 3. 样式核心修改：
+                            // absolute inset-0 w-full h-full opacity-0 -> 手机端：全覆盖透明层，保证触摸灵敏
+                            // md:static md:w-0 md:h-0 md:border-0 md:p-0 md:overflow-hidden -> 电脑端：宽高为0，变成一个不可见的点，防止鼠标划过触发
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer md:static md:w-0 md:h-0 md:border-0 md:p-0 md:overflow-hidden"
                             
-                            // 3. 手机端逻辑：阻止冒泡，防止触发外层 Label 的 onClick
+                            // 4. 阻止冒泡，防止手机端点击 input 时重复触发外层 div 的 onClick
                             onClick={(e) => e.stopPropagation()}
                             
                             onChange={(e) => { 
                                 const date = e.target.value; 
                                 if (date) { 
+                                    // 延时一下，让 UI 反应过来
                                     setTimeout(() => { 
                                         if (confirm(`确定补录 ${date} 为经期开始日？`)) { 
                                             addPeriod(date); 
                                         } 
-                                    }, 50); 
+                                    }, 100); 
                                     e.target.value = ''; 
                                 } 
                             }} 
                         />
-                    </label>
+                    </div>
                 </div>
              </div>
              <div className="absolute top-0 right-0 -mt-10 -mr-10 
