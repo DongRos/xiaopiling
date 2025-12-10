@@ -614,17 +614,33 @@ const CycleViewContent = ({ periods, nextPeriod, addPeriod, deletePeriod }: any)
     <button onClick={handleLogPeriod} className="mt-8 bg-rose-500 text-white px-8 py-3 rounded-full font-bold shadow-lg shadow-rose-200 hover:scale-105 transition-transform active:scale-95 flex items-center gap-2 mx-auto cursor-pointer"><Heart fill="white" size={20} /> 大姨妈来了</button>
     
     {/* 新增：补录日期功能 */}
-    <label className="mt-4 text-xs text-rose-400/80 font-bold cursor-pointer hover:text-rose-500 transition relative py-2 px-4 rounded-lg hover:bg-rose-50">
+    <label className="mt-4 text-xs text-rose-400/80 font-bold cursor-pointer hover:text-rose-500 transition relative py-2 px-4 rounded-lg hover:bg-rose-50 select-none">
         📅 补录其他日期
         <input 
             type="date" 
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
+            
+            // --- 核心修复：电脑端点击时强制弹出日历 ---
+            onClick={(e) => {
+                try {
+                    // showPicker() 是浏览器的新 API，专门用于编程方式打开选择器
+                    (e.target as HTMLInputElement).showPicker();
+                } catch (err) {
+                    // 防止在不支持此 API 的旧浏览器上报错（通常手机端不需要这个也能工作）
+                    console.log('Picker API not supported or redundant');
+                }
+            }}
+            // ---------------------------------------
+
             onChange={(e) => {
                 const date = e.target.value;
                 if (date) {
-                    if (confirm(`确定补录 ${date} 为经期开始日？`)) {
-                        addPeriod(date);
-                    }
+                    // 稍微延迟一下，防止confirm阻塞UI渲染
+                    setTimeout(() => {
+                        if (confirm(`确定补录 ${date} 为经期开始日？`)) {
+                            addPeriod(date);
+                        }
+                    }, 50);
                     e.target.value = ''; // 重置，以便下次还能选同一天
                 }
             }} 
