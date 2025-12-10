@@ -600,78 +600,62 @@ const MemoriesViewContent = ({
 };
 
 const CycleViewContent = ({ periods, nextPeriod, addPeriod, deletePeriod, updatePeriod }: any) => {
-  const handleLogPeriod = () => { if(confirm(`记录今天 (${getBeijingDateString()}) 为大姨妈开始日？`)) addPeriod(getBeijingDateString()); };
+  const handleLogPeriod = () => { if(confirm(`记录今天 (${getBeijingDateString()}) 为大姨妈开始日？`)) addPeriod(getBeijingDateString());
+};
   return (
     <div className="p-6 space-y-6 pb-[calc(6rem+env(safe-area-inset-bottom))] h-full overflow-y-auto">
         <h2 className="text-2xl font-bold font-cute text-rose-500 text-center mb-2 mt-4">经期记录</h2>
         <div className="bg-white rounded-3xl p-8 shadow-xl text-center border-2 border-rose-100 relative overflow-hidden">
              <div className="relative z-10">
                 <h2 className="text-gray-500 font-bold mb-2 font-cute">距离下次大姨妈还有</h2>
-                <div className="text-6xl font-black text-rose-500 my-4 font-cute">{nextPeriod ? nextPeriod.daysLeft : '?'}<span 
-                onClick={() => {
-                    const input = prompt("修改持续天数:", p.duration);
-                    const days = parseInt(input || '0');
-                    // 注意：这里用 periods.length - 1 - i 是因为列表是倒序显示的(reverse)
-                    if (days > 0) updatePeriod(periods.length - 1 - i, days);
-                }}
-                className="text-xs text-rose-400 font-bold px-2 py-1 bg-white rounded-lg shadow-sm cursor-pointer hover:bg-rose-100 transition"
-                title="点击修改天数"
-            >
-                持续 {p.duration} 天
-            </span></div>
+                <div className="text-6xl font-black text-rose-500 my-4 font-cute">{nextPeriod 
+? nextPeriod.daysLeft : '?'}<span className="text-lg text-gray-400 ml-2 font-bold">天</span></div>
                 {nextPeriod && <p className="text-gray-400 text-sm">预计日期: {nextPeriod.date}</p>}
+                
+                {/* 按钮区域：包含大姨妈按钮和补录日期 */}
                 <div className="flex flex-col items-center z-50 relative">
-    {/* 原有的按钮 */}
-    <button onClick={handleLogPeriod} className="mt-8 bg-rose-500 text-white px-8 py-3 rounded-full font-bold shadow-lg shadow-rose-200 hover:scale-105 transition-transform active:scale-95 flex items-center gap-2 mx-auto cursor-pointer"><Heart fill="white" size={20} /> 大姨妈来了</button>
-    
-    {/* 新增：补录日期功能 */}
-    <label className="mt-4 text-xs text-rose-400/80 font-bold cursor-pointer hover:text-rose-500 transition relative py-2 px-4 rounded-lg hover:bg-rose-50 select-none">
-        📅 补录其他日期
-        <input 
-            type="date" 
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
-            
-            // --- 核心修复：电脑端点击时强制弹出日历 ---
-            onClick={(e) => {
-                try {
-                    // showPicker() 是浏览器的新 API，专门用于编程方式打开选择器
-                    (e.target as HTMLInputElement).showPicker();
-                } catch (err) {
-                    // 防止在不支持此 API 的旧浏览器上报错（通常手机端不需要这个也能工作）
-                    console.log('Picker API not supported or redundant');
-                }
-            }}
-            // ---------------------------------------
-
-            onChange={(e) => {
-                const date = e.target.value;
-                if (date) {
-                    // 稍微延迟一下，防止confirm阻塞UI渲染
-                    setTimeout(() => {
-                        if (confirm(`确定补录 ${date} 为经期开始日？`)) {
-                            addPeriod(date);
-                        }
-                    }, 50);
-                    e.target.value = ''; // 重置，以便下次还能选同一天
-                }
-            }} 
-        />
-    </label>
-</div>
+                    <button onClick={handleLogPeriod} className="mt-8 bg-rose-500 text-white px-8 py-3 rounded-full font-bold shadow-lg shadow-rose-200 hover:scale-105 transition-transform active:scale-95 flex items-center gap-2 mx-auto cursor-pointer"><Heart fill="white" size={20} /> 大姨妈来了</button>
+                    <label className="mt-4 text-xs text-rose-400/80 font-bold cursor-pointer hover:text-rose-500 transition relative py-2 px-4 rounded-lg hover:bg-rose-50 select-none">
+                        📅 补录其他日期
+                        <input 
+                            type="date" 
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
+                            onClick={(e) => { try { (e.target as HTMLInputElement).showPicker(); } catch (err) { } }}
+                            onChange={(e) => { const date = e.target.value; if (date) { setTimeout(() => { if (confirm(`确定补录 ${date} 为经期开始日？`)) { addPeriod(date); } }, 50); e.target.value = ''; } }} 
+                        />
+                    </label>
+                </div>
              </div>
-             <div className="absolute top-0 right-0 -mt-10 -mr-10 w-40 h-40 bg-rose-50 rounded-full opacity-50 pointer-events-none" /><div className="absolute bottom-0 left-0 -mb-10 -ml-10 w-32 h-32 bg-rose-50 rounded-full opacity-50 pointer-events-none" />
+             <div className="absolute top-0 right-0 -mt-10 -mr-10 
+w-40 h-40 bg-rose-50 rounded-full opacity-50 pointer-events-none" /><div className="absolute bottom-0 left-0 -mb-10 -ml-10 w-32 h-32 bg-rose-50 rounded-full opacity-50 pointer-events-none" />
         </div>
         <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-50">
             <h3 className="font-bold text-gray-700 mb-4 font-cute flex items-center gap-2"><RotateCcw size={18} className="text-rose-400" /> 历史记录</h3>
             <div className="space-y-3">
-                {periods.slice().reverse().map((p: any, i: number) => (<div key={i} className="flex justify-between items-center p-3 bg-rose-50/50 rounded-xl group"><span className="font-bold text-gray-600">{p.startDate}</span><div className="flex items-center gap-2"><span className="text-xs text-rose-400 font-bold px-2 py-1 bg-white rounded-lg shadow-sm">持续 {p.duration} 天</span><button onClick={() => deletePeriod(periods.length - 1 - i)} className="text-gray-300 hover:text-red-500 p-1"><X size={16} /></button></div></div>))}
+                {periods.slice().reverse().map((p: any, i: number) => (<div key={i} className="flex 
+justify-between items-center p-3 bg-rose-50/50 rounded-xl group">
+                    <span className="font-bold text-gray-600">{p.startDate}</span>
+                    <div className="flex items-center gap-2">
+                        <span 
+                            onClick={() => {
+                                const input = prompt("修改持续天数:", p.duration);
+                                const days = parseInt(input || '0');
+                                if (days > 0 && updatePeriod) updatePeriod(periods.length - 1 - i, days);
+                            }}
+                            className="text-xs text-rose-400 font-bold px-2 py-1 bg-white rounded-lg shadow-sm cursor-pointer hover:bg-rose-100 transition"
+                            title="点击修改天数"
+                        >
+                            持续 {p.duration} 天
+                        </span>
+                        <button onClick={() => deletePeriod(periods.length - 1 - i)} className="text-gray-300 hover:text-red-500 p-1"><X size={16} /></button>
+                    </div>
+                </div>))}
                 {periods.length === 0 && <p className="text-center text-gray-400 text-sm py-4">还没有记录哦</p>}
             </div>
         </div>
     </div>
   );
 };
-
 const ConflictViewContent = ({ judgeConflict, conflicts, setConflicts }: any) => {
     const [reason, setReason] = useState(''); const [hisPoint, setHisPoint] = useState(''); const [herPoint, setHerPoint] = useState(''); const [isJudging, setIsJudging] = useState(false);
     const handleJudge = async () => { if(!reason || !hisPoint || !herPoint) return alert("请填写完整信息喵！"); setIsJudging(true); const result = await judgeConflict(reason, hisPoint, herPoint); setConflicts([{ id: Date.now().toString(), date: getBeijingDateString(), reason, hisPoint, herPoint, aiResponse: result, isPinned: false, isFavorite: false }, ...conflicts]); setIsJudging(false); setReason(''); setHisPoint(''); setHerPoint(''); };
@@ -958,18 +942,18 @@ export default function App() {
                    <div className="h-full relative">
                        {activePage === Page.MEMORIES && (<MemoriesViewContent memories={memories} albums={albums} setAlbums={setAlbums} handleLike={(id:string) => setMemories(memories.map(m => m.id === id ? { ...m, likes: m.isLiked ? m.likes - 1 : m.likes + 1, isLiked: !m.isLiked } : m))} handleComment={(id:string, t:string) => setMemories(memories.map(m => m.id === id ? { ...m, comments: [...m.comments, { id: Date.now().toString(), text: t, author: 'me', date: getBeijingDateString() }] } : m))} onFileSelect={(e:any) => { const f = e.target.files; if(f?.length) { Array.from(f).slice(0, 9-uploadImages.length).forEach((file:any) => { const r = new FileReader(); r.onload = () => setUploadImages(p => [...p, r.result as string]); r.readAsDataURL(file); }); setUploadType('media'); setShowUploadModal(true); } }} onTextPost={() => { setUploadType('text'); setUploadImages([]); setShowUploadModal(true); }} showUploadModal={showUploadModal} setShowUploadModal={setShowUploadModal} uploadImages={uploadImages} setUploadImages={setUploadImages} uploadCaption={uploadCaption} setUploadCaption={setUploadCaption} uploadType={uploadType} confirmUpload={() => { if((uploadType === 'media' && !uploadImages.length) || (uploadType === 'text' && !uploadCaption.trim())) return; setMemories([{ id: Date.now().toString(), media: uploadImages, caption: uploadCaption, date: getBeijingDateString(), type: uploadType, likes: 0, isLiked: false, comments: [] }, ...memories]); setShowUploadModal(false); setUploadImages([]); setUploadCaption(''); setUploadType('media'); }} coverUrl={momentsCover} onUpdateCover={(e:any) => { const f = e.target.files?.[0]; if(f) { const r = new FileReader(); r.onload = () => setMomentsCover(r.result as string); r.readAsDataURL(f); }}} onDeleteMemory={(id:string) => { if(confirm("删除?")) setMemories(memories.filter(m => m.id !== id)); }} momentsTitle={momentsTitle} setMomentsTitle={setMomentsTitle} avatarUrl={avatarUrl} setAvatarUrl={setAvatarUrl} setMomentsCover={setMomentsCover} />)}
                        {activePage === Page.CYCLE && <CycleViewContent 
-                            periods={periods} 
-                            nextPeriod={calculateNextPeriod()} 
-                            addPeriod={(d:string) => setPeriods([...periods, { startDate: d, duration: 5 }].sort((a,b)=>parseLocalDate(a.startDate).getTime()-parseLocalDate(b.startDate).getTime()))} 
-                            deletePeriod={(i:number) => { if(confirm("删除?")) { const n = [...periods]; n.splice(i,1); setPeriods(n); }}} 
-                            
-                            // 新增：更新经期持续天数的逻辑
-                            updatePeriod={(i:number, days:number) => {
+                           periods={periods} 
+                           nextPeriod={calculateNextPeriod()} 
+                           addPeriod={(d:string) => setPeriods([...periods, { startDate: d, duration: 5 }].sort((a,b)=>parseLocalDate(a.startDate).getTime()-parseLocalDate(b.startDate).getTime()))} 
+                           deletePeriod={(i:number) => { if(confirm("删除?")) { const n = [...periods]; n.splice(i,1); setPeriods(n); }}} 
+                           updatePeriod={(i:number, days:number) => {
                                 const n = [...periods];
-                                n[i] = { ...n[i], duration: days };
-                                setPeriods(n);
-                            }}
-                        />}
+                                if(n[i]) {
+                                    n[i] = { ...n[i], duration: days };
+                                    setPeriods(n);
+                                }
+                           }}
+                       />}
                        {activePage === Page.CONFLICT && <ConflictViewContent judgeConflict={judgeConflict} conflicts={conflicts} setConflicts={setConflicts} />}
                        {activePage === Page.BOARD && (<BoardViewContent messages={messages} onPost={(c:string) => setMessages([{ id: Date.now().toString(), content: c, date: getBeijingDateString(), time: new Date().toTimeString().slice(0,5), isPinned: false, isFavorite: false }, ...messages])} onPin={(id:string) => setMessages(messages.map(m => m.id === id ? { ...m, isPinned: !m.isPinned } : m))} onFav={(id:string) => setMessages(messages.map(m => m.id === id ? { ...m, isFavorite: !m.isFavorite } : m))} onDelete={(id:string) => { if(confirm("删除?")) setMessages(messages.filter(m => m.id !== id)); }} onAddTodo={(t:string, d:string) => setTodos([...todos, { id: Date.now().toString(), text: t, completed: false, assignee: 'both', date: d || getBeijingDateString() }])} setMessages={setMessages} />)}
                        {activePage === Page.CALENDAR && (<CalendarViewContent periods={periods} conflicts={conflicts} todos={todos} addTodo={(t:string, d:string) => setTodos([...todos, { id: Date.now().toString(), text: t, completed: false, assignee: 'both', date: d }])} toggleTodo={(id:string) => setTodos(todos.map(t => t.id === id ? { ...t, completed: !t.completed } : t))} setTodos={setTodos} onDeleteTodo={(id:string) => { if(confirm("删除此待办？")) setTodos(todos.filter(t => t.id !== id)); }} onDeleteConflict={(id:string) => { if(confirm("删除此记录？")) setConflicts(conflicts.filter(c => c.id !== id)); }} />)}
