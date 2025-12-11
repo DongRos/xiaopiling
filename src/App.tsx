@@ -358,71 +358,76 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
   const [showScanner, setShowScanner] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // --- 修复1：更稳健的头像上传逻辑 ---
+// 1. 修复头像上传：增加对数组返回值的兼容处理
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
       
       setLoading(true);
       try {
-          // 尝试调用 bmob.ts 的上传，如果失败则尝试手动上传逻辑
-          let url = "";
-          try {
-              url = await uploadFile(file);
-          } catch (uploadErr) {
-              console.warn("Standard upload failed, trying fallback:", uploadErr);
-              // 备用上传逻辑：处理 Bmob 可能直接返回对象的情况
-              const params = Bmob.File(file.name, file);
-              const res = await params.save();
-              // 兼容处理：有些版本返回 JSON 字符串，有些返回对象
-              if (typeof res === 'string') {
-                  url = JSON.parse(res).url;
-              } else if (typeof res === 'object' && res.url) {
-                  url = res.url;
-              } else {
-                  throw new Error("上传返回值异常");
-              }
+          const params = Bmob.File(file.name, file);
+          const res = await params.save();
+          
+          let url = null;
+          // 全面兼容 Bmob 不同版本的返回格式 (String / Array / Object)
+          if (typeof res === 'string') {
+              const parsed = JSON.parse(res);
+              url = parsed.url || (Array.isArray(parsed) ? parsed[0]?.url : null);
+          } else if (Array.isArray(res)) {
+              url = res[0]?.url;
+          } else if (typeof res === 'object' && res.url) {
+              url = res.url;
           }
 
-          // 更新用户表
+          if (!url) throw new Error("无法获取图片URL，请重试");
+
           const q = Bmob.Query('_User');
           const u = await q.get(user.objectId);
           u.set('avatarUrl', url);
           await u.save();
           
-          // 更新本地状态
           onUpdateUser({ ...user, avatarUrl: url }); 
           alert('头像修改成功');
       } catch(err: any) { 
-          alert('头像上传失败: ' + (err.message || err)); 
+          alert('上传失败: ' + (err.message || JSON.stringify(err))); 
           console.error(err);
       } finally { 
-          setLoading(false); // 确保最后一定停止转圈
+          setLoading(false);
+          e.target.value = ''; // 清空 input，允许重复选择同一张图
       }
   };
 
-  // --- 修复3：修改昵称 (nickname) 而不是账号 (username) ---
-  const handleNameChange = async () => {
-      // 默认显示当前昵称，如果没有则显示用户名
-      const currentName = user.nickname || user.username;
-      const newName = prompt("请输入新昵称", currentName);
-      
-      if(!newName || newName === currentName) return;
+  // 2. 修改昵称 (大字)
+  const handleNicknameChange = async () => {
+      const newName = prompt("请输入新昵称 (用于显示)", user.nickname || "");
+      if(!newName || newName === user.nickname) return;
       
       setLoading(true);
       try {
           const q = Bmob.Query('_User');
           const u = await q.get(user.objectId);
-          u.set('nickname', newName); // 核心修改：只改 nickname 字段
+          u.set('nickname', newName);
           await u.save();
-          
-          // 更新本地状态
           onUpdateUser({ ...user, nickname: newName });
-      } catch(err: any) { 
-          alert('修改失败: ' + err.message); 
-      } finally { 
-          setLoading(false); 
-      }
+      } catch(err: any) { alert('修改失败: ' + err.message); } 
+      finally { setLoading(false); }
+  };
+
+  // 3. 修改用户名 (小字，登录用)
+  const handleUsernameChange = async () => {
+      const newName = prompt("请输入新账号 (用于登录)", user.username);
+      if(!newName || newName === user.username) return;
+      
+      setLoading(true);
+      try {
+          const q = Bmob.Query('_User');
+          const u = await q.get(user.objectId);
+          u.set('username', newName);
+          await u.save();
+          onUpdateUser({ ...user, username: newName });
+          alert('账号已修改，下次请使用新账号登录');
+      } catch(err: any) { alert('修改失败(可能账号已存在): ' + err.message); } 
+      finally { setLoading(false); }
   };
 
   // 处理退出登录（二次确认）
@@ -463,11 +468,19 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
               </label>
           </div>
 
-          {/* 昵称后的编辑按钮 */}
-          <h2 onClick={handleNameChange} className="text-xl font-bold mt-4 flex items-center justify-center gap-2 cursor-pointer hover:text-rose-500 transition">
-              {user.username} 
-              <Edit2 size={16} className="text-gray-400" />
-          </h2>
+          {/* 昵称 (大字，可修改) */}
+          <div onClick={handleNicknameChange} className="mt-4 flex items-center justify-center gap-2 cursor-pointer hover:text-rose-500 transition group">
+              <h2 className="text-2xl font-bold text-gray-800 group-hover:text-rose-500">
+                  {user.nickname || "点击设置昵称"}
+              </h2>
+              <Edit2 size={18} className="text-gray-300 group-hover:text-rose-400" />
+          </div>
+
+          {/* 用户名 (小字，可修改) */}
+          <div onClick={handleUsernameChange} className="mt-2 flex items-center justify-center gap-1 cursor-pointer text-gray-400 hover:text-rose-500 transition">
+              <span className="text-sm font-mono bg-gray-100 px-2 py-0.5 rounded-md">账号: {user.username}</span>
+              <Edit2 size={12} />
+          </div>
 
           <div className="mt-2 text-gray-400 text-sm">{user.coupleId ? '❤️ 恋爱中' : '🐶 单身狗'}</div>
           {user.coupleId && <div className="mt-1 text-xs text-gray-300">ID: {user.coupleId}</div>}
