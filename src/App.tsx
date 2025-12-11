@@ -17,7 +17,7 @@ import { judgeConflict, extractTodosFromText } from './services/ai';
 import { Memory, PinnedPhoto, PeriodEntry, TodoItem, ConflictRecord, Page, Message, Album, AlbumMedia } from './types';
 // @ts-ignore
 import pailideIcon from './pailide.png';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+
 // --- Helper Functions ---
 const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
 const getFirstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
@@ -955,7 +955,7 @@ const CalendarViewContent = ({ periods, conflicts, todos, addTodo, toggleTodo, o
 
 
 // --- Main App ---
-const MainApp = ({ user }: { user: any }) => {
+const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => void, onUpdateUser: (u:any)=>void }) => {
   const [activePage, setActivePage] = useState<Page>(Page.HOME);
   const [memories, setMemories] = useState<Memory[]>([]);
   const [albums, setAlbums] = useState<Album[]>([]);
