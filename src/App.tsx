@@ -18,6 +18,20 @@ import { Memory, PinnedPhoto, PeriodEntry, TodoItem, ConflictRecord, Page, Messa
 // @ts-ignore
 import pailideIcon from './pailide.png';
 
+// === 新增：通用安全上传函数 ===
+const safeUpload = async (file: File) => {
+  const params = Bmob.File(file.name, file);
+  const res = await params.save();
+  
+  // 兼容 Bmob 各种返回格式 (字符串 / 数组 / 对象)
+  if (typeof res === 'string') {
+      try { return JSON.parse(res).url; } catch(e) { return JSON.parse(res as any).url; }
+  }
+  if (Array.isArray(res)) return res[0].url;
+  if (typeof res === 'object' && res.url) return res.url;
+  throw new Error("上传返回值异常");
+};
+
 // --- Helper Functions ---
 const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
 const getFirstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
@@ -365,22 +379,9 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
       
       setLoading(true);
       try {
-          const params = Bmob.File(file.name, file);
-          const res = await params.save();
+          // 使用通用上传函数
+          const url = await safeUpload(file);
           
-          let url = null;
-          // 全面兼容 Bmob 不同版本的返回格式 (String / Array / Object)
-          if (typeof res === 'string') {
-              const parsed = JSON.parse(res);
-              url = parsed.url || (Array.isArray(parsed) ? parsed[0]?.url : null);
-          } else if (Array.isArray(res)) {
-              url = res[0]?.url;
-          } else if (typeof res === 'object' && res.url) {
-              url = res.url;
-          }
-
-          if (!url) throw new Error("无法获取图片URL，请重试");
-
           const q = Bmob.Query('_User');
           const u = await q.get(user.objectId);
           u.set('avatarUrl', url);
@@ -389,11 +390,10 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           onUpdateUser({ ...user, avatarUrl: url }); 
           alert('头像修改成功');
       } catch(err: any) { 
-          alert('上传失败: ' + (err.message || JSON.stringify(err))); 
-          console.error(err);
+          alert('头像上传失败: ' + (err.message || err)); 
       } finally { 
           setLoading(false);
-          e.target.value = ''; // 清空 input，允许重复选择同一张图
+          e.target.value = ''; // 清空选择，允许重复选同一张
       }
   };
 
@@ -1251,7 +1251,30 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                )}
                {activePage !== Page.HOME && (
                    <div className="h-full relative">
-                       {activePage === Page.MEMORIES && (<MemoriesViewContent user={user} memories={memories} albums={albums} setAlbums={setAlbums} handleLike={(id:string) => setMemories(memories.map(m => m.id === id ? { ...m, likes: m.isLiked ? m.likes - 1 : m.likes + 1, isLiked: !m.isLiked } : m))} handleComment={(id:string, t:string) => setMemories(memories.map(m => m.id === id ? { ...m, comments: [...m.comments, { id: Date.now().toString(), text: t, author: 'me', date: getBeijingDateString() }] } : m))} onFileSelect={(e:any) => { const f = e.target.files; if(f?.length) { Array.from(f).slice(0, 9-uploadImages.length).forEach((file:any) => { const r = new FileReader(); r.onload = () => setUploadImages(p => [...p, r.result as string]); r.readAsDataURL(file); }); setUploadType('media'); setShowUploadModal(true); } }} onTextPost={() => { setUploadType('text'); setUploadImages([]); setShowUploadModal(true); }} showUploadModal={showUploadModal} setShowUploadModal={setShowUploadModal} uploadImages={uploadImages} setUploadImages={setUploadImages} uploadCaption={uploadCaption} setUploadCaption={setUploadCaption} uploadType={uploadType} confirmUpload={async () => { 
+                       {activePage === Page.MEMORIES && (<MemoriesViewContent user={user} memories={memories} albums={albums} setAlbums={setAlbums} handleLike={(id:string) => setMemories(memories.map(m => m.id === id ? { ...m, likes: m.isLiked ? m.likes - 1 : m.likes + 1, isLiked: !m.isLiked } : m))} handleComment={(id:string, t:string) => setMemories(memories.map(m => m.id === id ? { ...m, comments: [...m.comments, { id: Date.now().toString(), text: t, author: 'me', date: getBeijingDateString() }] } : m))} onFileSelect={async (e:any) => { 
+                        const f = e.target.files; 
+                        if(f?.length) { 
+                            // 限制最多选9张
+                            const filesToUpload = Array.from(f).slice(0, 9 - uploadImages.length);
+                            
+                            // 简单的上传提示（因为没有全局 loading 状态）
+                            if(filesToUpload.length > 0) {
+                                // 循环上传每一张图
+                                for (const file of filesToUpload) {
+                                    try {
+                                        const url = await safeUpload(file as File);
+                                        setUploadImages((p: string[]) => [...p, url]);
+                                    } catch (err) {
+                                        console.error("某张图片上传失败", err);
+                                    }
+                                }
+                                setUploadType('media'); 
+                                setShowUploadModal(true); 
+                            }
+                        } 
+                        // 清空 input 允许重复选择
+                        e.target.value = '';
+                    }} onTextPost={() => { setUploadType('text'); setUploadImages([]); setShowUploadModal(true); }} showUploadModal={showUploadModal} setShowUploadModal={setShowUploadModal} uploadImages={uploadImages} setUploadImages={setUploadImages} uploadCaption={uploadCaption} setUploadCaption={setUploadCaption} uploadType={uploadType} confirmUpload={async () => { 
                      if((uploadType === 'media' && !uploadImages.length) || (uploadType === 'text' && !uploadCaption.trim())) return; // 构造新对象
                     const newMemory = {
                          media: uploadImages,
