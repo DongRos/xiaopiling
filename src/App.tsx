@@ -20,16 +20,23 @@ import pailideIcon from './pailide.png';
 
 // === 新增：通用安全上传函数 ===
 const safeUpload = async (file: File) => {
-  const params = Bmob.File(file.name, file);
-  const res = await params.save();
-  
-  // 兼容 Bmob 各种返回格式 (字符串 / 数组 / 对象)
-  if (typeof res === 'string') {
-      try { return JSON.parse(res).url; } catch(e) { return JSON.parse(res as any).url; }
+  try {
+    // 1. 给文件重命名（防止中文文件名导致上传卡死）
+    const cleanName = `${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+    const params = Bmob.File(cleanName, file);
+    const res = await params.save();
+    
+    // 2. 兼容各种返回格式
+    if (typeof res === 'string') {
+        try { return JSON.parse(res).url; } catch(e) { return JSON.parse(res as any).url; }
+    }
+    if (Array.isArray(res)) return res[0].url;
+    if (typeof res === 'object' && res.url) return res.url;
+    throw new Error("格式无法解析");
+  } catch (e) {
+    console.error("上传底层错误:", e);
+    throw e;
   }
-  if (Array.isArray(res)) return res[0].url;
-  if (typeof res === 'object' && res.url) return res.url;
-  throw new Error("上传返回值异常");
 };
 
 // --- Helper Functions ---
@@ -1252,29 +1259,28 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                {activePage !== Page.HOME && (
                    <div className="h-full relative">
                        {activePage === Page.MEMORIES && (<MemoriesViewContent user={user} memories={memories} albums={albums} setAlbums={setAlbums} handleLike={(id:string) => setMemories(memories.map(m => m.id === id ? { ...m, likes: m.isLiked ? m.likes - 1 : m.likes + 1, isLiked: !m.isLiked } : m))} handleComment={(id:string, t:string) => setMemories(memories.map(m => m.id === id ? { ...m, comments: [...m.comments, { id: Date.now().toString(), text: t, author: 'me', date: getBeijingDateString() }] } : m))} onFileSelect={async (e:any) => { 
-                        const f = e.target.files; 
-                        if(f?.length) { 
-                            // 限制最多选9张
-                            const filesToUpload = Array.from(f).slice(0, 9 - uploadImages.length);
-                            
-                            // 简单的上传提示（因为没有全局 loading 状态）
-                            if(filesToUpload.length > 0) {
-                                // 循环上传每一张图
-                                for (const file of filesToUpload) {
-                                    try {
-                                        const url = await safeUpload(file as File);
-                                        setUploadImages((p: string[]) => [...p, url]);
-                                    } catch (err) {
-                                        console.error("某张图片上传失败", err);
-                                    }
-                                }
-                                setUploadType('media'); 
-                                setShowUploadModal(true); 
+                const f = e.target.files; 
+                if(f?.length) { 
+                    // 1. 【关键】先弹窗，让用户看到界面！
+                    setUploadType('media'); 
+                    setShowUploadModal(true); 
+                    
+                    // 2. 然后再后台慢慢上传
+                    const filesToUpload = Array.from(f).slice(0, 9 - uploadImages.length);
+                    if(filesToUpload.length > 0) {
+                        for (const file of filesToUpload) {
+                            try {
+                                const url = await safeUpload(file as File);
+                                // 传完一张显示一张
+                                setUploadImages((p: string[]) => [...p, url]);
+                            } catch (err) {
+                                console.error("上传失败", err);
                             }
-                        } 
-                        // 清空 input 允许重复选择
-                        e.target.value = '';
-                    }} onTextPost={() => { setUploadType('text'); setUploadImages([]); setShowUploadModal(true); }} showUploadModal={showUploadModal} setShowUploadModal={setShowUploadModal} uploadImages={uploadImages} setUploadImages={setUploadImages} uploadCaption={uploadCaption} setUploadCaption={setUploadCaption} uploadType={uploadType} confirmUpload={async () => { 
+                        }
+                    }
+                } 
+                e.target.value = '';
+            }} onTextPost={() => { setUploadType('text'); setUploadImages([]); setShowUploadModal(true); }} showUploadModal={showUploadModal} setShowUploadModal={setShowUploadModal} uploadImages={uploadImages} setUploadImages={setUploadImages} uploadCaption={uploadCaption} setUploadCaption={setUploadCaption} uploadType={uploadType} confirmUpload={async () => { 
                      if((uploadType === 'media' && !uploadImages.length) || (uploadType === 'text' && !uploadCaption.trim())) return; // 构造新对象
                     const newMemory = {
                          media: uploadImages,
