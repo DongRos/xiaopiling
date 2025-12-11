@@ -10,7 +10,7 @@ import {
   ChevronLeft, ChevronRight, MessageCircle, ZoomIn, ZoomOut, Palette, RotateCcw, Pin,
   Star, Plus, MessageSquareHeart, Send, Loader2, Image as ImageIcon, FolderPlus, Grid,
   ArrowLeft, Edit2, Sparkles, Gavel, ShieldCheck, Lightbulb, Clock, MoreHorizontal,
-  MoreVertical, CheckCircle, Settings, Menu, User, RefreshCw
+  MoreVertical, CheckCircle, Settings, Menu, User, RefreshCw,LogOut, Scan
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { judgeConflict, extractTodosFromText } from './services/ai';
@@ -184,6 +184,7 @@ const Navbar = ({ active, setPage }: { active: Page, setPage: (p: Page) => void 
     { id: Page.CYCLE, icon: <Heart size={24} />, label: '经期' },
     { id: Page.CONFLICT, icon: <Gavel size={24} />, label: '小法官' },
     { id: Page.CALENDAR, icon: <CalendarIcon size={24} />, label: '日历' },
+    { id: 'PROFILE' as any, icon: <User size={24} />, label: '我的' },
   ];
   return (
     <nav 
@@ -306,6 +307,109 @@ const AnniversaryTimer = ({ startDate, onSetDate }: any) => {
         </div>
     );
 };
+
+// === 新增组件开始 ===
+const AuthPage = () => {
+  const [isLogin, setIsLogin] = useState(true);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      if (isLogin) {
+        await Bmob.User.login(username, password);
+        window.location.reload();
+      } else {
+        const params = { username, password, avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}` };
+        await Bmob.User.register(params);
+        alert('注册成功，请登录');
+        setIsLogin(true);
+      }
+    } catch (err: any) {
+      alert('操作失败: ' + (err.error || err.message));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-rose-50 p-6">
+      <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-sm text-center">
+        <h1 className="text-2xl font-bold font-cute mb-2 text-gray-800">小屁铃</h1>
+        <p className="text-gray-400 text-sm mb-8">我们的专属空间 (云端版)</p>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input className="w-full bg-gray-50 border border-gray-100 rounded-xl p-3 outline-none" placeholder="账号" value={username} onChange={e => setUsername(e.target.value)} required />
+          <input className="w-full bg-gray-50 border border-gray-100 rounded-xl p-3 outline-none" type="password" placeholder="密码" value={password} onChange={e => setPassword(e.target.value)} required />
+          <button disabled={loading} className="w-full bg-rose-500 text-white py-3 rounded-xl font-bold hover:bg-rose-600 transition">
+             {loading ? <Loader2 className="animate-spin mx-auto"/> : (isLogin ? '登录' : '注册')}
+          </button>
+        </form>
+        <button onClick={() => setIsLogin(!isLogin)} className="mt-4 text-xs text-gray-400 underline">{isLogin ? '没有账号？去注册' : '已有账号？去登录'}</button>
+      </div>
+    </div>
+  );
+};
+
+const ProfilePage = ({ user, onLogout }: { user: any, onLogout: () => void }) => {
+  const [showScanner, setShowScanner] = useState(false);
+  
+  const onScan = async (decodedText: string) => {
+    if (decodedText.startsWith('BIND:')) {
+      const partnerId = decodedText.split(':')[1];
+      if (partnerId === user.objectId) return alert('不能绑定自己');
+      
+      const ids = [user.objectId, partnerId].sort();
+      const commonId = `${ids[0]}_${ids[1]}`;
+      
+      const q = Bmob.Query('_User');
+      q.set('id', user.objectId);
+      q.set('coupleId', commonId);
+      await q.save();
+      
+      alert(`绑定成功! 请重启APP生效`);
+      setShowScanner(false);
+      window.location.reload();
+    }
+  };
+
+  return (
+    <div className="p-6 bg-gray-50 min-h-screen pb-24">
+       <div className="bg-white rounded-3xl p-6 text-center shadow-sm mb-6">
+          <img src={user.avatarUrl || DEFAULT_AVATAR} className="w-24 h-24 rounded-full border-4 border-rose-100 object-cover mx-auto" />
+          <h2 className="text-xl font-bold mt-4">{user.username}</h2>
+          <div className="mt-2 text-gray-400 text-sm">{user.coupleId ? '❤️ 恋爱中' : '🐶 单身狗'}</div>
+          {user.coupleId && <div className="mt-1 text-xs text-gray-300">ID: {user.coupleId}</div>}
+       </div>
+
+       {!user.coupleId && (
+         <div className="bg-white rounded-3xl p-6 shadow-sm mb-6 text-center">
+            <h3 className="font-bold mb-4 text-gray-700">绑定另一半</h3>
+            {showScanner ? (
+                <div id="reader" className="rounded-xl overflow-hidden mb-4"><ScannerMounter onSuccess={onScan}/></div> 
+            ) : (
+                <>
+                  <div className="flex justify-center mb-4"><QRCodeSVG value={`BIND:${user.objectId}`} size={150} /></div>
+                  <p className="text-xs text-gray-400 mb-4">让对方扫描此码，或点击下方按钮扫对方</p>
+                  <button onClick={() => setShowScanner(true)} className="bg-rose-500 text-white px-6 py-2 rounded-full flex items-center gap-2 mx-auto"><Scan size={16}/> 扫描 TA 的二维码</button>
+                </>
+            )}
+         </div>
+       )}
+       <button onClick={onLogout} className="w-full bg-white text-red-500 py-4 rounded-3xl font-bold shadow-sm flex items-center justify-center gap-2"><LogOut size={20}/> 退出登录</button>
+    </div>
+  )
+}
+const ScannerMounter = ({onSuccess}: any) => {
+    useEffect(() => { const s = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 }, false); s.render(onSuccess, console.log); return ()=>s.clear(); }, []);
+    return null;
+}
+// === 新增组件结束 ===
+
+
+
 // --- Page Content Components ---
 
 const MemoriesViewContent = ({
@@ -1251,6 +1355,7 @@ const MainApp = ({ user }: { user: any }) => {
                        {activePage === Page.CONFLICT && <ConflictViewContent judgeConflict={judgeConflict} conflicts={conflicts} setConflicts={setConflicts} />}
                        {activePage === Page.BOARD && (<BoardViewContent messages={messages} onPost={(c:string) => setMessages([{ id: Date.now().toString(), content: c, date: getBeijingDateString(), time: new Date().toTimeString().slice(0,5), isPinned: false, isFavorite: false }, ...messages])} onPin={(id:string) => setMessages(messages.map(m => m.id === id ? { ...m, isPinned: !m.isPinned } : m))} onFav={(id:string) => setMessages(messages.map(m => m.id === id ? { ...m, isFavorite: !m.isFavorite } : m))} onDelete={(id:string) => { if(confirm("删除?")) setMessages(messages.filter(m => m.id !== id)); }} onAddTodo={(t:string, d:string) => setTodos([...todos, { id: Date.now().toString(), text: t, completed: false, assignee: 'both', date: d || getBeijingDateString() }])} setMessages={setMessages} />)}
                        {activePage === Page.CALENDAR && (<CalendarViewContent periods={periods} conflicts={conflicts} todos={todos} addTodo={(t:string, d:string) => setTodos([...todos, { id: Date.now().toString(), text: t, completed: false, assignee: 'both', date: d }])} toggleTodo={(id:string) => setTodos(todos.map(t => t.id === id ? { ...t, completed: !t.completed } : t))} setTodos={setTodos} onDeleteTodo={(id:string) => { if(confirm("删除此待办？")) setTodos(todos.filter(t => t.id !== id)); }} onDeleteConflict={(id:string) => { if(confirm("删除此记录？")) setConflicts(conflicts.filter(c => c.id !== id)); }} />)}
+                       {activePage === 'PROFILE' && <ProfilePage user={user} onLogout={() => Bmob.User.logout()} />}
                    </div>
                )}
             </motion.div>
