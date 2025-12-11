@@ -1278,7 +1278,7 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                         console.error("发布失败", e);
                         alert("云端同步失败，请检查网络");
                     }
-                }} setMemories([{ id: Date.now().toString(), media: uploadImages, caption: uploadCaption, date: getBeijingDateString(), type: uploadType, likes: 0, isLiked: false, comments: [] }, ...memories]); setShowUploadModal(false); setUploadImages([]); setUploadCaption(''); setUploadType('media'); }} coverUrl={momentsCover} onUpdateCover={(e:any) => { const f = e.target.files?.[0]; if(f) { const r = new FileReader(); r.onload = () => setMomentsCover(r.result as string); r.readAsDataURL(f); }}} onDeleteMemory={(id:string) => { if(confirm("删除?")) setMemories(memories.filter(m => m.id !== id)); }} momentsTitle={momentsTitle} setMomentsTitle={setMomentsTitle} avatarUrl={avatarUrl} setAvatarUrl={setAvatarUrl} setMomentsCover={setMomentsCover} />)}
+                }} coverUrl={momentsCover} onUpdateCover={(e:any) => { const f = e.target.files?.[0]; if(f) { const r = new FileReader(); r.onload = () => setMomentsCover(r.result as string); r.readAsDataURL(f); }}} onDeleteMemory={(id:string) => { if(confirm("删除?")) setMemories(memories.filter(m => m.id !== id)); }} momentsTitle={momentsTitle} setMomentsTitle={setMomentsTitle} avatarUrl={avatarUrl} setAvatarUrl={setAvatarUrl} setMomentsCover={setMomentsCover} />)}
                        {activePage === Page.CYCLE && <CycleViewContent 
                            periods={periods} 
                            nextPeriod={calculateNextPeriod()} 
