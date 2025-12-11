@@ -22,7 +22,9 @@ import pailideIcon from './pailide.png';
 const safeUpload = async (file: File) => {
   try {
     // 1. 给文件重命名（防止中文文件名导致上传卡死）
-    const cleanName = `${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+    const fileExtension = file.name.split('.').pop() || 'jpg';
+    const cleanName = `${Date.now()}_${Math.random().toString(36).slice(2)}.${fileExtension}`;
+    
     const params = Bmob.File(cleanName, file);
     const res = await params.save();
     
@@ -1259,28 +1261,29 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                {activePage !== Page.HOME && (
                    <div className="h-full relative">
                        {activePage === Page.MEMORIES && (<MemoriesViewContent user={user} memories={memories} albums={albums} setAlbums={setAlbums} handleLike={(id:string) => setMemories(memories.map(m => m.id === id ? { ...m, likes: m.isLiked ? m.likes - 1 : m.likes + 1, isLiked: !m.isLiked } : m))} handleComment={(id:string, t:string) => setMemories(memories.map(m => m.id === id ? { ...m, comments: [...m.comments, { id: Date.now().toString(), text: t, author: 'me', date: getBeijingDateString() }] } : m))} onFileSelect={async (e:any) => { 
-                const f = e.target.files; 
-                if(f?.length) { 
-                    // 1. 【关键】先弹窗，让用户看到界面！
-                    setUploadType('media'); 
-                    setShowUploadModal(true); 
-                    
-                    // 2. 然后再后台慢慢上传
-                    const filesToUpload = Array.from(f).slice(0, 9 - uploadImages.length);
-                    if(filesToUpload.length > 0) {
-                        for (const file of filesToUpload) {
-                            try {
-                                const url = await safeUpload(file as File);
-                                // 传完一张显示一张
-                                setUploadImages((p: string[]) => [...p, url]);
-                            } catch (err) {
-                                console.error("上传失败", err);
-                            }
-                        }
-                    }
-                } 
-                e.target.value = '';
-            }} onTextPost={() => { setUploadType('text'); setUploadImages([]); setShowUploadModal(true); }} showUploadModal={showUploadModal} setShowUploadModal={setShowUploadModal} uploadImages={uploadImages} setUploadImages={setUploadImages} uploadCaption={uploadCaption} setUploadCaption={setUploadCaption} uploadType={uploadType} confirmUpload={async () => { 
+    const f = e.target.files; 
+    if(f?.length) { 
+        // 1. 【关键】先弹窗！让用户立马看到界面，不再“没反应”
+        setUploadType('media'); 
+        setShowUploadModal(true); 
+
+        // 2. 然后再在后台慢慢传图
+        const filesToUpload = Array.from(f).slice(0, 9 - uploadImages.length);
+        if(filesToUpload.length > 0) {
+            for (const file of filesToUpload) {
+                try {
+                    const url = await safeUpload(file as File);
+                    // 传完一张显示一张
+                    setUploadImages((p: string[]) => [...p, url]);
+                } catch (err) {
+                    console.error("某张图片上传失败", err);
+                }
+            }
+        }
+    } 
+    // 清空 input 允许重复选择
+    e.target.value = '';
+}} onTextPost={() => { setUploadType('text'); setUploadImages([]); setShowUploadModal(true); }} showUploadModal={showUploadModal} setShowUploadModal={setShowUploadModal} uploadImages={uploadImages} setUploadImages={setUploadImages} uploadCaption={uploadCaption} setUploadCaption={setUploadCaption} uploadType={uploadType} confirmUpload={async () => { 
                      if((uploadType === 'media' && !uploadImages.length) || (uploadType === 'text' && !uploadCaption.trim())) return; // 构造新对象
                     const newMemory = {
                          media: uploadImages,
