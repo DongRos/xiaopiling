@@ -2,7 +2,7 @@ import Bmob from "hydrogen-js-sdk";
 
 // 初始化 Bmob
 // 请替换为你自己的 Secret Key 和 API 安全码
-Bmob.initialize("1a4d990dc2323abdb780df15c8ba574e", "");
+Bmob.initialize("0ba7d98f31845fab", "");
 
 export default Bmob;
 
