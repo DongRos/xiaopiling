@@ -358,39 +358,71 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
   const [showScanner, setShowScanner] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // 处理头像修改
+  // --- 修复1：更稳健的头像上传逻辑 ---
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
+      
       setLoading(true);
       try {
-          const url = await uploadFile(file); // 上传到Bmob
-          // 更新 Bmob 用户表
+          // 尝试调用 bmob.ts 的上传，如果失败则尝试手动上传逻辑
+          let url = "";
+          try {
+              url = await uploadFile(file);
+          } catch (uploadErr) {
+              console.warn("Standard upload failed, trying fallback:", uploadErr);
+              // 备用上传逻辑：处理 Bmob 可能直接返回对象的情况
+              const params = Bmob.File(file.name, file);
+              const res = await params.save();
+              // 兼容处理：有些版本返回 JSON 字符串，有些返回对象
+              if (typeof res === 'string') {
+                  url = JSON.parse(res).url;
+              } else if (typeof res === 'object' && res.url) {
+                  url = res.url;
+              } else {
+                  throw new Error("上传返回值异常");
+              }
+          }
+
+          // 更新用户表
           const q = Bmob.Query('_User');
           const u = await q.get(user.objectId);
           u.set('avatarUrl', url);
           await u.save();
-          // 更新本地状态（关键：这会让全局头像更新）
+          
+          // 更新本地状态
           onUpdateUser({ ...user, avatarUrl: url }); 
           alert('头像修改成功');
-      } catch(err: any) { alert('出错: ' + err.message); } 
-      finally { setLoading(false); }
+      } catch(err: any) { 
+          alert('头像上传失败: ' + (err.message || err)); 
+          console.error(err);
+      } finally { 
+          setLoading(false); // 确保最后一定停止转圈
+      }
   };
 
-  // 处理昵称修改
+  // --- 修复3：修改昵称 (nickname) 而不是账号 (username) ---
   const handleNameChange = async () => {
-      const newName = prompt("请输入新昵称", user.username);
-      if(!newName || newName === user.username) return;
+      // 默认显示当前昵称，如果没有则显示用户名
+      const currentName = user.nickname || user.username;
+      const newName = prompt("请输入新昵称", currentName);
+      
+      if(!newName || newName === currentName) return;
+      
       setLoading(true);
       try {
           const q = Bmob.Query('_User');
           const u = await q.get(user.objectId);
-          u.set('username', newName);
+          u.set('nickname', newName); // 核心修改：只改 nickname 字段
           await u.save();
+          
           // 更新本地状态
-          onUpdateUser({ ...user, username: newName });
-      } catch(err: any) { alert('出错: ' + err.message); } 
-      finally { setLoading(false); }
+          onUpdateUser({ ...user, nickname: newName });
+      } catch(err: any) { 
+          alert('修改失败: ' + err.message); 
+      } finally { 
+          setLoading(false); 
+      }
   };
 
   // 处理退出登录（二次确认）
@@ -471,7 +503,9 @@ const ScannerMounter = ({onSuccess}: any) => {
 
 // --- Page Content Components ---
 
+// 1. 参数中添加 user
 const MemoriesViewContent = ({
+  user, // <--- 新增接收 user
   memories, albums, setAlbums, handleLike, handleComment, onFileSelect, onTextPost, showUploadModal, setShowUploadModal,
   uploadImages, setUploadImages, uploadCaption, setUploadCaption, uploadType, confirmUpload, coverUrl, onUpdateCover, onDeleteMemory,
   momentsTitle, setMomentsTitle, avatarUrl, setAvatarUrl, setMomentsCover
@@ -667,7 +701,7 @@ const MemoriesViewContent = ({
                  </div>
                  <div className="bg-white p-1 rounded-xl shadow-lg pointer-events-auto cursor-pointer relative z-30" onClick={handleAvatarClick}>
                     <div className="w-16 h-16 bg-rose-100 rounded-lg flex items-center justify-center overflow-hidden">
-                        {avatarUrl ? <img src={avatarUrl} className="w-full h-full object-cover" /> : <span className="text-3xl">💑</span>}
+                        {avatarUrl ? <img src={avatarUrl} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xl">🐶</div>}
                     </div>
                  </div>
             </div>
@@ -702,7 +736,12 @@ const MemoriesViewContent = ({
                               {avatarUrl ? <img src={avatarUrl} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xl">🐶</div>}
                           </div>
                           <div className="flex-1 min-w-0">
-                              <h4 className="font-bold text-gray-800 font-cute text-sm mb-1 text-blue-900">我们</h4>
+                              <h4 className="font-bold text-gray-800 font-cute text-sm mb-1 text-blue-900">
+                                  {/* 如果创建者ID等于当前用户ID，显示当前用户的最新昵称(或用户名)，否则显示存下来的创建者名字 */}
+                                  {memory.creatorId === user.objectId 
+                                    ? (user.nickname || user.username) 
+                                    : (memory.creatorName || 'Ta')}
+                              </h4>
                               <p className="mb-2 text-gray-800 text-sm leading-relaxed">{memory.caption}</p>
                               {memory.type === 'media' && memory.media.length > 0 && (<div className={`grid gap-1 mb-2 max-w-[80%] ${memory.media.length === 1 ? 'grid-cols-1' : memory.media.length === 4 ? 'grid-cols-2 w-2/3' : 'grid-cols-3'}`}>{memory.media.map((url: string, idx: number) => (<div key={idx} onClick={() => handleViewImage(url, 'memory', memory.media)} className={`aspect-square bg-gray-100 cursor-pointer overflow-hidden ${memory.media.length === 1 ? 'max-w-[200px] max-h-[200px]' : ''}`}><img src={url} className="w-full h-full object-cover" alt="Memory" /></div>))}</div>)}
                               <div className="flex justify-between items-center mt-2 relative">
@@ -1199,7 +1238,47 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                )}
                {activePage !== Page.HOME && (
                    <div className="h-full relative">
-                       {activePage === Page.MEMORIES && (<MemoriesViewContent memories={memories} albums={albums} setAlbums={setAlbums} handleLike={(id:string) => setMemories(memories.map(m => m.id === id ? { ...m, likes: m.isLiked ? m.likes - 1 : m.likes + 1, isLiked: !m.isLiked } : m))} handleComment={(id:string, t:string) => setMemories(memories.map(m => m.id === id ? { ...m, comments: [...m.comments, { id: Date.now().toString(), text: t, author: 'me', date: getBeijingDateString() }] } : m))} onFileSelect={(e:any) => { const f = e.target.files; if(f?.length) { Array.from(f).slice(0, 9-uploadImages.length).forEach((file:any) => { const r = new FileReader(); r.onload = () => setUploadImages(p => [...p, r.result as string]); r.readAsDataURL(file); }); setUploadType('media'); setShowUploadModal(true); } }} onTextPost={() => { setUploadType('text'); setUploadImages([]); setShowUploadModal(true); }} showUploadModal={showUploadModal} setShowUploadModal={setShowUploadModal} uploadImages={uploadImages} setUploadImages={setUploadImages} uploadCaption={uploadCaption} setUploadCaption={setUploadCaption} uploadType={uploadType} confirmUpload={() => { if((uploadType === 'media' && !uploadImages.length) || (uploadType === 'text' && !uploadCaption.trim())) return; setMemories([{ id: Date.now().toString(), media: uploadImages, caption: uploadCaption, date: getBeijingDateString(), type: uploadType, likes: 0, isLiked: false, comments: [] }, ...memories]); setShowUploadModal(false); setUploadImages([]); setUploadCaption(''); setUploadType('media'); }} coverUrl={momentsCover} onUpdateCover={(e:any) => { const f = e.target.files?.[0]; if(f) { const r = new FileReader(); r.onload = () => setMomentsCover(r.result as string); r.readAsDataURL(f); }}} onDeleteMemory={(id:string) => { if(confirm("删除?")) setMemories(memories.filter(m => m.id !== id)); }} momentsTitle={momentsTitle} setMomentsTitle={setMomentsTitle} avatarUrl={avatarUrl} setAvatarUrl={setAvatarUrl} setMomentsCover={setMomentsCover} />)}
+                       {activePage === Page.MEMORIES && (<MemoriesViewContent user={user} memories={memories} albums={albums} setAlbums={setAlbums} handleLike={(id:string) => setMemories(memories.map(m => m.id === id ? { ...m, likes: m.isLiked ? m.likes - 1 : m.likes + 1, isLiked: !m.isLiked } : m))} handleComment={(id:string, t:string) => setMemories(memories.map(m => m.id === id ? { ...m, comments: [...m.comments, { id: Date.now().toString(), text: t, author: 'me', date: getBeijingDateString() }] } : m))} onFileSelect={(e:any) => { const f = e.target.files; if(f?.length) { Array.from(f).slice(0, 9-uploadImages.length).forEach((file:any) => { const r = new FileReader(); r.onload = () => setUploadImages(p => [...p, r.result as string]); r.readAsDataURL(file); }); setUploadType('media'); setShowUploadModal(true); } }} onTextPost={() => { setUploadType('text'); setUploadImages([]); setShowUploadModal(true); }} showUploadModal={showUploadModal} setShowUploadModal={setShowUploadModal} uploadImages={uploadImages} setUploadImages={setUploadImages} uploadCaption={uploadCaption} setUploadCaption={setUploadCaption} uploadType={uploadType} confirmUpload={async () => { 
+                     if((uploadType === 'media' && !uploadImages.length) || (uploadType === 'text' && !uploadCaption.trim())) return; // 构造新对象
+                    const newMemory = {
+                         media: uploadImages,
+                         caption: uploadCaption,
+                         date: getBeijingDateString(),
+                         type: uploadType,
+                         likes: 0,
+                         isLiked: false,
+                         comments: [],
+                         // --- 修复2：保存发布者信息 ---
+                         creatorId: user.objectId,
+                         creatorName: user.nickname || user.username, // 存入当时的昵称快照
+                         creatorAvatar: user.avatarUrl
+                    };
+            
+                    // 1. 先更新本地 UI (为了反应快)
+                    // 注意：本地暂时用 Date.now() 做 ID，刷新后会变成 Bmob 的 objectId
+                    setMemories([{ ...newMemory, id: Date.now().toString() } as any, ...memories]); 
+                    
+                    setShowUploadModal(false); 
+                    setUploadImages([]); 
+                    setUploadCaption(''); 
+                    setUploadType('media');
+            
+                    // 2. 同步保存到 Bmob 云端
+                    try {
+                        const q = Bmob.Query('Memory');
+                        q.set('images', uploadImages); // 注意字段名是否对齐，云端好像叫 images
+                        q.set('caption', uploadCaption);
+                        q.set('type', uploadType);
+                        q.set('creatorId', user.objectId);
+                        q.set('creatorName', user.nickname || user.username);
+                        q.set('coupleId', user.coupleId); // 记得加上 coupleId，否则对方看不到
+                        await q.save();
+                        // 可以在这里重新 loadData() 确保 ID 同步，或者等待轮询自动同步
+                    } catch(e) {
+                        console.error("发布失败", e);
+                        alert("云端同步失败，请检查网络");
+                    }
+                }} setMemories([{ id: Date.now().toString(), media: uploadImages, caption: uploadCaption, date: getBeijingDateString(), type: uploadType, likes: 0, isLiked: false, comments: [] }, ...memories]); setShowUploadModal(false); setUploadImages([]); setUploadCaption(''); setUploadType('media'); }} coverUrl={momentsCover} onUpdateCover={(e:any) => { const f = e.target.files?.[0]; if(f) { const r = new FileReader(); r.onload = () => setMomentsCover(r.result as string); r.readAsDataURL(f); }}} onDeleteMemory={(id:string) => { if(confirm("删除?")) setMemories(memories.filter(m => m.id !== id)); }} momentsTitle={momentsTitle} setMomentsTitle={setMomentsTitle} avatarUrl={avatarUrl} setAvatarUrl={setAvatarUrl} setMomentsCover={setMomentsCover} />)}
                        {activePage === Page.CYCLE && <CycleViewContent 
                            periods={periods} 
                            nextPeriod={calculateNextPeriod()} 
