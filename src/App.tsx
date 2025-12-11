@@ -353,22 +353,64 @@ const AuthPage = () => {
   );
 };
 
-const ProfilePage = ({ user, onLogout }: { user: any, onLogout: () => void }) => {
+// 1. 接收 onUpdateUser 参数
+const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => void, onUpdateUser: (u:any)=>void }) => {
   const [showScanner, setShowScanner] = useState(false);
-  
+  const [loading, setLoading] = useState(false);
+
+  // 处理头像修改
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setLoading(true);
+      try {
+          const url = await uploadFile(file); // 上传到Bmob
+          // 更新 Bmob 用户表
+          const q = Bmob.Query('_User');
+          const u = await q.get(user.objectId);
+          u.set('avatarUrl', url);
+          await u.save();
+          // 更新本地状态（关键：这会让全局头像更新）
+          onUpdateUser({ ...user, avatarUrl: url }); 
+          alert('头像修改成功');
+      } catch(err: any) { alert('出错: ' + err.message); } 
+      finally { setLoading(false); }
+  };
+
+  // 处理昵称修改
+  const handleNameChange = async () => {
+      const newName = prompt("请输入新昵称", user.username);
+      if(!newName || newName === user.username) return;
+      setLoading(true);
+      try {
+          const q = Bmob.Query('_User');
+          const u = await q.get(user.objectId);
+          u.set('username', newName);
+          await u.save();
+          // 更新本地状态
+          onUpdateUser({ ...user, username: newName });
+      } catch(err: any) { alert('出错: ' + err.message); } 
+      finally { setLoading(false); }
+  };
+
+  // 处理退出登录（二次确认）
+  const handleLogoutClick = () => {
+      if(window.confirm("确定要退出登录吗？")) {
+          onLogout();
+      }
+  };
+
+  // 这里的 onScan 逻辑保持不变...
   const onScan = async (decodedText: string) => {
     if (decodedText.startsWith('BIND:')) {
       const partnerId = decodedText.split(':')[1];
       if (partnerId === user.objectId) return alert('不能绑定自己');
-      
       const ids = [user.objectId, partnerId].sort();
       const commonId = `${ids[0]}_${ids[1]}`;
-      
       const q = Bmob.Query('_User');
       q.set('id', user.objectId);
       q.set('coupleId', commonId);
       await q.save();
-      
       alert(`绑定成功! 请重启APP生效`);
       setShowScanner(false);
       window.location.reload();
@@ -377,13 +419,29 @@ const ProfilePage = ({ user, onLogout }: { user: any, onLogout: () => void }) =>
 
   return (
     <div className="p-6 bg-gray-50 min-h-screen pb-24">
-       <div className="bg-white rounded-3xl p-6 text-center shadow-sm mb-6">
-          <img src={user.avatarUrl || DEFAULT_AVATAR} className="w-24 h-24 rounded-full border-4 border-rose-100 object-cover mx-auto" />
-          <h2 className="text-xl font-bold mt-4">{user.username}</h2>
+       <div className="bg-white rounded-3xl p-6 text-center shadow-sm mb-6 relative">
+          {loading && <div className="absolute inset-0 bg-white/60 z-10 flex items-center justify-center"><Loader2 className="animate-spin text-rose-500"/></div>}
+          
+          <div className="relative inline-block group">
+              <img src={user.avatarUrl || DEFAULT_AVATAR} className="w-24 h-24 rounded-full border-4 border-rose-100 object-cover mx-auto" />
+              {/* 头像上的编辑按钮 */}
+              <label className="absolute bottom-0 right-0 bg-rose-500 text-white p-2 rounded-full cursor-pointer shadow-lg hover:scale-110 transition">
+                  <Edit2 size={14} />
+                  <input type="file" className="hidden" accept="image/*" onChange={handleAvatarChange} />
+              </label>
+          </div>
+
+          {/* 昵称后的编辑按钮 */}
+          <h2 onClick={handleNameChange} className="text-xl font-bold mt-4 flex items-center justify-center gap-2 cursor-pointer hover:text-rose-500 transition">
+              {user.username} 
+              <Edit2 size={16} className="text-gray-400" />
+          </h2>
+
           <div className="mt-2 text-gray-400 text-sm">{user.coupleId ? '❤️ 恋爱中' : '🐶 单身狗'}</div>
           {user.coupleId && <div className="mt-1 text-xs text-gray-300">ID: {user.coupleId}</div>}
        </div>
 
+       {/* 保持原有的绑定逻辑不变 */}
        {!user.coupleId && (
          <div className="bg-white rounded-3xl p-6 shadow-sm mb-6 text-center">
             <h3 className="font-bold mb-4 text-gray-700">绑定另一半</h3>
@@ -398,7 +456,8 @@ const ProfilePage = ({ user, onLogout }: { user: any, onLogout: () => void }) =>
             )}
          </div>
        )}
-       <button onClick={onLogout} className="w-full bg-white text-red-500 py-4 rounded-3xl font-bold shadow-sm flex items-center justify-center gap-2"><LogOut size={20}/> 退出登录</button>
+       {/* 修改这里的 onClick */}
+       <button onClick={handleLogoutClick} className="w-full bg-white text-red-500 py-4 rounded-3xl font-bold shadow-sm flex items-center justify-center gap-2"><LogOut size={20}/> 退出登录</button>
     </div>
   )
 }
@@ -1157,7 +1216,7 @@ const MainApp = ({ user }: { user: any }) => {
                        {activePage === Page.CONFLICT && <ConflictViewContent judgeConflict={judgeConflict} conflicts={conflicts} setConflicts={setConflicts} />}
                        {activePage === Page.BOARD && (<BoardViewContent messages={messages} onPost={(c:string) => setMessages([{ id: Date.now().toString(), content: c, date: getBeijingDateString(), time: new Date().toTimeString().slice(0,5), isPinned: false, isFavorite: false }, ...messages])} onPin={(id:string) => setMessages(messages.map(m => m.id === id ? { ...m, isPinned: !m.isPinned } : m))} onFav={(id:string) => setMessages(messages.map(m => m.id === id ? { ...m, isFavorite: !m.isFavorite } : m))} onDelete={(id:string) => { if(confirm("删除?")) setMessages(messages.filter(m => m.id !== id)); }} onAddTodo={(t:string, d:string) => setTodos([...todos, { id: Date.now().toString(), text: t, completed: false, assignee: 'both', date: d || getBeijingDateString() }])} setMessages={setMessages} />)}
                        {activePage === Page.CALENDAR && (<CalendarViewContent periods={periods} conflicts={conflicts} todos={todos} addTodo={(t:string, d:string) => setTodos([...todos, { id: Date.now().toString(), text: t, completed: false, assignee: 'both', date: d }])} toggleTodo={(id:string) => setTodos(todos.map(t => t.id === id ? { ...t, completed: !t.completed } : t))} setTodos={setTodos} onDeleteTodo={(id:string) => { if(confirm("删除此待办？")) setTodos(todos.filter(t => t.id !== id)); }} onDeleteConflict={(id:string) => { if(confirm("删除此记录？")) setConflicts(conflicts.filter(c => c.id !== id)); }} />)}
-                       {activePage === 'PROFILE' && <ProfilePage user={user} onLogout={() => Bmob.User.logout()} />}
+                       {activePage === 'PROFILE' && <ProfilePage user={user} onLogout={onLogout} onUpdateUser={onUpdateUser} />}
                    </div>
                )}
             </motion.div>
@@ -1176,7 +1235,6 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // 检查 Bmob 登录状态
     const current = Bmob.User.current();
     if (current) {
         setUser(current);
@@ -1184,10 +1242,16 @@ export default function App() {
     setLoading(false);
   }, []);
 
+  // 新增：处理退出登录，必须手动 setUser(null) 才会切回登录页
+  const handleLogout = () => {
+      Bmob.User.logout();
+      setUser(null);
+  };
+
   if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-rose-500"/></div>;
 
-  // 没登录 -> 显示登录页；登录了 -> 显示主程序
   if (!user) return <AuthPage />;
 
-  return <MainApp user={user} />;
+  // 传入 onLogout 和 onUpdateUser (用于修改头像后立即刷新)
+  return <MainApp user={user} onLogout={handleLogout} onUpdateUser={setUser} />;
 }
