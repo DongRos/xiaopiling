@@ -20,38 +20,29 @@ import pailideIcon from './pailide.png';
 
 const safeUpload = async (file: File) => {
   try {
-    // 1. 保留原始扩展名
     const ext = file.name.split('.').pop() || 'jpg';
-    // 2. 重命名为纯数字字母
     const cleanName = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
     
+    console.log("开始上传:", cleanName); // 增加日志
     const params = Bmob.File(cleanName, file);
     const res = await params.save();
-    
-    // 3. 修复：健壮的返回值解析
+    console.log("Bmob上传响应:", res); // 增加日志
+
     let result = res;
-    // 如果是字符串，先尝试解析
     if (typeof res === 'string') {
         try { result = JSON.parse(res); } catch (e) { console.error("解析Bmob返回值失败", e); }
     }
 
-    // 情况A: 结果是数组 (最常见: [{"filename":..., "url":...}])
-    if (Array.isArray(result) && result.length > 0 && result[0].url) {
-        return result[0].url;
-    }
-    // 情况B: 结果是对象
-    if (typeof result === 'object' && result && (result as any).url) {
-        return (result as any).url;
-    }
+    if (Array.isArray(result) && result.length > 0 && result[0].url) return result[0].url;
+    if (typeof result === 'object' && result && (result as any).url) return (result as any).url;
 
-    console.error("Bmob上传返回了无法识别的格式:", res);
+    console.error("无法识别的返回格式:", res);
     throw new Error("上传成功但无法获取图片链接");
   } catch (e) {
-    console.error("上传底层错误:", e);
+    console.error("上传失败:", e);
     throw e;
   }
 };
-
 // --- Helper Functions ---
 const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
 const getFirstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
@@ -394,26 +385,27 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
 
 // 1. 修复头像上传：增加对数组返回值的兼容处理
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
+      const target = e.target; // 核心修复：先保存 input 引用
+      const file = target.files?.[0];
       if (!file) return;
       
       setLoading(true);
       try {
-          // 使用通用上传函数
           const url = await safeUpload(file);
           
           const q = Bmob.Query('_User');
-          q.set('id', user.objectId); // 核心修复：直接设置 ID 来定位行
-          q.set('avatarUrl', url);    // 直接设置要修改的字段
+          q.set('id', user.objectId);
+          q.set('avatarUrl', url);
           await q.save();
           
           onUpdateUser({ ...user, avatarUrl: url }); 
           alert('头像修改成功');
       } catch(err: any) { 
+          console.error(err);
           alert('头像上传失败: ' + (err.message || err)); 
       } finally { 
           setLoading(false);
-          e.target.value = ''; // 清空选择，允许重复选同一张
+          if (target) target.value = ''; // 使用保存的引用来重置
       }
   };
 
@@ -1272,29 +1264,29 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                {activePage !== Page.HOME && (
                    <div className="h-full relative">
                        {activePage === Page.MEMORIES && (<MemoriesViewContent user={user} memories={memories} albums={albums} setAlbums={setAlbums} handleLike={(id:string) => setMemories(memories.map(m => m.id === id ? { ...m, likes: m.isLiked ? m.likes - 1 : m.likes + 1, isLiked: !m.isLiked } : m))} handleComment={(id:string, t:string) => setMemories(memories.map(m => m.id === id ? { ...m, comments: [...m.comments, { id: Date.now().toString(), text: t, author: 'me', date: getBeijingDateString() }] } : m))} 
-                                                           onFileSelect={async (e:any) => { 
-                                                                const f = e.target.files; 
-                                                                if(f && f.length > 0) { 
-                                                                    // 1. 【强制弹窗】不管后面怎么样，先让界面弹出来
-                                                                    setUploadType('media'); 
-                                                                    setShowUploadModal(true); 
+                                                           onFileSelect={async (e: any) => {
+                                                            // 核心修复：立即转为数组，并保存 input 引用
+                                                            const target = e.target;
+                                                            const files = Array.from(target.files || []) as File[];
                                                             
-                                                                    // 2. 后台静默上传
-                                                                    for (const file of f) {
-                                                                        try {
-                                                                            const url = await safeUpload(file as File);
-                                                                            // 修复：只有 url 存在且有效时才添加，防止白屏
-                                                                            if (url && typeof url === 'string') {
-                                                                                setUploadImages((p: string[]) => [...p, url]);
-                                                                            }
-                                                                        } catch (err) {
-                                                                              console.error("单张图片失败", err);
-                                                                          }
-                                                                      }
+                                                            if (files.length > 0) {
+                                                                setUploadType('media');
+                                                                setShowUploadModal(true);
+                                                    
+                                                                // 循环上传
+                                                                for (const file of files) {
+                                                                    try {
+                                                                        const url = await safeUpload(file);
+                                                                        if (url) {
+                                                                            setUploadImages((prev: string[]) => [...prev, url]);
+                                                                        }
+                                                                    } catch (err) {
+                                                                        console.error("单张图片上传失败", err);
+                                                                    }
                                                                 }
-                                                                // 重置输入框，保证下次还能选同一张图
-                                                                e.target.value = '';
-                                                            }}
+                                                            }
+                                                            if (target) target.value = ''; // 重置 input
+                                                        }}
                                                            onTextPost={() => { setUploadType('text'); setUploadImages([]); setShowUploadModal(true); }} showUploadModal={showUploadModal} setShowUploadModal={setShowUploadModal} uploadImages={uploadImages} setUploadImages={setUploadImages} uploadCaption={uploadCaption} setUploadCaption={setUploadCaption} uploadType={uploadType} confirmUpload={async () => { 
                      if((uploadType === 'media' && !uploadImages.length) || (uploadType === 'text' && !uploadCaption.trim())) return; // 构造新对象
                     const newMemory = {
