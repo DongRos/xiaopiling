@@ -403,9 +403,9 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           const url = await safeUpload(file);
           
           const q = Bmob.Query('_User');
-          const u = await q.get(user.objectId);
-          u.set('avatarUrl', url);
-          await u.save();
+          q.set('id', user.objectId); // 核心修复：直接设置 ID 来定位行
+          q.set('avatarUrl', url);    // 直接设置要修改的字段
+          await q.save();
           
           onUpdateUser({ ...user, avatarUrl: url }); 
           alert('头像修改成功');
@@ -425,8 +425,8 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
       setLoading(true);
       try {
           const q = Bmob.Query('_User');
-          const u = await q.get(user.objectId);
-          u.set('nickname', newName);
+          q.set('id', user.objectId);
+          q.set('nickname', newName);
           await u.save();
           onUpdateUser({ ...user, nickname: newName });
       } catch(err: any) { alert('修改失败: ' + err.message); } 
@@ -441,8 +441,8 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
       setLoading(true);
       try {
           const q = Bmob.Query('_User');
-          const u = await q.get(user.objectId);
-          u.set('username', newName);
+          q.set('id', user.objectId);
+          q.set('username', newName);
           await u.save();
           onUpdateUser({ ...user, username: newName });
           alert('账号已修改，下次请使用新账号登录');
@@ -1280,7 +1280,7 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                                                                     setShowUploadModal(true); 
                                                             
                                                                     // 2. 后台静默上传
-                                                                    for (const file of filesToUpload) {
+                                                                    for (const file of f) {
                                                                         try {
                                                                             const url = await safeUpload(file as File);
                                                                             // 修复：只有 url 存在且有效时才添加，防止白屏
@@ -1328,7 +1328,9 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                         q.set('type', uploadType);
                         q.set('creatorId', user.objectId);
                         q.set('creatorName', user.nickname || user.username);
-                        q.set('coupleId', user.coupleId); // 记得加上 coupleId，否则对方看不到
+                        if (user.coupleId) {
+                            q.set('coupleId', user.coupleId);
+                        }
                         await q.save();
                         // 可以在这里重新 loadData() 确保 ID 同步，或者等待轮询自动同步
                     } catch(e) {
