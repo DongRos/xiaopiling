@@ -1296,6 +1296,7 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                                                                               console.error("单张图片失败", err);
                                                                           }
                                                                       }
+                                                                }
                                                                 // 重置输入框，保证下次还能选同一张图
                                                                 e.target.value = '';
                                                             }}
