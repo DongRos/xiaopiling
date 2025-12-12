@@ -1106,15 +1106,15 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
   
   // ================= Bmob 云端数据加载逻辑 (开始) =================
 
-  // 1. 定义查询辅助函数 (自动判断是查两人共享的，还是查自己的)
+ // 1. 定义查询辅助函数
   const getQuery = (tableName: string) => {
         const q = Bmob.Query(tableName);
-        // 修复：必须加回 '=='，这是 Bmob 标准语法。
-        // 如果这里之前报错，是因为 user.coupleId 可能为空，我们加个额外检查。
+        // 修复：去掉 '=='，只保留 字段名 和 值。
+        // 日志中的 415 错误证明当前 SDK 版本不需要中间的操作符。
         if (user.coupleId) {
-            q.equalTo('coupleId', '==', user.coupleId);
+            q.equalTo('coupleId', user.coupleId);
         } else {
-            q.equalTo('creatorId', '==', user.objectId);
+            q.equalTo('creatorId', user.objectId);
         }
         return q;
     };
