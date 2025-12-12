@@ -425,13 +425,13 @@ const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
           const q = Bmob.Query('_User');
           q.set('id', user.objectId);
           q.set('nickname', newName);
-          await q.save(); // <--- 核心修复：之前写成了 u.save()，必须改为 q.save()
+          await q.save(); // <--- 修复：改为 q.save()
           onUpdateUser({ ...user, nickname: newName });
       } catch(err: any) { alert('修改失败: ' + err.message); } 
       finally { setLoading(false); }
   };
 
-  // 3. 修改账号
+  // 3. 修改用户名 (小字，登录用)
   const handleUsernameChange = async () => {
       const newName = prompt("请输入新账号 (用于登录)", user.username);
       if(!newName || newName === user.username) return;
@@ -441,7 +441,7 @@ const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
           const q = Bmob.Query('_User');
           q.set('id', user.objectId);
           q.set('username', newName);
-          await q.save(); // <--- 核心修复：之前写成了 u.save()，必须改为 q.save()
+          await q.save(); // <--- 修复：改为 q.save()
           onUpdateUser({ ...user, username: newName });
           alert('账号已修改，下次请使用新账号登录');
       } catch(err: any) { alert('修改失败(可能账号已存在): ' + err.message); } 
@@ -1109,9 +1109,13 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
   // 1. 定义查询辅助函数 (自动判断是查两人共享的，还是查自己的)
   const getQuery = (tableName: string) => {
         const q = Bmob.Query(tableName);
-        // 修复：去掉 '=='，只保留 字段名 和 值
-        if (user.coupleId) q.equalTo('coupleId', user.coupleId);
-        else q.equalTo('creatorId', user.objectId);
+        // 修复：必须加回 '=='，这是 Bmob 标准语法。
+        // 如果这里之前报错，是因为 user.coupleId 可能为空，我们加个额外检查。
+        if (user.coupleId) {
+            q.equalTo('coupleId', '==', user.coupleId);
+        } else {
+            q.equalTo('creatorId', '==', user.objectId);
+        }
         return q;
     };
   useEffect(() => {
@@ -1270,28 +1274,34 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                    <div className="h-full relative">
                        {activePage === Page.MEMORIES && (<MemoriesViewContent user={user} memories={memories} albums={albums} setAlbums={setAlbums} handleLike={(id:string) => setMemories(memories.map(m => m.id === id ? { ...m, likes: m.isLiked ? m.likes - 1 : m.likes + 1, isLiked: !m.isLiked } : m))} handleComment={(id:string, t:string) => setMemories(memories.map(m => m.id === id ? { ...m, comments: [...m.comments, { id: Date.now().toString(), text: t, author: 'me', date: getBeijingDateString() }] } : m))} 
                                                            onFileSelect={async (e: any) => {
-                                                                  const target = e.target;
-                                                                  const files = Array.from(target.files || []) as File[];
-                                                                  
-                                                                  if (files.length > 0) {
-                                                                      setUploadType('media');
-                                                                      setShowUploadModal(true); // 立即显示弹窗
-                                                              
-                                                                      for (const file of files) {
-                                                                          try {
-                                                                              // 上传
-                                                                              const url = await safeUpload(file);
-                                                                              if (url) {
-                                                                                  console.log("图片上传成功，更新UI:", url);
-                                                                                  setUploadImages((prev: string[]) => [...prev, url]);
-                                                                              }
-                                                                          } catch (err) {
-                                                                              console.error("单张图片上传失败", err);
-                                                                          }
-                                                                      }
-                                                                  }
-                                                                  if (target) target.value = ''; 
-                                                              }}
+                                                            const target = e.target;
+                                                            const files = Array.from(target.files || []) as File[];
+                                                            
+                                                            if (files.length > 0) {
+                                                                setUploadType('media');
+                                                                setShowUploadModal(true); // 立即弹窗
+                                                        
+                                                                for (const file of files) {
+                                                                    // 1. 立即显示本地预览图 (不用等上传)
+                                                                    const localUrl = URL.createObjectURL(file);
+                                                                    setUploadImages((prev: string[]) => [...prev, localUrl]);
+                                                        
+                                                                    // 2. 后台上传，成功后替换为云端 URL
+                                                                    safeUpload(file).then(serverUrl => {
+                                                                        if (serverUrl) {
+                                                                            console.log("图片上传完成:", serverUrl);
+                                                                            setUploadImages((prev: string[]) => 
+                                                                                prev.map(url => url === localUrl ? serverUrl : url)
+                                                                            );
+                                                                        }
+                                                                    }).catch(err => {
+                                                                        console.error("图片上传失败", err);
+                                                                        alert("某张图片上传失败，请重试");
+                                                                    });
+                                                                }
+                                                            }
+                                                            if (target) target.value = ''; 
+                                                        }}
                                                            onTextPost={() => { setUploadType('text'); setUploadImages([]); setShowUploadModal(true); }} showUploadModal={showUploadModal} setShowUploadModal={setShowUploadModal} uploadImages={uploadImages} setUploadImages={setUploadImages} uploadCaption={uploadCaption} setUploadCaption={setUploadCaption} uploadType={uploadType} confirmUpload={async () => { 
                      if((uploadType === 'media' && !uploadImages.length) || (uploadType === 'text' && !uploadCaption.trim())) return; // 构造新对象
                     const newMemory = {
