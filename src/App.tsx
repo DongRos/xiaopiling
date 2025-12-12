@@ -23,17 +23,24 @@ const safeUpload = async (file: File) => {
     const ext = file.name.split('.').pop() || 'jpg';
     const cleanName = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
     
-    console.log("开始上传:", cleanName); // 增加日志
+    console.log("开始上传:", cleanName);
     const params = Bmob.File(cleanName, file);
     const res = await params.save();
-    console.log("Bmob上传响应:", res); // 增加日志
+    console.log("Bmob上传响应:", res);
 
+    // 1. 如果直接是字符串 (URL)
+    if (typeof res === 'string' && res.startsWith('http')) return res;
+
+    // 2. 尝试解析 JSON 字符串
     let result = res;
     if (typeof res === 'string') {
-        try { result = JSON.parse(res); } catch (e) { console.error("解析Bmob返回值失败", e); }
+        try { result = JSON.parse(res); } catch (e) { /* 忽略解析错误 */ }
     }
 
+    // 3. 检查数组格式
     if (Array.isArray(result) && result.length > 0 && result[0].url) return result[0].url;
+    
+    // 4. 检查对象格式 (最常见)
     if (typeof result === 'object' && result && (result as any).url) return (result as any).url;
 
     console.error("无法识别的返回格式:", res);
@@ -383,9 +390,8 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
   const [showScanner, setShowScanner] = useState(false);
   const [loading, setLoading] = useState(false);
 
-// 1. 修复头像上传：增加对数组返回值的兼容处理
-  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const target = e.target; // 核心修复：先保存 input 引用
+const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const target = e.target;
       const file = target.files?.[0];
       if (!file) return;
       
@@ -394,9 +400,9 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           const url = await safeUpload(file);
           
           const q = Bmob.Query('_User');
-          q.set('id', user.objectId);
+          q.set('id', user.objectId); // 锁定当前用户ID
           q.set('avatarUrl', url);
-          await q.save();
+          await q.save(); // 修复：确保这里await成功
           
           onUpdateUser({ ...user, avatarUrl: url }); 
           alert('头像修改成功');
@@ -405,11 +411,11 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           alert('头像上传失败: ' + (err.message || err)); 
       } finally { 
           setLoading(false);
-          if (target) target.value = ''; // 使用保存的引用来重置
+          if (target) target.value = '';
       }
   };
 
-  // 2. 修改昵称 (大字)
+  // 2. 修改昵称
   const handleNicknameChange = async () => {
       const newName = prompt("请输入新昵称 (用于显示)", user.nickname || "");
       if(!newName || newName === user.nickname) return;
@@ -419,13 +425,13 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           const q = Bmob.Query('_User');
           q.set('id', user.objectId);
           q.set('nickname', newName);
-          await u.save();
+          await q.save(); // <--- 核心修复：之前写成了 u.save()，必须改为 q.save()
           onUpdateUser({ ...user, nickname: newName });
       } catch(err: any) { alert('修改失败: ' + err.message); } 
       finally { setLoading(false); }
   };
 
-  // 3. 修改用户名 (小字，登录用)
+  // 3. 修改账号
   const handleUsernameChange = async () => {
       const newName = prompt("请输入新账号 (用于登录)", user.username);
       if(!newName || newName === user.username) return;
@@ -435,13 +441,12 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           const q = Bmob.Query('_User');
           q.set('id', user.objectId);
           q.set('username', newName);
-          await u.save();
+          await q.save(); // <--- 核心修复：之前写成了 u.save()，必须改为 q.save()
           onUpdateUser({ ...user, username: newName });
           alert('账号已修改，下次请使用新账号登录');
       } catch(err: any) { alert('修改失败(可能账号已存在): ' + err.message); } 
       finally { setLoading(false); }
   };
-
   // 处理退出登录（二次确认）
   const handleLogoutClick = () => {
       if(window.confirm("确定要退出登录吗？")) {
@@ -1265,28 +1270,28 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                    <div className="h-full relative">
                        {activePage === Page.MEMORIES && (<MemoriesViewContent user={user} memories={memories} albums={albums} setAlbums={setAlbums} handleLike={(id:string) => setMemories(memories.map(m => m.id === id ? { ...m, likes: m.isLiked ? m.likes - 1 : m.likes + 1, isLiked: !m.isLiked } : m))} handleComment={(id:string, t:string) => setMemories(memories.map(m => m.id === id ? { ...m, comments: [...m.comments, { id: Date.now().toString(), text: t, author: 'me', date: getBeijingDateString() }] } : m))} 
                                                            onFileSelect={async (e: any) => {
-                                                            // 核心修复：立即转为数组，并保存 input 引用
-                                                            const target = e.target;
-                                                            const files = Array.from(target.files || []) as File[];
-                                                            
-                                                            if (files.length > 0) {
-                                                                setUploadType('media');
-                                                                setShowUploadModal(true);
-                                                    
-                                                                // 循环上传
-                                                                for (const file of files) {
-                                                                    try {
-                                                                        const url = await safeUpload(file);
-                                                                        if (url) {
-                                                                            setUploadImages((prev: string[]) => [...prev, url]);
-                                                                        }
-                                                                    } catch (err) {
-                                                                        console.error("单张图片上传失败", err);
-                                                                    }
-                                                                }
-                                                            }
-                                                            if (target) target.value = ''; // 重置 input
-                                                        }}
+                                                                  const target = e.target;
+                                                                  const files = Array.from(target.files || []) as File[];
+                                                                  
+                                                                  if (files.length > 0) {
+                                                                      setUploadType('media');
+                                                                      setShowUploadModal(true); // 立即显示弹窗
+                                                              
+                                                                      for (const file of files) {
+                                                                          try {
+                                                                              // 上传
+                                                                              const url = await safeUpload(file);
+                                                                              if (url) {
+                                                                                  console.log("图片上传成功，更新UI:", url);
+                                                                                  setUploadImages((prev: string[]) => [...prev, url]);
+                                                                              }
+                                                                          } catch (err) {
+                                                                              console.error("单张图片上传失败", err);
+                                                                          }
+                                                                      }
+                                                                  }
+                                                                  if (target) target.value = ''; 
+                                                              }}
                                                            onTextPost={() => { setUploadType('text'); setUploadImages([]); setShowUploadModal(true); }} showUploadModal={showUploadModal} setShowUploadModal={setShowUploadModal} uploadImages={uploadImages} setUploadImages={setUploadImages} uploadCaption={uploadCaption} setUploadCaption={setUploadCaption} uploadType={uploadType} confirmUpload={async () => { 
                      if((uploadType === 'media' && !uploadImages.length) || (uploadType === 'text' && !uploadCaption.trim())) return; // 构造新对象
                     const newMemory = {
