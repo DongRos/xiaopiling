@@ -1103,12 +1103,12 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
 
   // 1. 定义查询辅助函数 (自动判断是查两人共享的，还是查自己的)
   const getQuery = (tableName: string) => {
-      const q = Bmob.Query(tableName);
-      if (user.coupleId) q.equalTo('coupleId', '==', user.coupleId);
-      else q.equalTo('creatorId', '==', user.objectId);
-      return q;
-  };
-
+        const q = Bmob.Query(tableName);
+        // 修复：去掉 '=='，只保留 字段名 和 值
+        if (user.coupleId) q.equalTo('coupleId', user.coupleId);
+        else q.equalTo('creatorId', user.objectId);
+        return q;
+    };
   useEffect(() => {
     // 设置头像 (从登录用户数据中获取)
     if (user.avatarUrl) setAvatarUrl(user.avatarUrl);
