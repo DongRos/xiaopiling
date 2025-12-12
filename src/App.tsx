@@ -20,36 +20,32 @@ import pailideIcon from './pailide.png';
 
 const safeUpload = async (file: File) => {
   try {
-    // 1. 保留原始扩展名，防止 HEIC/PNG 变 JPG 导致文件损坏
+    // 1. 保留原始扩展名
     const ext = file.name.split('.').pop() || 'jpg';
-    // 2. 重命名为纯数字字母，彻底解决中文名卡死问题
+    // 2. 重命名为纯数字字母
     const cleanName = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
     
     const params = Bmob.File(cleanName, file);
     const res = await params.save();
     
-    // 3. 修复返回值解析逻辑
+    // 3. 修复：健壮的返回值解析
     let result = res;
-    // 如果是字符串，先解析成对象或数组
+    // 如果是字符串，先尝试解析
     if (typeof res === 'string') {
-        try {
-            result = JSON.parse(res);
-        } catch (e) {
-            console.error("JSON parse failed", e);
-        }
+        try { result = JSON.parse(res); } catch (e) { console.error("解析Bmob返回值失败", e); }
     }
 
-    // 优先判断是否为数组（Bmob最常见的返回格式是数组包含一个文件对象）
+    // 情况A: 结果是数组 (最常见: [{"filename":..., "url":...}])
     if (Array.isArray(result) && result.length > 0 && result[0].url) {
         return result[0].url;
     }
-    // 其次判断是否为直接的对象
+    // 情况B: 结果是对象
     if (typeof result === 'object' && result && (result as any).url) {
         return (result as any).url;
     }
 
-    console.error("Unparsed Bmob result:", res);
-    throw new Error("上传成功但找不到 url 字段");
+    console.error("Bmob上传返回了无法识别的格式:", res);
+    throw new Error("上传成功但无法获取图片链接");
   } catch (e) {
     console.error("上传底层错误:", e);
     throw e;
@@ -1284,15 +1280,14 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                                                                     setShowUploadModal(true); 
                                                             
                                                                     // 2. 后台静默上传
-                                                                    const filesToUpload = Array.from(f).slice(0, 9 - uploadImages.length);
-                                                                      for (const file of filesToUpload) {
-                                                                          try {
-                                                                              const url = await safeUpload(file as File);
-                                                                              // 【新增】必须判断 url 是否存在，防止 undefined 混入导致预览空白和上传报错
-                                                                              if (url) {
-                                                                                  setUploadImages((p: string[]) => [...p, url]);
-                                                                              }
-                                                                          } catch (err) {
+                                                                    for (const file of filesToUpload) {
+                                                                        try {
+                                                                            const url = await safeUpload(file as File);
+                                                                            // 修复：只有 url 存在且有效时才添加，防止白屏
+                                                                            if (url && typeof url === 'string') {
+                                                                                setUploadImages((p: string[]) => [...p, url]);
+                                                                            }
+                                                                        } catch (err) {
                                                                               console.error("单张图片失败", err);
                                                                           }
                                                                       }
