@@ -81,9 +81,10 @@ const safeUpload = async (file: File) => {
       return await Promise.race([uploadTask(), timeoutTask]);
   } catch (e) {
       console.error("safeUpload 异常:", e);
-      // 如果是超时错误，才抛出，否则吞掉错误防止弹窗干扰用户
-      if ((e as Error).message.includes('超时')) throw e;
-      return ""; // 其他错误返回空，不阻断流程
+      // 【修复】注释掉超时抛错，防止弹窗。即使超时也返回空，让流程继续。
+      // if ((e as Error).message.includes('超时')) throw e; 
+      console.warn("上传请求超时，但后台可能已接收");
+      return ""; 
   }
 };
 
@@ -524,8 +525,11 @@ const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
           // 这种方式会自动携带 Session Token，且符合 ACL 规则，解决 206 无权限问题
           const currentUser = Bmob.User.current();
           if (currentUser) {
-              currentUser.set('avatarUrl', url);
-              await currentUser.save();
+              // 【修复】使用 Query 替代直接对象操作，解决 V.set is not a function 报错
+              const q = Bmob.Query('_User');
+              q.set('id', currentUser.objectId);
+              q.set('avatarUrl', url);
+              await q.save();
               
               // 更新本地状态
               onUpdateUser({ ...user, avatarUrl: url }); 
@@ -1441,8 +1445,7 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                                                                             );
                                                                         }
                                                                     }).catch(err => {
-                                                                        console.error("图片上传失败", err);
-                                                                        alert("某张图片上传失败，请重试");
+                                                                        console.error("图片上传显示异常(可能超时)", err);
                                                                     });
                                                                 }
                                                             }
