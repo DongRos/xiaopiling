@@ -18,79 +18,67 @@ import { Memory, PinnedPhoto, PeriodEntry, TodoItem, ConflictRecord, Page, Messa
 // @ts-ignore
 import pailideIcon from './pailide.png';
 
-const safeUpload = async (file: File) => {
-  // 开启调试
-  Bmob.debug(true);
+// 辅助函数：将图片压缩并转为 Base64 (绕过 Bmob 文件域名限制)
+const safeUpload = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    // 1. 限制文件大小 (防止数据库存不下，限制 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      reject(new Error("头像太大了，请选择 2MB 以内的图片"));
+      return;
+    }
 
-  const uploadTask = async () => {
-      // 1. 检查文件大小
-      if (file.size > 10 * 1024 * 1024) {
-          throw new Error("图片太大 (超过10MB)");
-      }
-
-      // 2. 准备文件名 (使用新 File 对象避免 React 引用丢失)
-      const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
-      const cleanName = `av_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-      const fileData = new File([file], cleanName, { type: file.type || 'image/jpeg' });
-
-      console.log(`Step 1: 准备上传 ${cleanName}`);
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    
+    reader.onload = (e) => {
+      const img = new Image();
+      img.src = e.target?.result as string;
       
-      const params = Bmob.File(cleanName, fileData);
+      img.onload = () => {
+        // 2. 创建 Canvas 进行压缩
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        
+        // 强制缩放：头像最长边不超过 500px (足够清晰且体积小)
+        const maxSize = 500;
+        if (width > height) {
+          if (width > maxSize) {
+            height *= maxSize / width;
+            width = maxSize;
+          }
+        } else {
+          if (height > maxSize) {
+            width *= maxSize / height;
+            height = maxSize;
+          }
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            // 如果无法压缩，直接返回原图 Base64 (如果原图不大)
+            resolve(img.src); 
+            return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        // 3. 导出压缩后的 Base64 (质量 0.7，格式 JPEG)
+        // 这样生成的字符串通常只有 20KB~50KB，可以直接存入数据库字段
+        const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        
+        console.log(`头像压缩完成: 原图${(file.size/1024).toFixed(1)}KB -> 压缩后${(compressedDataUrl.length/1024).toFixed(1)}KB`);
+        
+        resolve(compressedDataUrl);
+      };
       
-      console.log("Step 2: 发送网络请求...");
-      const res: any = await params.save();
-      console.log("Step 3: Bmob响应:", res);
-
-      // 【关键修改】优先检查错误码
-      // 如果 Bmob 返回 code: 10007，直接抛出后台的错误提示，不再傻等
-      if (res && res.code && res.code !== 200) {
-          throw new Error(`Bmob报错: ${res.error} (错误码: ${res.code})`);
-      }
-      // 有时候 Bmob 把错误放在 JSON 字符串里
-      if (typeof res === 'string' && res.includes('"error"')) {
-          try {
-              const json = JSON.parse(res);
-              if (json.error) throw new Error(`Bmob报错: ${json.error}`);
-          } catch(e) {}
-      }
-
-      // 3. 解析 URL
-      let finalUrl = "";
-      if (typeof res === 'string') {
-           try { finalUrl = JSON.parse(res).url; } catch(e) { finalUrl = res; }
-      } else if (Array.isArray(res) && res.length > 0) {
-           finalUrl = res[0].url;
-      } else if (res && typeof res === 'object' && res.url) {
-           finalUrl = res.url;
-      }
-
-      // 4. 强制 HTTPS
-      if (finalUrl && finalUrl.startsWith('http://')) {
-          finalUrl = finalUrl.replace('http://', 'https://');
-      }
-
-      if (!finalUrl) {
-          console.error("无法解析的响应:", res);
-          throw new Error("上传失败：未收到文件链接，请检查 Bmob 域名配置");
-      }
-      return finalUrl;
-  };
-
-  const timeoutTask = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error("上传超时(60s)")), 60000)
-  );
-
-  try {
-      return await Promise.race([
-          uploadTask().catch(err => { 
-              console.error("上传出错:", err); 
-              throw err; 
-          }), 
-          timeoutTask
-      ]);
-  } catch (e) {
-      throw e;
-  }
+      img.onerror = (err) => reject(new Error("图片加载失败，请重试"));
+    };
+    
+    reader.onerror = (err) => reject(new Error("读取文件失败"));
+  });
 };
 // --- Helper Functions ---
 const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
