@@ -1,8 +1,9 @@
 import Bmob from "hydrogen-js-sdk";
+// 从环境变量读取
+const masterKey = import.meta.env.VITE_BMOB_MASTER_KEY;
 
 // 初始化 Bmob
-// 请替换为你自己的 Secret Key 和 API 安全码
-Bmob.initialize("0ba7d98f31845fab", "666666", "8a06cdfe016cdef01d97ee150a9fe1a9");
+Bmob.initialize("0ba7d98f31845fab", "666666", masterKey);
 
 export default Bmob;
 
