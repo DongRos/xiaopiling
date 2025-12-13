@@ -19,66 +19,76 @@ import { Memory, PinnedPhoto, PeriodEntry, TodoItem, ConflictRecord, Page, Messa
 import pailideIcon from './pailide.png';
 
 const safeUpload = async (file: File) => {
-  // 开启 Bmob 调试模式，这样你在浏览器的 Console 面板能看到所有请求细节
-  // 如果还是失败，请截图 Console 里 Bmob 的红色报错信息
+  // 开启调试
   Bmob.debug(true);
 
   const uploadTask = async () => {
+      // 1. 检查文件大小
       if (file.size > 10 * 1024 * 1024) {
           throw new Error("图片太大 (超过10MB)");
       }
 
-      // 【关键修复】深度克隆文件对象
-      // 这能防止因为 React 页面刷新/重绘导致的原生 File 对象引用丢失
+      // 2. 准备文件名 (使用新 File 对象避免 React 引用丢失)
       const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
       const cleanName = `av_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-      
-      // 使用 new File() 构造函数复制文件数据，切断与 input 的联系
       const fileData = new File([file], cleanName, { type: file.type || 'image/jpeg' });
 
-      console.log(`Step 1: 准备上传 ${cleanName}, 大小: ${fileData.size}, 类型: ${fileData.type}`);
+      console.log(`Step 1: 准备上传 ${cleanName}`);
       
-      // 使用新的 fileData 进行上传
       const params = Bmob.File(cleanName, fileData);
       
-      console.log("Step 2: 发送网络请求 (Bmob.File.save)...");
-      const res = await params.save();
-      console.log("Step 3: Bmob响应成功:", res);
+      console.log("Step 2: 发送网络请求...");
+      const res: any = await params.save();
+      console.log("Step 3: Bmob响应:", res);
 
-      // 解析返回值
+      // 【关键修改】优先检查错误码
+      // 如果 Bmob 返回 code: 10007，直接抛出后台的错误提示，不再傻等
+      if (res && res.code && res.code !== 200) {
+          throw new Error(`Bmob报错: ${res.error} (错误码: ${res.code})`);
+      }
+      // 有时候 Bmob 把错误放在 JSON 字符串里
+      if (typeof res === 'string' && res.includes('"error"')) {
+          try {
+              const json = JSON.parse(res);
+              if (json.error) throw new Error(`Bmob报错: ${json.error}`);
+          } catch(e) {}
+      }
+
+      // 3. 解析 URL
       let finalUrl = "";
       if (typeof res === 'string') {
            try { finalUrl = JSON.parse(res).url; } catch(e) { finalUrl = res; }
       } else if (Array.isArray(res) && res.length > 0) {
            finalUrl = res[0].url;
-      } else if (res && typeof res === 'object' && (res as any).url) {
-           finalUrl = (res as any).url;
+      } else if (res && typeof res === 'object' && res.url) {
+           finalUrl = res.url;
       }
 
-      // 强制 HTTPS
+      // 4. 强制 HTTPS
       if (finalUrl && finalUrl.startsWith('http://')) {
           finalUrl = finalUrl.replace('http://', 'https://');
       }
 
-      if (!finalUrl) throw new Error("无法解析图片链接");
+      if (!finalUrl) {
+          console.error("无法解析的响应:", res);
+          throw new Error("上传失败：未收到文件链接，请检查 Bmob 域名配置");
+      }
       return finalUrl;
   };
 
-  // 60秒超时
   const timeoutTask = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error("上传超时(60s)，请按 F12 打开 Network 面板查看具体请求被卡在哪里")), 60000)
+      setTimeout(() => reject(new Error("上传超时(60s)")), 60000)
   );
 
   try {
       return await Promise.race([
           uploadTask().catch(err => { 
-              console.error("Bmob上传内部错误:", err); 
+              console.error("上传出错:", err); 
               throw err; 
           }), 
           timeoutTask
       ]);
   } catch (e) {
-      console.error("safeUpload 最终异常:", e);
       throw e;
   }
 };
