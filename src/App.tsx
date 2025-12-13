@@ -21,14 +21,20 @@ import pailideIcon from './pailide.png';
 const safeUpload = async (file: File) => {
   // 1. 定义核心上传逻辑
   const uploadTask = async () => {
+      // 检查文件大小 (限制 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+          throw new Error(`文件过大 (${(file.size / 1024 / 1024).toFixed(2)}MB)，请上传 5MB 以内的图片`);
+      }
+
       const ext = file.name.split('.').pop() || 'jpg';
       const cleanName = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
       
-      console.log("Step 1: 准备文件对象", cleanName);
+      console.log(`Step 1: 准备上传 ${cleanName}, 大小: ${file.size} bytes`);
+      
       // 创建 Bmob 文件对象
       const params = Bmob.File(cleanName, file);
       
-      console.log("Step 2: 开始发送网络请求...");
+      console.log("Step 2: 开始发送网络请求 (请确保 bmob.ts 填的是 Secret Key 而不是 AppID)...");
       const res = await params.save();
       console.log("Step 3: Bmob响应成功:", res);
 
