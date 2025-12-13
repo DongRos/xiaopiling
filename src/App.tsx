@@ -19,28 +19,29 @@ import { Memory, PinnedPhoto, PeriodEntry, TodoItem, ConflictRecord, Page, Messa
 import pailideIcon from './pailide.png';
 
 const safeUpload = async (file: File) => {
-  // 1. 定义核心上传逻辑
-  const uploadTask = async () => {
-      // 调试日志：检查当前用户状态（如果这里打印 null，说明鉴权丢了）
-      console.log("当前Bmob用户状态:", Bmob.User.current() ? "已登录" : "未登录");
+  // 开启 Bmob 调试模式，这样你在浏览器的 Console 面板能看到所有请求细节
+  // 如果还是失败，请截图 Console 里 Bmob 的红色报错信息
+  Bmob.debug(true);
 
+  const uploadTask = async () => {
       if (file.size > 10 * 1024 * 1024) {
-          throw new Error("图片太大，请上传 10MB 以内的图片");
+          throw new Error("图片太大 (超过10MB)");
       }
 
-      // 清洗文件名：只保留字母数字，避免中文或特殊符号导致 Bmob 挂起
-      // 获取后缀
-      let ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
-      if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].indexOf(ext) === -1) ext = 'jpg';
-      
-      // 生成纯字母数字的文件名
+      // 【关键修复】深度克隆文件对象
+      // 这能防止因为 React 页面刷新/重绘导致的原生 File 对象引用丢失
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
       const cleanName = `av_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
       
-      console.log(`Step 1: 准备上传 ${cleanName}, 大小: ${file.size}`);
+      // 使用 new File() 构造函数复制文件数据，切断与 input 的联系
+      const fileData = new File([file], cleanName, { type: file.type || 'image/jpeg' });
 
-      const params = Bmob.File(cleanName, file);
+      console.log(`Step 1: 准备上传 ${cleanName}, 大小: ${fileData.size}, 类型: ${fileData.type}`);
       
-      console.log("Step 2: 开始发送网络请求...");
+      // 使用新的 fileData 进行上传
+      const params = Bmob.File(cleanName, fileData);
+      
+      console.log("Step 2: 发送网络请求 (Bmob.File.save)...");
       const res = await params.save();
       console.log("Step 3: Bmob响应成功:", res);
 
@@ -54,7 +55,7 @@ const safeUpload = async (file: File) => {
            finalUrl = (res as any).url;
       }
 
-      // 强制 HTTPS (解决 Vercel 混合内容问题)
+      // 强制 HTTPS
       if (finalUrl && finalUrl.startsWith('http://')) {
           finalUrl = finalUrl.replace('http://', 'https://');
       }
@@ -63,12 +64,11 @@ const safeUpload = async (file: File) => {
       return finalUrl;
   };
 
-  // 2. 定义超时逻辑 (60秒)
+  // 60秒超时
   const timeoutTask = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error("上传超时(60s)，请检查 src/services/bmob.ts 中的密钥是否正确")), 60000)
+      setTimeout(() => reject(new Error("上传超时(60s)，请按 F12 打开 Network 面板查看具体请求被卡在哪里")), 60000)
   );
 
-  // 3. 竞速
   try {
       return await Promise.race([
           uploadTask().catch(err => { 
