@@ -518,20 +518,17 @@ const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
       
       setLoading(true);
       try {
-          // 1. 压缩图片 (保持不变)
+          // 1. 压缩图片
           const url = await uploadAvatar(file);
           
-         
-          // 2. 【关键修改】使用 Bmob.User.current() 更新自己
+          // 2. 更新用户信息
           const currentUser = Bmob.User.current();
           if (currentUser) {
               const q = Bmob.Query('_User');
-              // 【二次修复】先 get 获取实例，再 set/save。
-              // 1. 解决 current() 是纯 JSON 无 set 方法的问题
-              // 2. 解决直接 Query.save() 报 206 权限不足/MasterKey 的问题
-              const userObj = await q.get(currentUser.objectId);
-              userObj.set('avatarUrl', url);
-              await userObj.save();
+              // 直接指定 ID 进行更新，比 get() 更稳健
+              q.set('id', currentUser.objectId);
+              q.set('avatarUrl', url);
+              await q.save();
               
               // 更新本地状态
               onUpdateUser({ ...user, avatarUrl: url }); 
@@ -542,18 +539,19 @@ const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
           }
       } catch(err: any) { 
           console.error(err);
-          // 过滤掉无关紧要的错误提示
-          if (err.code !== 206) {
-             alert('头像上传失败: ' + (err.message || err));
+          // 【修复】正确读取 Bmob 的错误信息，防止出现 undefined
+          const errMsg = err.error || JSON.stringify(err);
+          if (err.code === 206) {
+             alert(`权限不足(206): 请去Bmob后台-_User表-设置-ACL，确保允许用户修改自己的数据。\n详细: ${errMsg}`);
           } else {
-             alert('头像更新失败(权限不足)，请检查后台 ACL 设置');
+             alert(`头像上传失败: ${errMsg}`);
           }
       } finally { 
           setLoading(false);
           if (target) target.value = '';
       }
   };
-  // 2. 修改昵称
+ // 2. 修改昵称
   const handleNicknameChange = async () => {
       const newName = prompt("请输入新昵称 (用于显示)", user.nickname || "");
       if(!newName || newName === user.nickname) return;
@@ -563,12 +561,14 @@ const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
           const q = Bmob.Query('_User');
           q.set('id', user.objectId);
           q.set('nickname', newName);
-          await q.save(); // <--- 修复：改为 q.save()
+          await q.save();
           onUpdateUser({ ...user, nickname: newName });
-      } catch(err: any) { alert('修改失败: ' + err.message); } 
+      } catch(err: any) { 
+          // 【修复】正确显示错误信息
+          alert('修改失败: ' + (err.error || JSON.stringify(err))); 
+      } 
       finally { setLoading(false); }
   };
-
   // 3. 修改用户名 (小字，登录用)
   const handleUsernameChange = async () => {
       const newName = prompt("请输入新账号 (用于登录)", user.username);
@@ -579,10 +579,13 @@ const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
           const q = Bmob.Query('_User');
           q.set('id', user.objectId);
           q.set('username', newName);
-          await q.save(); // <--- 修复：改为 q.save()
+          await q.save();
           onUpdateUser({ ...user, username: newName });
           alert('账号已修改，下次请使用新账号登录');
-      } catch(err: any) { alert('修改失败(可能账号已存在): ' + err.message); } 
+      } catch(err: any) { 
+          // 【修复】正确显示错误信息
+          alert('修改失败: ' + (err.error || JSON.stringify(err))); 
+      } 
       finally { setLoading(false); }
   };
   // 处理退出登录（二次确认）
