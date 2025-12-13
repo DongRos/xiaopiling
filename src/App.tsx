@@ -1109,15 +1109,15 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
   
   // ================= Bmob 云端数据加载逻辑 (开始) =================
 
- // 1. 定义查询辅助函数
+ // 1. 定义查询辅助函数 (增加类型强制转换)
   const getQuery = (tableName: string) => {
         const q = Bmob.Query(tableName);
-        // 修复：去掉 '=='，只保留 字段名 和 值。
-        // 日志中的 415 错误证明当前 SDK 版本不需要中间的操作符。
+        
+        // 强制转换为 String，防止后台列类型误判
         if (user.coupleId) {
-            q.equalTo('coupleId', user.coupleId);
+            q.equalTo('coupleId', String(user.coupleId));
         } else {
-            q.equalTo('creatorId', user.objectId);
+            q.equalTo('creatorId', String(user.objectId));
         }
         return q;
     };
@@ -1127,42 +1127,53 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
 
     // 定义加载数据的异步函数
     const loadData = async () => {
+       // 辅助函数：安全查询，防止报错卡死
+       const safeFind = (table: string) => {
+           try {
+               return getQuery(table);
+           } catch(e) { return null; }
+       };
+
        // --- 加载朋友圈 (Memory) ---
-       getQuery('Moments').order('-createdAt').find().then((res: any) => {
+       safeFind('Moments')?.order('-createdAt').find().then((res: any) => {
            setMemories(res.map((m: any) => ({
                ...m, 
-               id: m.objectId, // Bmob的主键叫objectId，转换成你原本用的 id
+               id: m.objectId, 
                date: m.createdAt ? m.createdAt.slice(0, 10) : getBeijingDateString(), 
-               media: m.images || [], // 兼容处理：Bmob里叫images，本地叫media
+               media: m.images || [], 
                comments: m.comments || [] 
            })));
-       });
+       }).catch(e => console.warn("加载Moments失败", e));
 
        // --- 加载相册 (Album) ---
-       getQuery('Album').order('-createdAt').find().then((res: any) => {
+       safeFind('Album')?.order('-createdAt').find().then((res: any) => {
             setAlbums(res.map((a: any) => ({ ...a, id: a.objectId })));
-       });
+       }).catch(e => console.warn("加载Album失败", e));
 
        // --- 加载留言板 (Message) ---
-       getQuery('Message').order('-createdAt').find().then((res: any) => 
-           setMessages(res.map((m: any) => ({...m, id: m.objectId}))));
+       safeFind('Message')?.order('-createdAt').find().then((res: any) => 
+           setMessages(res.map((m: any) => ({...m, id: m.objectId})))
+       ).catch(e => console.warn("加载Message失败", e));
 
        // --- 加载首页照片墙 (PinnedPhoto) ---
-       getQuery('PinnedPhoto').find().then((res:any) => 
-           setPinnedPhotos(res.map((p:any)=>({...p, id: p.objectId}))));
+       safeFind('PinnedPhoto')?.find().then((res:any) => 
+           setPinnedPhotos(res.map((p:any)=>({...p, id: p.objectId})))
+       ).catch(e => console.warn("加载PinnedPhoto失败", e));
 
        // --- 加载经期 (Period) ---
-       getQuery('Period').find().then((res:any) => setPeriods(res));
+       safeFind('Period')?.find().then((res:any) => setPeriods(res))
+         .catch(e => console.warn("加载Period失败", e));
 
        // --- 加载冲突记录 (Conflict) ---
-       getQuery('Conflict').order('-createdAt').find().then((res:any) => 
-           setConflicts(res.map((c:any)=>({...c, id: c.objectId}))));
+       safeFind('Conflict')?.order('-createdAt').find().then((res:any) => 
+           setConflicts(res.map((c:any)=>({...c, id: c.objectId})))
+       ).catch(e => console.warn("加载Conflict失败", e));
 
        // --- 加载待办 (Todo) ---
-       getQuery('Todo').find().then((res:any) => 
-           setTodos(res.map((t:any)=>({...t, id: t.objectId}))));
+       safeFind('Todo')?.find().then((res:any) => 
+           setTodos(res.map((t:any)=>({...t, id: t.objectId})))
+       ).catch(e => console.warn("加载Todo失败", e));
     };
-
     // 1. 立即执行一次加载
     loadData();
     
