@@ -48,19 +48,25 @@ const safeUpload = async (file: File) => {
       throw new Error("上传成功但无法解析图片链接");
   };
 
-  // 2. 定义超时逻辑 (15秒)
+  // 2. 定义超时逻辑 (修改为60秒)
   const timeoutTask = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error("上传请求超时(15s)，请检查网络或Bmob配置")), 15000)
+      setTimeout(() => reject(new Error("上传请求超时(60s)，可能是网络慢或密钥错误")), 60000)
   );
 
   // 3. 竞速：谁先完成算谁的
   try {
-      return await Promise.race([uploadTask(), timeoutTask]);
+      // 增加错误捕获，如果 uploadTask 本身报错（如密钥错误），能直接打印出来
+      return await Promise.race([
+          uploadTask().catch(err => { 
+              console.error("Bmob上传内部错误:", err); 
+              throw err; 
+          }), 
+          timeoutTask
+      ]);
   } catch (e) {
-      console.error("safeUpload 异常:", e);
+      console.error("safeUpload 最终异常:", e);
       throw e;
   }
-};
 // --- Helper Functions ---
 const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
 const getFirstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
