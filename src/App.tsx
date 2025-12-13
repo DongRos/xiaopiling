@@ -680,11 +680,13 @@ const ScannerMounter = ({onSuccess}: any) => {
 // --- Page Content Components ---
 
 // 1. 参数中添加 user
+// 1. 在参数列表中添加 momentsAvatar 和 onUpdateMomentsAvatar
 const MemoriesViewContent = ({
-  user, // <--- 新增接收 user
+  user,
   memories, albums, setAlbums, handleLike, handleComment, onFileSelect, onTextPost, showUploadModal, setShowUploadModal,
   uploadImages, setUploadImages, uploadCaption, setUploadCaption, uploadType, confirmUpload, coverUrl, onUpdateCover, onDeleteMemory,
-  momentsTitle, setMomentsTitle, avatarUrl, setAvatarUrl, setMomentsCover
+  momentsTitle, setMomentsTitle, avatarUrl, setAvatarUrl, setMomentsCover,
+  momentsAvatar, onUpdateMomentsAvatar // <--- 新增这两个参数
 }: any) => {
   const [activeTab, setActiveTab] = useState<'moments' | 'albums'>('moments');
   const [viewingImage, setViewingImage] = useState<{ list: string[], index: number } | null>(null);
@@ -704,6 +706,18 @@ const MemoriesViewContent = ({
   useEffect(() => { const h = () => setActiveMenuId(null); document.addEventListener('click', h); return () => document.removeEventListener('click', h); }, []);
   useEffect(() => { if(!isManageMode) setSelectedItems(new Set()); }, [isManageMode]);
 
+
+  // 2. 新增：专门处理朋友圈封面头像点击
+  const handleHeaderAvatarClick = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setViewingImage({ list: [momentsAvatar || DEFAULT_AVATAR], index: 0 });
+      setViewerActions([{ 
+          label: '更换情侣头像', 
+          onClick: () => { document.getElementById('shared-avatar-upload')?.click(); setViewingImage(null); }
+      }]);
+  };
+
+  
   const handlePressStart = () => {
       pressTimer.current = setTimeout(() => {
           onTextPost();
@@ -764,14 +778,10 @@ const MemoriesViewContent = ({
       setViewerActions([{ label: '更换封面', onClick: () => { document.getElementById('cover-upload')?.click(); setViewingImage(null); } }]);
   };
 
-  const handleAvatarClick = (e: React.MouseEvent) => {
-      e.stopPropagation();
-      // 修复：将其包装成列表对象
-      setViewingImage({ list: [avatarUrl || DEFAULT_AVATAR], index: 0 });
-      setViewerActions([{ 
-          label: '更换头像', 
-          onClick: () => { document.getElementById('avatar-upload')?.click(); setViewingImage(null); }
-      }]);
+  // 3. 原有的 handleAvatarClick (用于点击列表里别人的头像查看)
+  const handleListAvatarClick = (url: string) => {
+      setViewingImage({ list: [url || DEFAULT_AVATAR], index: 0 });
+      setViewerActions([]); // 列表头像只查看，不给更换操作
   };
   
   const handleAvatarUpdate = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -877,7 +887,7 @@ const MemoriesViewContent = ({
                  </div>
                  <div className="bg-white p-1 rounded-xl shadow-lg pointer-events-auto cursor-pointer relative z-30" onClick={handleAvatarClick}>
                     <div className="w-16 h-16 bg-rose-100 rounded-lg flex items-center justify-center overflow-hidden">
-                        {avatarUrl ? <img src={avatarUrl} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xl">🐶</div>}
+                        {momentsAvatar ? <img src={momentsAvatar} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xl">👩‍❤️‍👨</div>}
                     </div>
                  </div>
             </div>
@@ -908,8 +918,8 @@ const MemoriesViewContent = ({
               <div className="space-y-8">
                   {memories.map((memory: Memory) => (
                       <div key={memory.id} className="flex gap-3 pb-6 border-b border-gray-50 last:border-0">
-                          <div className="w-10 h-10 rounded-lg bg-rose-100 overflow-hidden shrink-0 cursor-pointer" onClick={handleAvatarClick}>
-                              {avatarUrl ? <img src={avatarUrl} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xl">🐶</div>}
+                          <div className="w-10 h-10 rounded-lg bg-rose-100 overflow-hidden shrink-0 cursor-pointer" onClick={() => handleListAvatarClick(memory.creatorAvatar)}>
+                              {memory.creatorAvatar ? <img src={memory.creatorAvatar} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xl">👤</div>}
                           </div>
                           <div className="flex-1 min-w-0">
                               <h4 className="font-bold text-gray-800 font-cute text-sm mb-1 text-blue-900">
@@ -977,7 +987,7 @@ const MemoriesViewContent = ({
             actions={viewerActions} 
         />
       )}
-      <input id="avatar-upload" type="file" className="hidden" onChange={handleAvatarUpdate} accept="image/*" />
+      <input id="shared-avatar-upload" type="file" className="hidden" onChange={onUpdateMomentsAvatar} accept="image/*" />
     </div>
   );
 };
@@ -1194,6 +1204,7 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
   const [uploadCaption, setUploadCaption] = useState('');
   const [uploadType, setUploadType] = useState<'text' | 'media'>('media');
   const [avatarUrl, setAvatarUrl] = useState<string>('');
+  const [momentsAvatar, setMomentsAvatar] = useState<string>('');
 
 
   // --- 新增代码开始：处理物理返回键和双击退出 ---
@@ -1320,6 +1331,22 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
            setTodos(res.map((t:any)=>({...t, id: t.objectId})))
        ).catch(e => console.warn("加载Todo失败", e));
     };
+
+
+    // --- 新增：加载情侣共享设置 (背景图和共享头像) ---
+       if (user.coupleId) {
+           const q = Bmob.Query('CoupleSettings');
+           q.equalTo('coupleId', user.coupleId);
+           q.find().then((res: any) => {
+               if (res.length > 0) {
+                   const settings = res[0];
+                   if (settings.coverUrl) setMomentsCover(settings.coverUrl);
+                   if (settings.avatarUrl) setMomentsAvatar(settings.avatarUrl);
+               }
+           }).catch(e => console.log("加载CoupleSettings失败(可能是新用户未创建)", e));
+       }
+    
+    
     // 1. 立即执行一次加载
     loadData();
     
@@ -1334,6 +1361,46 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
   // 注意：原有的 useSafeStorage 已被删除，因为不需要存本地了
 
   const calculateNextPeriod = () => { if (!periods.length) return null; const next = new Date(parseLocalDate(periods[periods.length - 1].startDate)); next.setDate(next.getDate() + 28); const diffDays = Math.ceil((next.getTime() - new Date().getTime()) / 86400000); return { date: `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,'0')}-${String(next.getDate()).padStart(2,'0')}`, daysLeft: diffDays }; };
+
+
+  // --- 新增：统一处理情侣共享资源的上传和保存 ---
+  const updateCoupleSettings = async (type: 'cover' | 'avatar', e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      if (!user.coupleId) return alert("请先在个人页绑定另一半，才能同步背景和头像哦！");
+
+      try {
+          // 1. 上传文件 (使用现有的 safeUpload)
+          const url = await safeUpload(file);
+          if (!url) return;
+
+          // 2. 本地先更新(为了即时反馈)
+          if (type === 'cover') setMomentsCover(url);
+          else setMomentsAvatar(url);
+
+          // 3. 保存到 Bmob 共享表
+          const q = Bmob.Query('CoupleSettings');
+          q.equalTo('coupleId', user.coupleId);
+          const res = await q.find();
+
+          if (res.length > 0) {
+              // 更新现有记录
+              const item = await Bmob.Query('CoupleSettings').get(res[0].objectId);
+              item.set(type === 'cover' ? 'coverUrl' : 'avatarUrl', url);
+              await item.save();
+          } else {
+              // 创建新记录
+              const qNew = Bmob.Query('CoupleSettings');
+              qNew.set('coupleId', user.coupleId);
+              qNew.set(type === 'cover' ? 'coverUrl' : 'avatarUrl', url);
+              await qNew.save();
+          }
+      } catch (err) {
+          console.error(err);
+          alert("同步更新失败，请检查网络");
+      }
+  };
+
   
   const handleTakePhoto = () => {
     const allImages = [
@@ -1503,7 +1570,7 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                         console.error("发布失败", e);
                         alert("云端同步失败，请检查网络");
                     }
-                }} coverUrl={momentsCover} onUpdateCover={(e:any) => { const f = e.target.files?.[0]; if(f) { const r = new FileReader(); r.onload = () => setMomentsCover(r.result as string); r.readAsDataURL(f); }}} onDeleteMemory={(id:string) => { if(confirm("删除?")) setMemories(memories.filter(m => m.id !== id)); }} momentsTitle={momentsTitle} setMomentsTitle={setMomentsTitle} avatarUrl={avatarUrl} setAvatarUrl={setAvatarUrl} setMomentsCover={setMomentsCover} />)}
+                }} coverUrl={momentsCover} onUpdateCover={(e: any) => updateCoupleSettings('cover', e)} momentsAvatar={momentsAvatar} onUpdateMomentsAvatar={(e: any) => updateCoupleSettings('avatar', e)}  onDeleteMemory={(id:string) => { if(confirm("删除?")) setMemories(memories.filter(m => m.id !== id)); }} momentsTitle={momentsTitle} setMomentsTitle={setMomentsTitle} avatarUrl={avatarUrl} setAvatarUrl={setAvatarUrl} setMomentsCover={setMomentsCover} />)}
                        {activePage === Page.CYCLE && <CycleViewContent 
                            periods={periods} 
                            nextPeriod={calculateNextPeriod()} 
