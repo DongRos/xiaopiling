@@ -521,14 +521,14 @@ const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
           // 1. 压缩图片
           const url = await uploadAvatar(file);
           
-          // 2. 更新用户信息
+          // 2. 【关键修改】使用 Bmob.User.current() 更新自己
           const currentUser = Bmob.User.current();
           if (currentUser) {
               const q = Bmob.Query('_User');
-              // 直接指定 ID 进行更新，比 get() 更稳健
-              q.set('id', currentUser.objectId);
-              q.set('avatarUrl', url);
-              await q.save();
+              // 先获取最新对象，确保操作的是当前用户
+              const userObj = await q.get(currentUser.objectId);
+              userObj.set('avatarUrl', url);
+              await userObj.save();
               
               // 更新本地状态
               onUpdateUser({ ...user, avatarUrl: url }); 
@@ -559,16 +559,18 @@ const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
       setLoading(true);
       try {
           const q = Bmob.Query('_User');
-          q.set('id', user.objectId);
-          q.set('nickname', newName);
-          await q.save();
+          // 推荐写法：先 get 再 set，防止覆盖其他字段或触发 ACL 边缘问题
+          const userObj = await q.get(user.objectId);
+          userObj.set('nickname', newName);
+          await userObj.save();
+          
           onUpdateUser({ ...user, nickname: newName });
       } catch(err: any) { 
-          // 【修复】正确显示错误信息
-          alert('修改失败: ' + (err.error || JSON.stringify(err))); 
-      } 
-      finally { setLoading(false); }
-  };
+          // 【修复】Bmob 错误在 err.error 中
+          console.error(err);
+          const msg = err.error || err.message || JSON.stringify(err);
+          alert('修改失败: ' + msg); 
+      }
   // 3. 修改用户名 (小字，登录用)
   const handleUsernameChange = async () => {
       const newName = prompt("请输入新账号 (用于登录)", user.username);
@@ -577,15 +579,19 @@ const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
       setLoading(true);
       try {
           const q = Bmob.Query('_User');
-          q.set('id', user.objectId);
-          q.set('username', newName);
-          await q.save();
+          // 推荐写法
+          const userObj = await q.get(user.objectId);
+          userObj.set('username', newName);
+          await userObj.save();
+          
           onUpdateUser({ ...user, username: newName });
           alert('账号已修改，下次请使用新账号登录');
       } catch(err: any) { 
-          // 【修复】正确显示错误信息
-          alert('修改失败: ' + (err.error || JSON.stringify(err))); 
-      } 
+          // 【修复】Bmob 错误在 err.error 中
+          console.error(err);
+          const msg = err.error || err.message || JSON.stringify(err);
+          alert('修改失败: ' + msg); 
+      }
       finally { setLoading(false); }
   };
   // 处理退出登录（二次确认）
