@@ -67,6 +67,7 @@ const safeUpload = async (file: File) => {
       console.error("safeUpload 最终异常:", e);
       throw e;
   }
+  };
 // --- Helper Functions ---
 const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
 const getFirstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
