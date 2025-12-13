@@ -19,40 +19,32 @@ import { Memory, PinnedPhoto, PeriodEntry, TodoItem, ConflictRecord, Page, Messa
 import pailideIcon from './pailide.png';
 
 const safeUpload = async (file: File) => {
-  // 【关键修复1】强制重新初始化。
-  // 有时候在不同页面切换，Bmob 的全局实例可能会失效。
-  // 请务必在这里再次填入你的真实 Secret Key 和 API 安全码！
-  Bmob.initialize("你的Secret Key", "你的API安全码");
-
   // 1. 定义核心上传逻辑
   const uploadTask = async () => {
-      // 大小限制
+      // 调试日志：检查当前用户状态（如果这里打印 null，说明鉴权丢了）
+      console.log("当前Bmob用户状态:", Bmob.User.current() ? "已登录" : "未登录");
+
       if (file.size > 10 * 1024 * 1024) {
           throw new Error("图片太大，请上传 10MB 以内的图片");
       }
 
-      // 【关键修复2】清洗文件名和后缀
-      // 手机上传有时候文件名很怪（比如没有后缀），这会导致 Bmob 服务器卡死不响应
+      // 清洗文件名：只保留字母数字，避免中文或特殊符号导致 Bmob 挂起
+      // 获取后缀
       let ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
-      // 如果后缀不是常见的图片格式，强制改为 jpg
-      if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].indexOf(ext) === -1) {
-          ext = 'jpg';
-      }
-      // 纯数字+字母的文件名，确保服务器不挑食
-      const cleanName = `avatar_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+      if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].indexOf(ext) === -1) ext = 'jpg';
       
-      console.log(`Step 1: 准备上传 ${cleanName}, 大小: ${file.size} bytes`);
+      // 生成纯字母数字的文件名
+      const cleanName = `av_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
       
-      // 创建 Bmob 文件对象
+      console.log(`Step 1: 准备上传 ${cleanName}, 大小: ${file.size}`);
+
       const params = Bmob.File(cleanName, file);
       
       console.log("Step 2: 开始发送网络请求...");
-      
-      // 发送请求
       const res = await params.save();
       console.log("Step 3: Bmob响应成功:", res);
 
-      // 解析返回值 (兼容各种 Bmob 版本返回格式)
+      // 解析返回值
       let finalUrl = "";
       if (typeof res === 'string') {
            try { finalUrl = JSON.parse(res).url; } catch(e) { finalUrl = res; }
@@ -62,8 +54,7 @@ const safeUpload = async (file: File) => {
            finalUrl = (res as any).url;
       }
 
-      // 【关键修复3】强制 HTTPS
-      // 如果 Bmob 返回 http，强制改为 https，防止 Vercel 拦截
+      // 强制 HTTPS (解决 Vercel 混合内容问题)
       if (finalUrl && finalUrl.startsWith('http://')) {
           finalUrl = finalUrl.replace('http://', 'https://');
       }
@@ -74,7 +65,7 @@ const safeUpload = async (file: File) => {
 
   // 2. 定义超时逻辑 (60秒)
   const timeoutTask = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error("上传请求超时(60s)，请检查 Bmob 控制台是否开启了 CDN 或 HTTPS")), 60000)
+      setTimeout(() => reject(new Error("上传超时(60s)，请检查 src/services/bmob.ts 中的密钥是否正确")), 60000)
   );
 
   // 3. 竞速
