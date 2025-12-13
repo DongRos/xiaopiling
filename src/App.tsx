@@ -19,49 +19,66 @@ import { Memory, PinnedPhoto, PeriodEntry, TodoItem, ConflictRecord, Page, Messa
 import pailideIcon from './pailide.png';
 
 const safeUpload = async (file: File) => {
+  // 【关键修复1】强制重新初始化。
+  // 有时候在不同页面切换，Bmob 的全局实例可能会失效。
+  // 请务必在这里再次填入你的真实 Secret Key 和 API 安全码！
+  Bmob.initialize("你的Secret Key", "你的API安全码");
+
   // 1. 定义核心上传逻辑
   const uploadTask = async () => {
-      // 检查文件大小 (限制 5MB)
-      if (file.size > 5 * 1024 * 1024) {
-          throw new Error(`文件过大 (${(file.size / 1024 / 1024).toFixed(2)}MB)，请上传 5MB 以内的图片`);
+      // 大小限制
+      if (file.size > 10 * 1024 * 1024) {
+          throw new Error("图片太大，请上传 10MB 以内的图片");
       }
 
-      const ext = file.name.split('.').pop() || 'jpg';
-      const cleanName = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+      // 【关键修复2】清洗文件名和后缀
+      // 手机上传有时候文件名很怪（比如没有后缀），这会导致 Bmob 服务器卡死不响应
+      let ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+      // 如果后缀不是常见的图片格式，强制改为 jpg
+      if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].indexOf(ext) === -1) {
+          ext = 'jpg';
+      }
+      // 纯数字+字母的文件名，确保服务器不挑食
+      const cleanName = `avatar_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
       
       console.log(`Step 1: 准备上传 ${cleanName}, 大小: ${file.size} bytes`);
       
       // 创建 Bmob 文件对象
       const params = Bmob.File(cleanName, file);
       
-      console.log("Step 2: 开始发送网络请求 (请确保 bmob.ts 填的是 Secret Key 而不是 AppID)...");
+      console.log("Step 2: 开始发送网络请求...");
+      
+      // 发送请求
       const res = await params.save();
       console.log("Step 3: Bmob响应成功:", res);
 
-      // 解析各种可能的返回值
-      if (typeof res === 'string' && res.startsWith('http')) return res;
-      if (Array.isArray(res) && res.length > 0 && res[0].url) return res[0].url;
-      if (res && typeof res === 'object' && (res as any).url) return (res as any).url;
-      
-      // 尝试解析 JSON 字符串
+      // 解析返回值 (兼容各种 Bmob 版本返回格式)
+      let finalUrl = "";
       if (typeof res === 'string') {
-          try {
-              const json = JSON.parse(res);
-              if (json.url) return json.url;
-          } catch (e) {}
+           try { finalUrl = JSON.parse(res).url; } catch(e) { finalUrl = res; }
+      } else if (Array.isArray(res) && res.length > 0) {
+           finalUrl = res[0].url;
+      } else if (res && typeof res === 'object' && (res as any).url) {
+           finalUrl = (res as any).url;
       }
 
-      throw new Error("上传成功但无法解析图片链接");
+      // 【关键修复3】强制 HTTPS
+      // 如果 Bmob 返回 http，强制改为 https，防止 Vercel 拦截
+      if (finalUrl && finalUrl.startsWith('http://')) {
+          finalUrl = finalUrl.replace('http://', 'https://');
+      }
+
+      if (!finalUrl) throw new Error("无法解析图片链接");
+      return finalUrl;
   };
 
-  // 2. 定义超时逻辑 (修改为60秒)
+  // 2. 定义超时逻辑 (60秒)
   const timeoutTask = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error("上传请求超时(60s)，可能是网络慢或密钥错误")), 60000)
+      setTimeout(() => reject(new Error("上传请求超时(60s)，请检查 Bmob 控制台是否开启了 CDN 或 HTTPS")), 60000)
   );
 
-  // 3. 竞速：谁先完成算谁的
+  // 3. 竞速
   try {
-      // 增加错误捕获，如果 uploadTask 本身报错（如密钥错误），能直接打印出来
       return await Promise.race([
           uploadTask().catch(err => { 
               console.error("Bmob上传内部错误:", err); 
@@ -73,7 +90,7 @@ const safeUpload = async (file: File) => {
       console.error("safeUpload 最终异常:", e);
       throw e;
   }
-  };
+};
 // --- Helper Functions ---
 const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
 const getFirstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
