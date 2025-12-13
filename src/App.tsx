@@ -19,35 +19,46 @@ import { Memory, PinnedPhoto, PeriodEntry, TodoItem, ConflictRecord, Page, Messa
 import pailideIcon from './pailide.png';
 
 const safeUpload = async (file: File) => {
+  // 1. 定义核心上传逻辑
+  const uploadTask = async () => {
+      const ext = file.name.split('.').pop() || 'jpg';
+      const cleanName = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+      
+      console.log("Step 1: 准备文件对象", cleanName);
+      // 创建 Bmob 文件对象
+      const params = Bmob.File(cleanName, file);
+      
+      console.log("Step 2: 开始发送网络请求...");
+      const res = await params.save();
+      console.log("Step 3: Bmob响应成功:", res);
+
+      // 解析各种可能的返回值
+      if (typeof res === 'string' && res.startsWith('http')) return res;
+      if (Array.isArray(res) && res.length > 0 && res[0].url) return res[0].url;
+      if (res && typeof res === 'object' && (res as any).url) return (res as any).url;
+      
+      // 尝试解析 JSON 字符串
+      if (typeof res === 'string') {
+          try {
+              const json = JSON.parse(res);
+              if (json.url) return json.url;
+          } catch (e) {}
+      }
+
+      throw new Error("上传成功但无法解析图片链接");
+  };
+
+  // 2. 定义超时逻辑 (15秒)
+  const timeoutTask = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error("上传请求超时(15s)，请检查网络或Bmob配置")), 15000)
+  );
+
+  // 3. 竞速：谁先完成算谁的
   try {
-    const ext = file.name.split('.').pop() || 'jpg';
-    const cleanName = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-    
-    console.log("开始上传:", cleanName);
-    const params = Bmob.File(cleanName, file);
-    const res = await params.save();
-    console.log("Bmob上传响应:", res);
-
-    // 1. 如果直接是字符串 (URL)
-    if (typeof res === 'string' && res.startsWith('http')) return res;
-
-    // 2. 尝试解析 JSON 字符串
-    let result = res;
-    if (typeof res === 'string') {
-        try { result = JSON.parse(res); } catch (e) { /* 忽略解析错误 */ }
-    }
-
-    // 3. 检查数组格式
-    if (Array.isArray(result) && result.length > 0 && result[0].url) return result[0].url;
-    
-    // 4. 检查对象格式 (最常见)
-    if (typeof result === 'object' && result && (result as any).url) return (result as any).url;
-
-    console.error("无法识别的返回格式:", res);
-    throw new Error("上传成功但无法获取图片链接");
+      return await Promise.race([uploadTask(), timeoutTask]);
   } catch (e) {
-    console.error("上传失败:", e);
-    throw e;
+      console.error("safeUpload 异常:", e);
+      throw e;
   }
 };
 // --- Helper Functions ---
