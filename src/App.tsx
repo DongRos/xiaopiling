@@ -1025,6 +1025,9 @@ const CalendarViewContent = ({ periods, conflicts, todos, addTodo, toggleTodo, o
 
 // --- Main App ---
 const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => void, onUpdateUser: (u:any)=>void }) => {
+  // 添加这一行，作为版本标记
+  console.log("当前版本: v2.0 - 已修复Query参数");
+  
   const [activePage, setActivePage] = useState<Page>(Page.HOME);
   const [memories, setMemories] = useState<Memory[]>([]);
   const [albums, setAlbums] = useState<Album[]>([]);
