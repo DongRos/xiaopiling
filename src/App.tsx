@@ -521,15 +521,17 @@ const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
           // 1. 压缩图片 (保持不变)
           const url = await uploadAvatar(file);
           
+         
           // 2. 【关键修改】使用 Bmob.User.current() 更新自己
-          // 这种方式会自动携带 Session Token，且符合 ACL 规则，解决 206 无权限问题
           const currentUser = Bmob.User.current();
           if (currentUser) {
-              // 【修复】使用 Query 替代直接对象操作，解决 V.set is not a function 报错
               const q = Bmob.Query('_User');
-              q.set('id', currentUser.objectId);
-              q.set('avatarUrl', url);
-              await q.save();
+              // 【二次修复】先 get 获取实例，再 set/save。
+              // 1. 解决 current() 是纯 JSON 无 set 方法的问题
+              // 2. 解决直接 Query.save() 报 206 权限不足/MasterKey 的问题
+              const userObj = await q.get(currentUser.objectId);
+              userObj.set('avatarUrl', url);
+              await userObj.save();
               
               // 更新本地状态
               onUpdateUser({ ...user, avatarUrl: url }); 
