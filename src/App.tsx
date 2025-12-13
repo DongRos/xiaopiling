@@ -84,6 +84,90 @@ const safeUpload = async (file: File) => {
       throw e;
   }
 };
+
+
+
+// --- 专门用于头像上传 (绕过 Bmob 文件域名限制) ---
+// 原理：将图片死循环压缩到 30KB 以内，转为 Base64 文本直接存入 User 表
+const uploadAvatar = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    // 1. 初始检查
+    if (file.size > 10 * 1024 * 1024) {
+      reject(new Error("头像太大了，请选择 10MB 以内的图片"));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    
+    reader.onload = (e) => {
+      const img = new Image();
+      img.src = e.target?.result as string;
+      
+      img.onload = () => {
+        // 初始参数：头像不需要太大，300px 足够了
+        let quality = 0.6; 
+        let maxSize = 300; 
+        let compressedDataUrl = "";
+        
+        // 创建 Canvas
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { resolve(img.src); return; }
+
+        // --- 核心：死循环压缩逻辑 ---
+        // 最多尝试 6 次，确保体积压到 30KB 以下 (Bmob 免费数据库字段限制约为 40KB)
+        for (let i = 0; i < 6; i++) {
+            let width = img.width;
+            let height = img.height;
+            
+            // 计算尺寸
+            if (width > height) {
+                if (width > maxSize) { height *= maxSize / width; width = maxSize; }
+            } else {
+                if (height > maxSize) { width *= maxSize / height; height = maxSize; }
+            }
+            
+            canvas.width = width;
+            canvas.height = height;
+            
+            // 铺白底 (防止 PNG 透明变黑)
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(0, 0, width, height);
+            ctx.drawImage(img, 0, 0, width, height);
+            
+            // 导出
+            compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+            const sizeKB = compressedDataUrl.length / 1024;
+            
+            console.log(`头像压缩尝试 ${i+1}: ${Math.floor(width)}x${Math.floor(height)}, 质量${quality.toFixed(1)}, 大小${sizeKB.toFixed(2)}KB`);
+
+            // 如果小于 32KB，成功退出
+            if (sizeKB < 32) {
+                break;
+            }
+
+            // 否则继续阉割：尺寸缩小 20%，质量降低
+            maxSize *= 0.8; 
+            quality -= 0.1; 
+            if (quality < 0.1) quality = 0.1;
+        }
+
+        // 最终检查
+        if (compressedDataUrl.length > 39 * 1024) {
+             reject(new Error("图片太复杂无法压缩，请换一张简单的图片"));
+        } else {
+             resolve(compressedDataUrl);
+        }
+      };
+      img.onerror = () => reject(new Error("图片加载失败"));
+    };
+    reader.onerror = () => reject(new Error("读取文件失败"));
+  });
+};
+
+
+
 // --- Helper Functions ---
 const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
 const getFirstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
@@ -431,12 +515,13 @@ const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
       
       setLoading(true);
       try {
-          const url = await safeUpload(file);
+          // 【关键修改】头像使用专用压缩通道，绕过 Bmob 文件服务
+          const url = await uploadAvatar(file);
           
           const q = Bmob.Query('_User');
-          q.set('id', user.objectId); // 锁定当前用户ID
+          q.set('id', user.objectId); 
           q.set('avatarUrl', url);
-          await q.save(); // 修复：确保这里await成功
+          await q.save(); 
           
           onUpdateUser({ ...user, avatarUrl: url }); 
           alert('头像修改成功');
