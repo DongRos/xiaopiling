@@ -534,12 +534,14 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           // 2. 如果未绑定，检查有没有人申请绑定我
           if (!user.coupleId) {
               const q = Bmob.Query('BondingRequest');
-              // 【核心修复】必须明确查询 "发给我" 的申请 (receiverId = 我)
-              q.equalTo('receiverId', String(user.objectId)); 
+              // 【绝杀修复】不查 receiverId，只查状态，避开 SDK 查询 Bug
               q.equalTo('status', 'pending');
               
               q.find().then((res: any[]) => {
-                  setRequests(res);
+                  // 【关键】数据拉回来后，在前端过滤属于我的申请
+                  // 只要 ACL 是 {"*":{"read":true}}，这里一定能拉到并过滤出来
+                  const myRequests = res.filter((r: any) => String(r.receiverId) === myId);
+                  setRequests(myRequests);
               }).catch((e) => console.log("查询申请失败", e));
               
               // 3. 检查我发出的申请是否通过
@@ -690,18 +692,21 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
 
       setShowScanner(false);
       
-      // 步骤1：检查是否已申请 (服务端精确查询)
+      // 步骤1：检查是否已申请 (前端过滤法)
       let shouldSave = true;
       try {
           const q = Bmob.Query('BondingRequest');
-          // 【修复】加上精确的发送者和接收者条件，不要查全表
-          q.equalTo('senderId', String(user.objectId));
-          q.equalTo('receiverId', String(partnerId));
+          // 【修复】同样只查 status，避免 415 或查询为空
           q.equalTo('status', 'pending');
-          
           const res = await q.find();
-          // 如果结果大于0，说明已存在
-          if (res.length > 0) {
+          
+          // 在内存里比对，绝对准确
+          const exist = res.find((r:any) => 
+              String(r.senderId) === String(user.objectId) && 
+              String(r.receiverId) === String(partnerId)
+          );
+          
+          if (exist) {
               alert("你已经发送过申请啦，请让对方同意即可！");
               setSentStatus('waiting');
               shouldSave = false;
