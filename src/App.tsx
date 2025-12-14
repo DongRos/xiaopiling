@@ -543,9 +543,10 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           me.set('bindingCode', codeNum);
           await me.save();
           
-          setMyCode(codeNum.toString()); // 本地显示转字符串无所谓
-          onUpdateUser({ ...user, bindingCode: code }); // 更新本地状态
-          alert(`口令生成成功：${code}\n请让另一半输入此口令绑定。`);
+          setMyCode(codeNum.toString()); 
+          // 【修复】变量名应为 codeNum，与上面定义保持一致
+          onUpdateUser({ ...user, bindingCode: codeNum }); 
+          alert(`口令生成成功：${codeNum}\n请让另一半输入此口令绑定。`);
       } catch (e: any) {
           alert("生成失败: " + e.message);
       } finally {
@@ -647,7 +648,8 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
   const handleLogoutClick = () => { if(confirm("退出登录？")) onLogout(); };
 
   return (
-    <div className="p-6 bg-gray-50 min-h-screen pb-24">
+    // 【修复】改为 h-full overflow-y-auto，让个人页可以独立滚动，防止按钮被底部导航栏遮挡
+    <div className="p-6 bg-gray-50 h-full overflow-y-auto pb-32">
        <div className="bg-white rounded-3xl p-6 text-center shadow-sm mb-6 relative overflow-hidden">
           {loading && <div className="absolute inset-0 bg-white/80 z-20 flex items-center justify-center"><Loader2 className="animate-spin text-rose-500"/></div>}
           
@@ -698,7 +700,11 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
                                   <div className="text-center">
                                       <div className="text-xs text-gray-400 mb-1">把这个告诉 TA</div>
                                       <div className="text-3xl font-black text-gray-800 tracking-widest my-2 select-all">{myCode}</div>
-                                      <div className="text-[10px] text-gray-400">正在等待对方输入...</div>
+                                      <div className="text-[10px] text-gray-400 mb-2">正在等待对方输入...</div>
+                                      {/* 【修复】添加重新生成按钮 */}
+                                      <button onClick={generateCode} className="text-xs text-rose-400 underline hover:text-rose-600">
+                                          重新生成
+                                      </button>
                                   </div>
                               ) : (
                                   <button onClick={generateCode} className="w-full bg-rose-500 text-white py-2 rounded-xl font-bold shadow-md hover:bg-rose-600">生成绑定口令</button>
