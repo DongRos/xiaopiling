@@ -714,7 +714,7 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
 
       if (!shouldSave) return;
 
-      // 步骤2：执行保存
+// 步骤2：执行保存
       try {
           const req = Bmob.Query('BondingRequest');
           req.set('senderId', String(user.objectId)); 
@@ -722,13 +722,12 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           req.set('receiverId', String(partnerId));   
           req.set('status', 'pending');
 
-          // 【修复】必须使用 new 关键字
-          const acl = new Bmob.ACL();
-          acl.setReadAccess(user.objectId, true); // 自己可见
-          acl.setWriteAccess(user.objectId, true); // 自己可写
-          acl.setReadAccess(partnerId, true); // 对方可见 (关键！)
-          acl.setWriteAccess(partnerId, true); // 对方可写
-          req.setACL(acl);
+          // 【修复】手动构造 ACL 对象 (直接操作 JSON，避开 SDK 构造函数兼容性问题)
+          const acl = {
+              [String(user.objectId)]: { read: true, write: true }, // 自己读写
+              [String(partnerId)]: { read: true, write: true }      // 对方读写
+          };
+          req.set('ACL', acl); // 直接作为字段设置
 
           await req.save();
           
@@ -1442,9 +1441,12 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
         if (user.coupleId) {
             q.equalTo('coupleId', String(user.coupleId));
         } else {
-            // 【再次确认】这里必须用 Pointer，否则 MainApp 轮询会报 415
-            // 如果 Bmob SDK 版本较新，Bmob.Pointer 不需要 new
-            const userPointer = Bmob.Pointer('_User', String(user.objectId));
+            // 【修复】手动构造 Pointer 对象，确保 100% 符合 Bmob 底层协议
+            const userPointer = {
+                __type: 'Pointer',
+                className: '_User',
+                objectId: String(user.objectId)
+            };
             q.equalTo('creatorId', userPointer);
         }
         return q;
