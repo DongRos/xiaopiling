@@ -525,8 +525,9 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           }
       }
       // 2. 显示已生成的口令（如果有）
-      if (user.bindingCode) {
-          setMyCode(String(user.bindingCode));
+      // 【修复】读取新字段 pair_code，避免旧数据干扰
+      if (user.pair_code) {
+          setMyCode(user.pair_code);
       }
   }, [user]);
 
@@ -534,37 +535,39 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
   const generateCode = async () => {
       setLoading(true);
       try {
-          // 【修复】生成纯数字 (Bmob后台bindingCode实际为Number类型)
-          const codeVal = Math.floor(100000 + Math.random() * 900000); 
+          // 【修复】生成随机数并转为 String，全链路统一用字符串
+          const codeStr = Math.floor(100000 + Math.random() * 900000).toString(); 
           
           const u = Bmob.Query('_User');
           const me = await u.get(user.objectId);
-          // 【修复】存入数字类型，避免类型不匹配
-          me.set('bindingCode', codeVal);
+          
+          // 【核心修复】使用新字段名 'pair_code'，避开旧字段的类型冲突
+          me.set('pair_code', codeStr);
           await me.save();
           
-          setMyCode(String(codeVal));
-          // 【修复】更新本地状态 (存入数字)
-          onUpdateUser({ ...user, bindingCode: codeVal }); 
-          alert(`口令生成成功：${codeVal}\n请让另一半输入此口令绑定。`);
+          setMyCode(codeStr);
+          // 更新本地 user 对象
+          onUpdateUser({ ...user, pair_code: codeStr }); 
+          alert(`口令生成成功：${codeStr}\n请让另一半输入此口令绑定。`);
       } catch (e: any) {
-          alert("生成失败: " + e.message);
+          // 【核心修复】优先读取 e.error，解决 "undefined" 问题
+          alert("生成失败: " + (e.error || e.message || JSON.stringify(e)));
       } finally {
           setLoading(false);
       }
   };
 
-  // 输入口令绑定（账号2操作）
+// 输入口令绑定（账号2操作）
   const handleBindByCode = async () => {
       if (!bindCode || bindCode.length !== 6) return alert("请输入6位数字口令");
       if (bindCode === myCode) return alert("不能输入自己的口令哦");
       
       setLoading(true);
-          try {
-          // 1. 去 User 表找谁拥有这个口令
+      try {
+          // 1. 去 User 表找新字段 pair_code
           const q = Bmob.Query('_User');
-          // 【修复】必须转换为数字查询 (Bmob Error 415 表示类型不匹配，后台 bindingCode 是 Number)
-          q.equalTo('bindingCode', parseInt(bindCode));
+          // 【修复】查询新字段，直接用 String 匹配
+          q.equalTo('pair_code', bindCode);
           const users = await q.find();
 
           if (!users || users.length === 0) {
@@ -576,7 +579,6 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           const targetUser = users[0];
           const targetId = targetUser.objectId;
           
-          // 2. 构造情侣 ID (排序后拼接)
           const ids = [user.objectId, targetId].sort();
           const commonId = `${ids[0]}_${ids[1]}`;
 
@@ -584,31 +586,26 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           const u = Bmob.Query('_User');
           const me = await u.get(user.objectId);
           me.set('coupleId', commonId);
-          // 绑定后清除口令，防止重复
-          me.unset('bindingCode'); 
+          me.unset('pair_code'); // 【修复】清理新字段
           await me.save();
 
-          // 4. 更新对方 (直接改对方数据，User表默认权限通常允许改普通字段，如果报错请看下面注释)
-          // 注意：如果 Bmob 开启了 User 表严格权限，这步可能需要云函数。
-          // 但通常为了方便，只要 ACL 是 Public Read，这里能查到就能改。
-          // 稳妥起见，对方下次登录或刷新时，我们让他自动检测绑定状态（可选），或者这里强行写。
+          // 4. 更新对方
           try {
              const t = await u.get(targetId);
              t.set('coupleId', commonId);
-             t.unset('bindingCode');
+             t.unset('pair_code'); // 【修复】清理新字段
              await t.save();
           } catch(err) {
-             console.log("尝试更新对方失败(权限问题)，对方需手动输入口令或等待同步", err);
-             // 备选方案：双方都输入一次对方口令，或者这里只绑自己，对方也输入一次你的。
-             // 但为了“简单稳健”，这里假设 User 表可写。
+             console.log("尝试更新对方失败", err);
           }
 
           onUpdateUser({ ...user, coupleId: commonId });
           alert("绑定成功！🎉");
-          window.location.reload(); // 刷新页面加载新状态
+          window.location.reload(); 
 
       } catch (e: any) {
-          alert("绑定失败: " + e.message);
+          // 【修复】显示完整错误信息
+          alert("绑定失败: " + (e.error || e.message || JSON.stringify(e)));
       } finally {
           setLoading(false);
       }
