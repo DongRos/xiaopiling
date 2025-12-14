@@ -662,9 +662,74 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
       }
   };
 
-  // 头像/昵称修改逻辑（保持不变，略简写）
-  const handleAvatarChange = async (e: any) => { /* ...原代码... */ };
-  const handleNicknameChange = async () => { /* ...原代码... */ };
+  // --- 修复：还原头像上传逻辑 ---
+  const handleAvatarChange = async (e: any) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setLoading(true);
+    try {
+      // 1. 使用前文定义的 uploadAvatar (转Base64) 或 safeUpload (转URL)
+      // 这里建议用 uploadAvatar 配合 User 表，避免跨域问题
+      const url = await uploadAvatar(file);
+      
+      // 2. 更新 Bmob 用户表
+      const u = Bmob.Query('_User');
+      const me = await u.get(user.objectId);
+      me.set('avatarUrl', url);
+      await me.save();
+
+      // 3. 更新本地状态
+      onUpdateUser({ ...user, avatarUrl: url });
+      alert('头像修改成功！');
+    } catch (err: any) {
+      console.error(err);
+      alert('头像上传失败: ' + (err.message || err));
+    } finally {
+      setLoading(false);
+      e.target.value = ''; // 清空，允许重复选同一张
+    }
+  };
+
+  // --- 修复：还原昵称修改逻辑 ---
+  const handleNicknameChange = async () => {
+    const newName = prompt("请输入新昵称", user.nickname || "");
+    if (!newName || newName === user.nickname) return;
+
+    setLoading(true);
+    try {
+      const u = Bmob.Query('_User');
+      const me = await u.get(user.objectId);
+      me.set('nickname', newName);
+      await me.save();
+      
+      onUpdateUser({ ...user, nickname: newName });
+    } catch (err: any) {
+      alert('修改失败: ' + (err.message || err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- 新增：账号修改逻辑 ---
+  const handleUsernameChange = async () => {
+    const newName = prompt("⚠️ 修改账号后需要重新登录\n请输入新账号:", user.username);
+    if (!newName || newName === user.username) return;
+    
+    setLoading(true);
+    try {
+       const u = Bmob.Query('_User');
+       const me = await u.get(user.objectId);
+       me.set('username', newName);
+       await me.save();
+       
+       alert("账号修改成功，请重新登录");
+       onLogout(); // 强制登出让用户重登
+    } catch(err: any) {
+       alert('修改失败(可能账号已存在): ' + (err.message || err));
+       setLoading(false);
+    }
+  };
   const handleLogoutClick = () => { if(confirm("退出登录？")) onLogout(); };
 
   return (
@@ -682,6 +747,7 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
               </label>
           </div>
           <div className="text-2xl font-bold text-gray-800 cursor-pointer" onClick={handleNicknameChange}>{user.nickname || "点击设置昵称"}</div>
+          <div className="text-sm text-gray-400 mt-1 cursor-pointer hover:text-rose-500 transition" onClick={handleUsernameChange} title="点击修改账号">账号: {user.username}</div>
           <div className="text-sm text-gray-400 mt-1">账号: {user.username}</div>
 
           {/* 状态显示区 */}
