@@ -534,17 +534,16 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
   const generateCode = async () => {
       setLoading(true);
       try {
-          // 【修复】生成后立即转为字符串，适配后台 String 类型
-          const code = Math.floor(100000 + Math.random() * 900000).toString(); 
+          // 【修复】生成纯数字 (Number)
+          const code = Math.floor(100000 + Math.random() * 900000);
           
           const u = Bmob.Query('_User');
           const me = await u.get(user.objectId);
-          // 存入字符串
+          // 【修复】以 Number 类型存入，匹配后台数据库类型
           me.set('bindingCode', code);
           await me.save();
           
-          setMyCode(code); 
-          // 【修复】这里使用正确的变量名 code
+          setMyCode(code.toString()); // 本地显示转字符串无所谓
           onUpdateUser({ ...user, bindingCode: code }); 
           alert(`口令生成成功：${code}\n请让另一半输入此口令绑定。`);
       } catch (e: any) {
@@ -563,8 +562,9 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
       try {
           // 1. 去 User 表找谁拥有这个口令
           const q = Bmob.Query('_User');
-          // 【修复】去掉 parseInt，直接查字符串，解决 415 类型不匹配
-          q.equalTo('bindingCode', bindCode);
+          // 【绝杀修复】强制转为数字 (parseInt) 进行查询
+          // 因为后台字段是 Number 类型，传字符串必报 415
+          q.equalTo('bindingCode', parseInt(bindCode));
           const users = await q.find();
 
           if (!users || users.length === 0) {
