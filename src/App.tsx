@@ -507,121 +507,290 @@ const AuthPage = () => {
 };
 
 // 1. 接收 onUpdateUser 参数
+// 1. 接收 onUpdateUser 参数
 const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => void, onUpdateUser: (u:any)=>void }) => {
   const [showScanner, setShowScanner] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [partner, setPartner] = useState<any>(null); // 对方信息
+  const [requests, setRequests] = useState<any[]>([]); // 收到的申请
+  const [sentStatus, setSentStatus] = useState<string>(''); // 发送状态
 
-const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // --- 轮询检查：收到的申请 & 发出的申请是否被同意 ---
+  useEffect(() => {
+      if(!user) return;
+      
+      const checkStatus = async () => {
+          // 1. 如果已绑定，获取另一半信息
+          if (user.coupleId && !partner) {
+              const ids = user.coupleId.split('_');
+              const partnerId = ids.find((id:string) => id !== user.objectId);
+              if (partnerId) {
+                  Bmob.Query('_User').get(partnerId).then(setPartner).catch(() => {});
+              }
+          }
+
+          // 2. 如果未绑定，检查有没有人申请绑定我
+          if (!user.coupleId) {
+              const q = Bmob.Query('ConnectionRequest');
+              q.equalTo('toId', user.objectId);
+              q.equalTo('status', 'pending');
+              q.find().then((res: any) => setRequests(res));
+              
+              // 3. 检查我发出的申请是否通过
+              const q2 = Bmob.Query('ConnectionRequest');
+              q2.equalTo('fromId', user.objectId);
+              q2.equalTo('status', 'accepted');
+              q2.find().then(async (res: any) => {
+                  if (res.length > 0) {
+                      // 对方已同意！自动完成绑定
+                      const match = res[0];
+                      const ids = [user.objectId, match.toId].sort();
+                      const commonId = `${ids[0]}_${ids[1]}`;
+                      
+                      const u = Bmob.Query('_User');
+                      const me = await u.get(user.objectId);
+                      me.set('coupleId', commonId);
+                      await me.save();
+                      
+                      onUpdateUser({ ...user, coupleId: commonId });
+                      alert("恭喜！对方已同意绑定！");
+                      setSentStatus('');
+                  }
+              });
+          }
+      };
+      
+      checkStatus();
+      const timer = setInterval(checkStatus, 3000); // 3秒轮询一次
+      return () => clearInterval(timer);
+  }, [user, partner]);
+
+  // 同意绑定
+  const handleAgree = async (req: any) => {
+      if(!confirm(`同意与 ${req.fromName} 绑定情侣关系吗？`)) return;
+      setLoading(true);
+      try {
+          // 1. 计算公共ID
+          const ids = [req.fromId, user.objectId].sort();
+          const commonId = `${ids[0]}_${ids[1]}`;
+          
+          // 2. 更新自己
+          const u = Bmob.Query('_User');
+          const me = await u.get(user.objectId);
+          me.set('coupleId', commonId);
+          await me.save();
+          
+          // 3. 更新申请单状态为 accepted (让对方也能检测到)
+          const r = Bmob.Query('ConnectionRequest');
+          const reqObj = await r.get(req.objectId);
+          reqObj.set('status', 'accepted');
+          await reqObj.save();
+          
+          // 4. 更新本地状态
+          onUpdateUser({ ...user, coupleId: commonId });
+          alert("绑定成功！开启你们的恋爱空间吧~");
+      } catch(e) {
+          alert("操作失败，请重试");
+          console.error(e);
+      } finally {
+          setLoading(false);
+      }
+  };
+
+  // 解除绑定
+  const handleUnbind = async () => {
+      if(!confirm("⚠️ 确定要解除情侣关系吗？\n\n解除后，你们的共享相册、点滴、纪念日将不再对彼此可见（但数据不会被删除）。")) return;
+      if(!confirm("再次确认：真的要分手吗？💔")) return;
+      
+      setLoading(true);
+      try {
+          // 1. 清除自己的 coupleId
+          const u = Bmob.Query('_User');
+          const me = await u.get(user.objectId);
+          me.set('coupleId', ''); 
+          await me.save();
+          
+          // 2. 尝试清除对方 (如果权限允许)，如果不行则依赖对方自己解绑
+          // 注意：通常为了安全，普通用户不能改别人数据，这里尽力而为
+          if (partner) {
+               try {
+                   const p = await u.get(partner.objectId);
+                   p.set('coupleId', '');
+                   await p.save();
+               } catch(e) { console.log("无法自动解绑对方，需对方手动操作"); }
+          }
+
+          onUpdateUser({ ...user, coupleId: null });
+          setPartner(null);
+          alert("已解除绑定。");
+      } catch(e: any) {
+          alert("解绑失败: " + e.message);
+      } finally {
+          setLoading(false);
+      }
+  };
+
+  // 修改头像逻辑
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const target = e.target;
       const file = target.files?.[0];
       if (!file) return;
       
       setLoading(true);
       try {
-          // 1. 压缩图片
           const url = await uploadAvatar(file);
-          
-          // 2. 更新用户信息
           const currentUser = Bmob.User.current();
           if (currentUser) {
               const q = Bmob.Query('_User');
-              // 先 get 获取实例，再 set/save
               const userObj = await q.get(currentUser.objectId);
               userObj.set('avatarUrl', url);
               await userObj.save();
-              
-              // 更新本地状态
               onUpdateUser({ ...user, avatarUrl: url }); 
               alert('头像修改成功');
-          } else {
-              alert('登录已过期，请重新登录');
-              onLogout();
           }
       } catch(err: any) { 
-          console.error(err);
-          const msg = err.error || err.message || JSON.stringify(err);
-          if (err.code === 206) {
-             alert(`权限不足(206): 请去Bmob后台-_User表-设置-ACL，确保允许用户修改自己的数据。\n详细: ${msg}`);
-          } else {
-             alert(`头像上传失败: ${msg}`);
-          }
+          alert(`头像上传失败: ${err.message}`);
       } finally { 
           setLoading(false);
           if (target) target.value = '';
       }
   };
- // 2. 修改昵称
-  // 2. 修改昵称
+  
+  // 修改昵称
   const handleNicknameChange = async () => {
-      const newName = prompt("请输入新昵称 (用于显示)", user.nickname || "");
+      const newName = prompt("请输入新昵称", user.nickname || "");
       if(!newName || newName === user.nickname) return;
-      
       setLoading(true);
       try {
           const q = Bmob.Query('_User');
           const userObj = await q.get(user.objectId);
           userObj.set('nickname', newName);
           await userObj.save();
-          
           onUpdateUser({ ...user, nickname: newName });
-      } catch(err: any) { 
-          console.error(err);
-          const msg = err.error || err.message || JSON.stringify(err);
-          alert('修改失败: ' + msg); 
-      } 
+      } catch(err: any) { alert('修改失败'); } 
       finally { setLoading(false); }
-  };
-  // 3. 修改用户名 (小字，登录用)
-  // 3. 修改用户名 (小字，登录用)
-  const handleUsernameChange = async () => {
-      const newName = prompt("请输入新账号 (用于登录)", user.username);
-      if(!newName || newName === user.username) return;
-      
-      setLoading(true);
-      try {
-          const q = Bmob.Query('_User');
-          const userObj = await q.get(user.objectId);
-          userObj.set('username', newName);
-          await userObj.save();
-          
-          onUpdateUser({ ...user, username: newName });
-          alert('账号已修改，下次请使用新账号登录');
-      } catch(err: any) { 
-           console.error(err);
-           const msg = err.error || err.message || JSON.stringify(err);
-           alert('修改失败: ' + msg); 
-      } 
-      finally { setLoading(false); }
-  };
-  // 处理退出登录（二次确认）
-  const handleLogoutClick = () => {
-      if(window.confirm("确定要退出登录吗？")) {
-          onLogout();
-      }
   };
 
-  // 这里的 onScan 逻辑保持不变...
+  // 扫码回调：发送申请
   const onScan = async (decodedText: string) => {
     if (decodedText.startsWith('BIND:')) {
       const partnerId = decodedText.split(':')[1];
       if (partnerId === user.objectId) return alert('不能绑定自己');
-      const ids = [user.objectId, partnerId].sort();
-      const commonId = `${ids[0]}_${ids[1]}`;
-      const q = Bmob.Query('_User');
-      // 1. 先获取最新对象
-      const u = await q.get(user.objectId);
-      // 2. 设置 coupleId
-      u.set('coupleId', commonId);
-      await u.save();
       
-      // 3. 【关键】手动更新本地 user 状态，无需重启
-      onUpdateUser({ ...user, coupleId: commonId });
+      // 检查是否已发送过
+      const q = Bmob.Query('ConnectionRequest');
+      q.equalTo('fromId', user.objectId);
+      q.equalTo('toId', partnerId);
+      q.equalTo('status', 'pending');
+      const exist = await q.find();
       
-      alert(`绑定成功!`);
+      if (exist.length > 0) {
+          alert("你已经发送过申请啦，请让对方同意即可！");
+          setShowScanner(false);
+          setSentStatus('waiting');
+          return;
+      }
+      
+      // 创建申请
+      const req = Bmob.Query('ConnectionRequest');
+      req.set('fromId', user.objectId);
+      req.set('fromName', user.nickname || user.username);
+      req.set('toId', partnerId);
+      req.set('status', 'pending');
+      await req.save();
+      
+      alert(`申请已发送！\n请通知对方登录并在“我的”页面点击同意。`);
       setShowScanner(false);
+      setSentStatus('waiting');
     }
   };
 
+  const handleLogoutClick = () => { if(window.confirm("确定要退出登录吗？")) onLogout(); };
+
+  return (
+    <div className="p-6 bg-gray-50 min-h-screen pb-24">
+       <div className="bg-white rounded-3xl p-6 text-center shadow-sm mb-6 relative overflow-hidden">
+          {loading && <div className="absolute inset-0 bg-white/80 z-20 flex items-center justify-center"><Loader2 className="animate-spin text-rose-500"/></div>}
+          
+          <div className="relative inline-block group mb-2">
+              <img src={user.avatarUrl || DEFAULT_AVATAR} className="w-24 h-24 rounded-full border-4 border-rose-100 object-cover mx-auto" />
+              <label className="absolute bottom-0 right-0 bg-rose-500 text-white p-2 rounded-full cursor-pointer shadow-lg hover:scale-110 transition z-10">
+                  <Edit2 size={14} />
+                  <input type="file" className="hidden" accept="image/*" onChange={handleAvatarChange} />
+              </label>
+          </div>
+
+          <div onClick={handleNicknameChange} className="flex items-center justify-center gap-2 cursor-pointer hover:text-rose-500 transition">
+              <h2 className="text-2xl font-bold text-gray-800">{user.nickname || "点击设置昵称"}</h2>
+              <Edit2 size={16} className="text-gray-300" />
+          </div>
+          <div className="text-sm text-gray-400 mt-1">账号: {user.username}</div>
+
+          {/* 状态显示区 */}
+          <div className="mt-6 pt-6 border-t border-gray-100">
+              {user.coupleId ? (
+                  <div className="animate-in fade-in zoom-in duration-500">
+                      <div className="inline-block bg-rose-50 text-rose-500 px-4 py-1 rounded-full text-xs font-bold mb-4">❤️ 恋爱中</div>
+                      <div className="flex items-center justify-center gap-4">
+                          <div className="text-center">
+                              <div className="w-12 h-12 bg-gray-100 rounded-full mb-1 overflow-hidden mx-auto">
+                                  {partner?.avatarUrl ? <img src={partner.avatarUrl} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-xl">👤</div>}
+                              </div>
+                              <div className="text-xs font-bold text-gray-700">{partner?.nickname || "另一半"}</div>
+                          </div>
+                          <div className="text-rose-300"><Heart fill="currentColor" size={20} /></div>
+                          <div className="text-center">
+                              <div className="w-12 h-12 bg-gray-100 rounded-full mb-1 overflow-hidden mx-auto">
+                                  {user.avatarUrl ? <img src={user.avatarUrl} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-xl">👤</div>}
+                              </div>
+                              <div className="text-xs font-bold text-gray-700">我</div>
+                          </div>
+                      </div>
+                      <button onClick={handleUnbind} className="mt-6 text-xs text-gray-400 underline hover:text-red-500">解除关系</button>
+                  </div>
+              ) : (
+                  <div>
+                      <div className="inline-block bg-gray-100 text-gray-400 px-4 py-1 rounded-full text-xs font-bold mb-4">🐶 单身状态</div>
+                      
+                      {/* 显示收到的申请 */}
+                      {requests.length > 0 && (
+                          <div className="mb-6 space-y-2">
+                              {requests.map((req, i) => (
+                                  <div key={i} className="bg-rose-50 border border-rose-100 p-4 rounded-2xl flex items-center justify-between animate-bounce">
+                                      <div className="text-left">
+                                          <div className="text-xs text-rose-400 font-bold">收到绑定申请</div>
+                                          <div className="font-bold text-gray-700">{req.fromName} 想和你绑定</div>
+                                      </div>
+                                      <button onClick={() => handleAgree(req)} className="bg-rose-500 text-white px-4 py-2 rounded-full text-sm font-bold shadow-md hover:bg-rose-600">同意</button>
+                                  </div>
+                              ))}
+                          </div>
+                      )}
+
+                      {sentStatus === 'waiting' && <div className="text-rose-500 text-sm font-bold mb-4 animate-pulse">⏳ 已发送申请，等待对方同意...</div>}
+
+                      {/* 扫码绑定区 */}
+                      {!showScanner ? (
+                          <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+                             <div className="flex justify-center mb-2"><QRCodeSVG value={`BIND:${user.objectId}`} size={120} /></div>
+                             <p className="text-[10px] text-gray-400 mb-3">让对方扫此码，或点击下方按钮扫对方</p>
+                             <button onClick={() => setShowScanner(true)} className="bg-gray-800 text-white px-6 py-2 rounded-full flex items-center gap-2 mx-auto text-sm"><Scan size={16}/> 扫描 TA 的二维码</button>
+                          </div>
+                      ) : (
+                          <div className="rounded-xl overflow-hidden mb-4 relative">
+                              <ScannerMounter onSuccess={onScan}/>
+                              <button onClick={() => setShowScanner(false)} className="absolute top-2 right-2 bg-black/50 text-white p-1 rounded-full"><X size={16}/></button>
+                          </div> 
+                      )}
+                  </div>
+              )}
+          </div>
+       </div>
+
+       <button onClick={handleLogoutClick} className="w-full bg-white text-red-500 py-4 rounded-3xl font-bold shadow-sm flex items-center justify-center gap-2"><LogOut size={20}/> 退出登录</button>
+    </div>
+  )
+}
   return (
     <div className="p-6 bg-gray-50 min-h-screen pb-24">
        <div className="bg-white rounded-3xl p-6 text-center shadow-sm mb-6 relative">
@@ -1393,33 +1562,25 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
 
           
           // 3. 保存到 Bmob 共享表
-          // 【修复】增加 try-catch 并在 set 时也强制转 String
+          // 【修复】增加 try-catch 和 String() 转换，解决修改无反应的问题
           try {
               const q = Bmob.Query('CoupleSettings');
               q.equalTo('coupleId', String(user.coupleId));
               const res = await q.find();
 
               if (res.length > 0) {
-                  // 更新现有记录
                   const item = await Bmob.Query('CoupleSettings').get(res[0].objectId);
                   item.set(type === 'cover' ? 'coverUrl' : 'avatarUrl', url);
                   await item.save();
               } else {
-                  // 创建新记录
                   const qNew = Bmob.Query('CoupleSettings');
-                  qNew.set('coupleId', String(user.coupleId)); // 这里也建议加 String()
+                  qNew.set('coupleId', String(user.coupleId));
                   qNew.set(type === 'cover' ? 'coverUrl' : 'avatarUrl', url);
                   await qNew.save();
               }
           } catch (e) {
               console.error("同步共享设置失败:", e);
-              // 不阻断流程，仅提示
-          };
-      } catch (err) {
-                console.error(err);
-                alert("同步更新失败，请检查网络");
-            }
-        };
+          }
         
   const handleTakePhoto = () => {
     const allImages = [
