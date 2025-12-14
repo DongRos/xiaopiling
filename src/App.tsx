@@ -534,13 +534,16 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
   const generateCode = async () => {
       setLoading(true);
       try {
-          const code = Math.floor(100000 + Math.random() * 900000).toString(); // 6位随机数
+          // 【修复】生成纯数字，不要转 toString()
+          const codeNum = Math.floor(100000 + Math.random() * 900000); 
+          
           const u = Bmob.Query('_User');
           const me = await u.get(user.objectId);
-          me.set('bindingCode', code);
+          // 【修复】存入数字类型，匹配后台字段定义
+          me.set('bindingCode', codeNum);
           await me.save();
           
-          setMyCode(code);
+          setMyCode(codeNum.toString()); // 本地显示转字符串无所谓
           onUpdateUser({ ...user, bindingCode: code }); // 更新本地状态
           alert(`口令生成成功：${code}\n请让另一半输入此口令绑定。`);
       } catch (e: any) {
@@ -559,7 +562,9 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
       try {
           // 1. 去 User 表找谁拥有这个口令
           const q = Bmob.Query('_User');
-          q.equalTo('bindingCode', bindCode);
+          // 【绝杀修复】使用 parseInt 强制转为数字进行查询
+          // 解决 Bmob 报 415 incorrect parameter type 的问题
+          q.equalTo('bindingCode', parseInt(bindCode));
           const users = await q.find();
 
           if (!users || users.length === 0) {
