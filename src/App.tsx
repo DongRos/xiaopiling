@@ -381,13 +381,26 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
   const [incomingRequest, setIncomingRequest] = useState<any>(null);
   const [timeLeft, setTimeLeft] = useState(''); // [新增] 倒计时状态
 
-  // [新增] 页面内刷新函数
-  const handleManualRefresh = () => {
-      setLoading(true);
-      window.location.reload();
+ // [修改] 提取查询申请的逻辑，用于手动刷新
+  const checkNewRequests = async (showToast = false) => {
+      if (!user.objectId) return;
+      try {
+          const q = new AV.Query('CoupleConnection');
+          q.equalTo('hostId', user.objectId);
+          q.exists('guestId'); 
+          q.notEqualTo('status', 'connected');
+          const res = await q.find();
+          if (res.length > 0) {
+              setIncomingRequest({ id: res[0].id, guestId: res[0].get('guestId') });
+              if(showToast) alert("收到新申请！🎉");
+          } else {
+              if(showToast) alert("暂无新申请，请稍后再试");
+          }
+      } catch(e) { console.error(e); }
   };
 
-  useEffect(() => {
+  
+useEffect(() => {
       if(!user || !user.objectId) return;
       
       if (user.coupleId && !partner) {
@@ -413,6 +426,10 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
               }, 1000);
               return () => clearInterval(timer);
           }
+
+          // 初始检查一次
+          checkNewRequests();
+      }
 
           // 检查是否有 Guest 申请
           const q = new AV.Query('CoupleConnection');
@@ -586,10 +603,7 @@ const handleUsernameChange = async () => {
 
 return (
     <div className="p-6 bg-gray-50 h-full overflow-y-auto pb-32 relative">
-       {/* [新增] 浅色刷新按钮 */}
-       <button onClick={handleManualRefresh} className="absolute top-4 right-4 p-2 bg-white/80 rounded-full text-gray-400 shadow-sm z-50 hover:text-rose-500">
-           <RefreshCw size={20} />
-       </button>
+       
 
        <div className="bg-white rounded-3xl p-6 text-center shadow-sm mb-6 relative overflow-hidden">
           {loading && <div className="absolute inset-0 bg-white/80 z-20 flex items-center justify-center"><Loader2 className="animate-spin text-rose-500"/></div>}
@@ -633,8 +647,19 @@ return (
                               {myCode ? (
                                   <div className="text-center">
                                       <div className="text-xs text-gray-400 mb-1">把这个告诉 TA</div>
-                                      <div className="text-3xl font-black text-gray-800 tracking-widest my-2 select-all">{myCode}</div>
-                                      {/* [新增] 倒计时显示 */}
+                                      
+                                      <div className="flex items-center justify-center gap-3 my-2">
+                                          <div className="text-3xl font-black text-gray-800 tracking-widest select-all">{myCode}</div>
+                                          {/* [新增] 方形圆角刷新按钮 */}
+                                          <button 
+                                            onClick={() => checkNewRequests(true)} 
+                                            className="w-10 h-10 bg-rose-50 text-rose-500 rounded-xl flex items-center justify-center shadow-sm border border-rose-100 hover:bg-rose-100 active:scale-95 transition"
+                                            title="刷新申请消息"
+                                          >
+                                            <RefreshCw size={18} />
+                                          </button>
+                                      </div>
+
                                       <div className="text-xs font-bold text-rose-400 mb-2">有效期: {timeLeft}</div>
                                       <button onClick={generateCode} className="text-xs text-gray-400 underline hover:text-rose-600">重新生成</button>
                                   </div>
@@ -1371,20 +1396,27 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
             setAlbums(res.map((a: any) => ({ ...a, id: a.objectId })));
        }).catch(e => console.warn("加载Album失败", e));
 
-       // --- 3. 加载情侣共享设置 (背景图和共享头像) - 放入轮询实现实时同步 ---
-       // --- 3. [修复] 加载情侣共享设置 (替换 Bmob 为 LeanCloud) ---
+      // --- 3. [修复] 加载情侣共享设置 (Bmob -> LeanCloud) ---
        if (user.coupleId) {
-           try {
-               const q = new AV.Query('CoupleSettings');
-               q.equalTo('coupleId', String(user.coupleId));
-               q.find().then((res: any) => {
-                   if (res.length > 0) {
-                       const settings = res[0];
-                       if (settings.get('coverUrl')) setMomentsCover(settings.get('coverUrl'));
-                       if (settings.get('avatarUrl')) setMomentsAvatar(settings.get('avatarUrl'));
-                   }
-               });
-           } catch (err) { console.warn("同步共享设置失败", err); }
+           // 3. 保存到 LeanCloud 共享表
+          try {
+              const q = new AV.Query('CoupleSettings');
+              q.equalTo('coupleId', String(user.coupleId));
+              const res = await q.find();
+
+              if (res.length > 0) {
+                  const item = res[0]; // res[0] 已经是 AV.Object，直接操作
+                  item.set(type === 'cover' ? 'coverUrl' : 'avatarUrl', url);
+                  await item.save();
+              } else {
+                  const qNew = new AV.Object('CoupleSettings');
+                  qNew.set('coupleId', String(user.coupleId));
+                  qNew.set(type === 'cover' ? 'coverUrl' : 'avatarUrl', url);
+                  await qNew.save();
+              }
+          } catch (e) {
+              console.error("同步共享设置失败:", e);
+          }
        }
 
        // --- 4. 加载其他数据 (保持不变) ---
