@@ -525,9 +525,9 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           }
       }
       // 2. 显示已生成的口令（如果有）
-      // 【修复】读取新字段 pair_code，避免旧数据干扰
-      if (user.pair_code) {
-          setMyCode(user.pair_code);
+      // 【绝杀修复】读取新字段 cp_code，并移除前缀 k_ 用于显示
+      if (user.cp_code) {
+          setMyCode(user.cp_code.replace('k_', ''));
       }
   }, [user]);
 
@@ -535,22 +535,24 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
   const generateCode = async () => {
       setLoading(true);
       try {
-          // 【修复】生成随机数并转为 String，全链路统一用字符串
-          const codeStr = Math.floor(100000 + Math.random() * 900000).toString(); 
+          const rawCode = Math.floor(100000 + Math.random() * 900000).toString();
+          // 【绝杀修复】加前缀 k_，确保数据库绝对识别为 String，彻底解决 415 错误
+          const dbValue = 'k_' + rawCode; 
           
           const u = Bmob.Query('_User');
           const me = await u.get(user.objectId);
           
-          // 【核心修复】使用新字段名 'pair_code'，避开旧字段的类型冲突
-          me.set('pair_code', codeStr);
+          // 使用新字段 cp_code
+          me.set('cp_code', dbValue);
           await me.save();
           
-          setMyCode(codeStr);
-          // 更新本地 user 对象
-          onUpdateUser({ ...user, pair_code: codeStr }); 
-          alert(`口令生成成功：${codeStr}\n请让另一半输入此口令绑定。`);
+          setMyCode(rawCode); // UI只显示数字
+          // 更新本地状态
+          onUpdateUser({ ...user, cp_code: dbValue }); 
+          alert(`口令生成成功：${rawCode}\n请让另一半输入此口令绑定。`);
       } catch (e: any) {
-          // 【核心修复】优先读取 e.error，解决 "undefined" 问题
+          // 【绝杀修复】同时打印 e.error 和 e.message，防止 undefined
+          console.error(e);
           alert("生成失败: " + (e.error || e.message || JSON.stringify(e)));
       } finally {
           setLoading(false);
@@ -564,10 +566,11 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
       
       setLoading(true);
       try {
-          // 1. 去 User 表找新字段 pair_code
+          // 【绝杀修复】查询时加上前缀 k_，匹配数据库里的 String
+          const queryValue = 'k_' + bindCode;
+
           const q = Bmob.Query('_User');
-          // 【修复】查询新字段，直接用 String 匹配
-          q.equalTo('pair_code', bindCode);
+          q.equalTo('cp_code', queryValue); // 查新字段
           const users = await q.find();
 
           if (!users || users.length === 0) {
@@ -586,17 +589,17 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           const u = Bmob.Query('_User');
           const me = await u.get(user.objectId);
           me.set('coupleId', commonId);
-          me.unset('pair_code'); // 【修复】清理新字段
+          me.unset('cp_code'); // 清理新字段
           await me.save();
 
           // 4. 更新对方
           try {
              const t = await u.get(targetId);
              t.set('coupleId', commonId);
-             t.unset('pair_code'); // 【修复】清理新字段
+             t.unset('cp_code'); // 清理新字段
              await t.save();
           } catch(err) {
-             console.log("尝试更新对方失败", err);
+             console.log("尝试更新对方失败(权限问题)，对方需手动输入口令或等待同步", err);
           }
 
           onUpdateUser({ ...user, coupleId: commonId });
@@ -604,12 +607,13 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           window.location.reload(); 
 
       } catch (e: any) {
-          // 【修复】显示完整错误信息
+          // 【绝杀修复】修复报错提示 undefined
+          console.error(e);
           alert("绑定失败: " + (e.error || e.message || JSON.stringify(e)));
       } finally {
           setLoading(false);
       }
-  };
+  };;
 
   // 解绑逻辑（保持不变）
   const handleUnbind = async () => {
