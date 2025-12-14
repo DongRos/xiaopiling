@@ -526,7 +526,7 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
       }
       // 2. 显示已生成的口令（如果有）
       if (user.bindingCode) {
-          setMyCode(user.bindingCode);
+          setMyCode(String(user.bindingCode));
       }
   }, [user]);
 
@@ -534,19 +534,19 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
   const generateCode = async () => {
       setLoading(true);
       try {
-          // 【修复】生成后转为字符串
-          const codeStr = Math.floor(100000 + Math.random() * 900000).toString(); 
+          // 【修复】生成纯数字 (Bmob后台bindingCode实际为Number类型)
+          const codeVal = Math.floor(100000 + Math.random() * 900000); 
           
           const u = Bmob.Query('_User');
           const me = await u.get(user.objectId);
-          // 【修复】存入字符串，匹配后台 String 类型
-          me.set('bindingCode', codeStr);
+          // 【修复】存入数字类型，避免类型不匹配
+          me.set('bindingCode', codeVal);
           await me.save();
           
-          setMyCode(codeStr);
-          // 【修复】变量名统一使用 codeStr，解决 undefined 报错
-          onUpdateUser({ ...user, bindingCode: codeStr }); 
-          alert(`口令生成成功：${codeStr}\n请让另一半输入此口令绑定。`);
+          setMyCode(String(codeVal));
+          // 【修复】更新本地状态 (存入数字)
+          onUpdateUser({ ...user, bindingCode: codeVal }); 
+          alert(`口令生成成功：${codeVal}\n请让另一半输入此口令绑定。`);
       } catch (e: any) {
           alert("生成失败: " + e.message);
       } finally {
@@ -560,12 +560,11 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
       if (bindCode === myCode) return alert("不能输入自己的口令哦");
       
       setLoading(true);
-      try {
+          try {
           // 1. 去 User 表找谁拥有这个口令
           const q = Bmob.Query('_User');
-          // 【修复】去掉 parseInt，直接使用字符串查询
-          // 解决 415 错误 (后台字段是 String，不能传 Number)
-          q.equalTo('bindingCode', bindCode);
+          // 【修复】必须转换为数字查询 (Bmob Error 415 表示类型不匹配，后台 bindingCode 是 Number)
+          q.equalTo('bindingCode', parseInt(bindCode));
           const users = await q.find();
 
           if (!users || users.length === 0) {
