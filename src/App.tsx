@@ -531,13 +531,13 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           // 2. 如果未绑定，检查有没有人申请绑定我
           if (!user.coupleId) {
               const q = Bmob.Query('ConnectionRequest');
-              q.equalTo('toId', user.objectId);
+              q.equalTo('toId', String(user.objectId)); // 核心修复：加 String()
               q.equalTo('status', 'pending');
               q.find().then((res: any) => setRequests(res));
               
               // 3. 检查我发出的申请是否通过
               const q2 = Bmob.Query('ConnectionRequest');
-              q2.equalTo('fromId', user.objectId);
+              q2.equalTo('fromId', String(user.objectId)); // 核心修复：加 String()
               q2.equalTo('status', 'accepted');
               q2.find().then(async (res: any) => {
                   if (res.length > 0) {
