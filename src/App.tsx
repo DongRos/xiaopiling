@@ -802,8 +802,8 @@ const ScannerMounter = ({onSuccess}: any) => {
         }; 
     }, []);
 
-    // 关键修复：必须渲染一个 id="reader" 的 div 给插件使用
-    return <div id="reader" className="w-full h-full min-h-[300px] bg-black"></div>;
+    // 修复背景色为白色，确保插件的文字可见，并添加圆角
+    return <div id="reader" className="w-full h-full min-h-[300px] bg-white text-black rounded-xl overflow-hidden"></div>;
 }
 // === 新增组件结束 ===
 
