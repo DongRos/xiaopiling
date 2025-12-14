@@ -1441,12 +1441,9 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
         if (user.coupleId) {
             q.equalTo('coupleId', String(user.coupleId));
         } else {
-            } else {
             // 【修复】改回 String 查询！
             // 因为发布动态时 creatorId 存的是 String，用 Pointer 查会报 415 错误
             q.equalTo('creatorId', String(user.objectId));
-        }
-            q.equalTo('creatorId', userPointer);
         }
         return q;
     };
