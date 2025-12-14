@@ -956,7 +956,8 @@ const MemoriesViewContent = ({
               </div>
               <div className="flex gap-2">{isManageMode ? <><button onClick={batchDeletePhotos} className="text-red-500 font-bold text-sm px-3 py-1 bg-red-50 rounded-full">删除({selectedItems.size})</button><button onClick={() => setIsManageMode(false)} className="text-gray-500 font-bold text-sm px-3 py-1">取消</button></> : <><button onClick={() => setIsManageMode(true)} className="p-2 hover:bg-gray-100 rounded-full text-gray-600"><Settings size={20} /></button><label className="p-2 bg-rose-50 text-rose-500 rounded-full cursor-pointer"><Plus size={24} /><input type="file" multiple accept="image/*" className="hidden" onChange={handleAlbumUpload} /></label></>}</div>
           </div>
-          <div className="p-4 grid grid-cols-3 md:grid-cols-5 gap-2 overflow-y-auto">{selectedAlbum.media.map((item, idx) => (<div key={idx} className="aspect-square rounded-xl overflow-hidden bg-gray-100 relative group cursor-pointer" onClick={() => isManageMode ? setSelectedItems(prev => { const n = new Set(prev); n.has(item.id) ? n.delete(item.id) : n.add(item.id); return n; }) : handleViewImage(item.url, 'album', selectedAlbum.media.map(m => m.url))}><img src={item.url} className={`w-full h-full object-cover transition ${isManageMode && selectedItems.has(item.id) ? 'opacity-50 scale-90' : ''}`} loading="lazy" />{isManageMode && (<div className="absolute top-2 right-2">{selectedItems.has(item.id) ? <CheckCircle className="text-rose-500 fill-white" /> : <div className="w-5 h-5 rounded-full border-2 border-white/80" />}</div>)}</div>))}</div>
+          {/* 修复：增加 (selectedAlbum.media || []) 保护 */}
+          <div className="p-4 grid grid-cols-3 md:grid-cols-5 gap-2 overflow-y-auto">{(selectedAlbum.media || []).map((item, idx) => (<div key={idx} className="aspect-square rounded-xl overflow-hidden bg-gray-100 relative group cursor-pointer" onClick={() => isManageMode ? setSelectedItems(prev => { const n = new Set(prev); n.has(item.id) ? n.delete(item.id) : n.add(item.id); return n; }) : handleViewImage(item.url, 'album', (selectedAlbum.media || []).map(m => m.url))}><img src={item.url} className={`w-full h-full object-cover transition ${isManageMode && selectedItems.has(item.id) ? 'opacity-50 scale-90' : ''}`} loading="lazy" />{isManageMode && (<div className="absolute top-2 right-2">{selectedItems.has(item.id) ? <CheckCircle className="text-rose-500 fill-white" /> : <div className="w-5 h-5 rounded-full border-2 border-white/80" />}</div>)}</div>))}</div>
           {viewingImage && typeof viewingImage === 'object' && 'list' in viewingImage && (
             <ImageViewer 
                 images={viewingImage.list} 
@@ -1064,7 +1065,7 @@ const MemoriesViewContent = ({
                       {albums.map((album: Album) => (
                           <div key={album.id} onClick={() => isManageMode ? setSelectedItems(p => { const n = new Set(p); n.has(album.id) ? n.delete(album.id) : n.add(album.id); return n; }) : setSelectedAlbum(album)} className={`aspect-square bg-white rounded-3xl shadow-sm border border-gray-100 p-2 relative group overflow-hidden cursor-pointer transition ${isManageMode && selectedItems.has(album.id) ? 'ring-2 ring-rose-500 bg-rose-50' : ''}`}>
                               {album.coverUrl ? (<img src={album.coverUrl} className="w-full h-full object-cover rounded-2xl" />) : (<div className="w-full h-full bg-gray-50 rounded-2xl flex items-center justify-center text-xs text-gray-400 border border-gray-100">暂无封面</div>)}
-                              <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-4 rounded-2xl pointer-events-none"><div className="text-white w-full"><h4 className="font-bold truncate text-shadow-sm">{album.name}</h4><span className="text-xs opacity-90">{album.media.length} 张照片</span></div></div>
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-4 rounded-2xl pointer-events-none"><div className="text-white w-full"><h4 className="font-bold truncate text-shadow-sm">{album.name}</h4><span className="text-xs opacity-90">{(album.media || []).length} 张照片</span></div></div>
                               {isManageMode && (<div className="absolute top-2 right-2 pointer-events-none">{selectedItems.has(album.id) ? <CheckCircle className="text-rose-500 fill-white" /> : <div className="w-5 h-5 rounded-full border-2 border-white/80 bg-black/20" />}</div>)}
                           </div>
                       ))}
@@ -1384,7 +1385,8 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
 // [修改] LeanCloud 查询辅助函数
   const getQuery = (className: string) => {
       const q = new AV.Query(className); 
-      if (user.coupleId) {
+      // 修复：确保 coupleId 是字符串才调用 split，防止崩溃
+      if (user.coupleId && typeof user.coupleId === 'string') {
           const ids = user.coupleId.split('_'); 
           q.containedIn('writer_id', ids);      
       } else {
@@ -1409,7 +1411,7 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                setMemories(res.map((item: any) => {
                    const m = item.toJSON();
                    // [修复] 解析 likedBy 数组来判断当前用户是否点赞
-                   const likedBy = m.likedBy || [];
+                   const likedBy = Array.isArray(m.likedBy) ? m.likedBy : []; // 强制确保是数组
                    const isLiked = likedBy.includes(user.objectId);
                    
                    return {
@@ -1480,10 +1482,12 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
 
       // --- 2. 加载相册 (Album) ---
        safeFind('Album')?.order('-createdAt').find().then((res: any) => {
-            // 修改：先 .toJSON() 再合并 id
-            setAlbums(res.map((a: any) => ({ ...a.toJSON(), id: a.objectId }))); 
+            // 修改：先 .toJSON() 再合并 id，并强制初始化 media 数组
+            setAlbums(res.map((a: any) => {
+                const data = a.toJSON();
+                return { ...data, id: a.objectId, media: Array.isArray(data.media) ? data.media : [] };
+            })); 
        }).catch(e => console.warn("加载Album失败", e));
-
       // --- 3. [修复] 加载情侣共享设置 (Bmob -> LeanCloud) ---
        if (user.coupleId) {
            // 3. 保存到 LeanCloud 共享表
