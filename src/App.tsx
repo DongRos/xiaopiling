@@ -65,10 +65,11 @@ const DEFAULT_AVATAR = "https://cdn-icons-png.flaticon.com/512/4140/4140048.png"
 const ImageViewer = ({ images, initialIndex, onClose, actions }: { images: string[]; initialIndex: number; onClose: () => void; actions?: { label: string, onClick: () => void, primary?: boolean }[] }) => {
   const [index, setIndex] = useState(initialIndex);
   const [scale, setScale] = useState(1);
-  // 用来记录双指缩放的初始距离
   const initialDistance = useRef<number | null>(null);
   const initialScale = useRef<number>(1);
 
+  // ✅ 修复：如果数据异常，直接不渲染
+  if (!images || images.length === 0 || !images[index]) return null;
   const currentSrc = images[index];
 
   // 切换图片
@@ -373,90 +374,114 @@ const handleSubmit = async (e: React.FormEvent) => {
   );
 };
 
+// [修改后] 重构 ProfilePage 逻辑 (请替换整个 ProfilePage 组件内的相关逻辑部分)
+
 const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => void, onUpdateUser: (u:any)=>void }) => {
   const [loading, setLoading] = useState(false);
   const [partner, setPartner] = useState<any>(null);
   const [bindCode, setBindCode] = useState('');
   const [myCode, setMyCode] = useState('');
-  const [incomingRequest, setIncomingRequest] = useState<any>(null);
-  const [timeLeft, setTimeLeft] = useState(''); // [新增] 倒计时状态
+  const [incomingRequest, setIncomingRequest] = useState<any>(null); // 绑定申请
+  const [disconnectRequest, setDisconnectRequest] = useState<any>(null); // 解绑申请
+  const [timeLeft, setTimeLeft] = useState('');
 
- // [修改] 提取查询申请的逻辑，用于手动刷新
-  const checkNewRequests = async (showToast = false) => {
-      if (!user.objectId) return;
-      try {
-          const q = new AV.Query('CoupleConnection');
-          q.equalTo('hostId', user.objectId);
-          q.exists('guestId'); 
-          q.notEqualTo('status', 'connected');
-          const res = await q.find();
-          if (res.length > 0) {
-              setIncomingRequest({ id: res[0].id, guestId: res[0].get('guestId') });
-              if(showToast) alert("收到新申请！🎉");
-          } else {
-              if(showToast) alert("暂无新申请，请稍后再试");
-          }
-      } catch(e) { console.error(e); }
-  };
-
-  
-useEffect(() => {
+  // ✅ 获取另一半信息
+  useEffect(() => {
       if(!user || !user.objectId) return;
-      
       if (user.coupleId && !partner) {
           const ids = user.coupleId.split('_');
           const partnerId = ids.find((id:string) => id !== user.objectId);
           if (partnerId) new AV.Query('_User').get(partnerId).then(p => setPartner(p.toJSON())).catch(() => {});
       }
+      // 这里的逻辑B被合并到了下面的 handleRefresh 中
+      if (user.display_code) setMyCode(user.display_code); 
+  }, [user]);
 
-      // 逻辑A: 如果我是发起方 (Host)
-      if (user.display_code) {
-          setMyCode(user.display_code);
-          
-          // [新增] 倒计时逻辑
-          if (user.codeExpiresAt) {
-              const timer = setInterval(() => {
-                  const diff = Math.floor((user.codeExpiresAt - Date.now()) / 1000);
-                  if (diff <= 0) {
-                      setTimeLeft("已失效，请重新生成");
-                      clearInterval(timer);
-                  } else {
-                      setTimeLeft(`${Math.floor(diff/60)}分${diff%60}秒`);
-                  }
-              }, 1000);
-              return () => clearInterval(timer);
-          }
+// ✅ 核心：统一刷新/检查状态函数 (常驻按钮调用这个)
+  const handleRefresh = async (showToast = false) => {
+      setLoading(true);
+      try {
+          // 场景1: 我是单身 (检查绑定申请 & 检查是否刚才绑定的对方已确认)
+          if (!user.coupleId) {
+              // A. 检查是否有等待我同意的申请
+              const qInbox = new AV.Query('CoupleConnection');
+              qInbox.equalTo('hostId', user.objectId);
+              qInbox.notEqualTo('status', 'connected'); 
+              qInbox.exists('guestId');
+              const resInbox = await qInbox.find();
+              if (resInbox.length > 0) {
+                  setIncomingRequest({ id: resInbox[0].id, guestId: resInbox[0].get('guestId') });
+                  if(showToast) alert("收到绑定申请！💌");
+              }
 
-          // 初始检查一次
-          checkNewRequests();
-      }
-
-
-      // 逻辑B: 如果我是申请方 (Guest)，检查对方是否同意
-      if (!user.coupleId) {
-          const q = new AV.Query('CoupleConnection');
-          q.equalTo('guestId', user.objectId);
-          q.equalTo('status', 'connected'); // [关键] 检测 Host 是否已将状态改为 connected
-          q.find().then(async (res) => {
-              if (res.length > 0) {
-                  setLoading(true);
-                  const conn = res[0];
+              // B. 检查我发起的申请对方是否同意 (我是Guest)
+              const qOutbox = new AV.Query('CoupleConnection');
+              qOutbox.equalTo('guestId', user.objectId);
+              qOutbox.equalTo('status', 'connected');
+              const resOutbox = await qOutbox.find();
+              if (resOutbox.length > 0) {
+                  // 对方已同意，更新我自己
+                  const conn = resOutbox[0];
                   const hostId = conn.get('hostId');
                   const ids = [hostId, user.objectId].sort();
                   const commonId = `${ids[0]}_${ids[1]}`;
                   
-                  // 对方已同意，更新自己
                   const me = AV.User.current();
                   me.set('coupleId', commonId);
                   await me.save();
+                  await conn.destroy(); // 完成使命，销毁记录
                   
-                  await conn.destroy(); // 销毁连接记录
                   alert("🎉 对方已同意，配对成功！");
-                  window.location.reload();
+                  onUpdateUser({ ...user, coupleId: commonId });
+                  window.location.reload(); // 刷新页面
+                  return;
               }
-          });
+          } 
+          // 场景2: 恋爱中 (检查解绑申请 & 检查我的解绑申请是否通过)
+          else {
+               // A. 检查是否有人申请和我分手 (status = 'disconnect_request')
+               // 查找 hostId 或 guestId 是我，且状态是 disconnect_request 的记录
+               const qDis = new AV.Query('CoupleConnection');
+               qDis.containedIn('hostId', [user.objectId]); // 稍微简化，通常记录发起人
+               qDis.equalTo('status', 'disconnected'); // 检查是否已断开
+               const resDis = await qDis.find();
+               
+               // 如果查到状态是 disconnected，说明对方同意了我的分手申请
+               if (resDis.length > 0) {
+                   const me = AV.User.current();
+                   me.set('coupleId', null);
+                   await me.save();
+                   await resDis[0].destroy();
+                   alert("💔 已恢复单身");
+                   onUpdateUser({ ...user, coupleId: null });
+                   setPartner(null);
+                   return;
+               }
+
+               // B. 检查是否收到分手申请 (对方发起的)
+               // 逻辑：查找 CoupleConnection 中 guestId 是我 (或 partnerId 是发起人)
+               if (partner) {
+                   const qReq = new AV.Query('CoupleConnection');
+                   qReq.equalTo('hostId', partner.objectId);
+                   qReq.equalTo('guestId', user.objectId);
+                   qReq.equalTo('status', 'disconnect_request');
+                   const resReq = await qReq.find();
+                   if (resReq.length > 0) {
+                       setDisconnectRequest({ id: resReq[0].id });
+                       if(showToast) alert("收到解除关系申请 💔");
+                   } else {
+                       if(showToast) alert("状态正常，暂无新消息");
+                   }
+               }
+          }
+      } catch (e) {
+          console.error(e);
+          if(showToast) alert("刷新失败，请检查网络");
+      } finally {
+          setLoading(false);
       }
-  }, [user]);
+  };
+  
 
   // [新增] 同意绑定申请
 // [修改] Host 同意申请
@@ -538,19 +563,59 @@ const generateCode = async () => {
       } catch (e: any) { alert("失败: " + e.message); } finally { setLoading(false); }
   };
 
-// 解绑逻辑
-const handleUnbind = async () => {
-      if(!confirm("⚠️ 解除关系？")) return;
+// ✅ 发起解绑申请 (替代原来的 handleUnbind)
+  const handleRequestUnbind = async () => {
+      if(!partner) return alert("数据加载中，请稍后");
+      if(!confirm("⚠️ 确定要申请解除关系吗？\n需要对方同意后才能生效。")) return;
+      
       setLoading(true);
       try {
-          const me = AV.User.current();
-          me.set('coupleId', null); await me.save();
-          onUpdateUser({ ...user, coupleId: null });
-          setPartner(null);
-          alert("已解绑");
-      } catch(e) {} finally { setLoading(false); }
+          // 创建一个分手申请记录
+          const conn = new AV.Object('CoupleConnection');
+          conn.set('hostId', user.objectId); // 我发起的
+          conn.set('guestId', partner.objectId); // 给对方的
+          conn.set('status', 'disconnect_request');
+          await conn.save();
+          alert("✅ 申请已发送，请等待对方刷新并同意。");
+      } catch(e: any) {
+          alert("发送失败: " + e.message);
+      } finally {
+          setLoading(false);
+      }
   };
 
+
+  // ✅ 同意解绑 (被动方操作)
+  const handleAgreeDisconnect = async () => {
+      if (!disconnectRequest) return;
+      setLoading(true);
+      try {
+          // 1. 先把自己恢复单身
+          const me = AV.User.current();
+          me.set('coupleId', null);
+          await me.save();
+
+          // 2. 更新连接状态为 disconnected，通知发起方
+          // 注意：这里我们反过来，把发起方的记录状态改为 disconnected
+          const conn = AV.Object.createWithoutData('CoupleConnection', disconnectRequest.id);
+          conn.set('status', 'disconnected');
+          // 也可以交换 host/guest 以便对方检测，或者简单的修改状态即可
+          // 我们上面的检测逻辑是：发起方检查 status='disconnected'
+          await conn.save();
+
+          alert("💔 已解除关系，恢复单身状态。");
+          onUpdateUser({ ...user, coupleId: null });
+          setPartner(null);
+          setDisconnectRequest(null);
+      } catch(e: any) {
+          alert("操作失败: " + e.message);
+      } finally {
+          setLoading(false);
+      }
+  };
+
+
+  
   // --- 修复：还原头像上传逻辑 ---
   const handleAvatarChange = async (e: any) => {
     const file = e.target.files?.[0];
@@ -606,20 +671,41 @@ return (
           </div>
           <div className="text-2xl font-bold text-gray-800 cursor-pointer" onClick={handleNicknameChange}>{user.nickname || "点击设置昵称"}</div>
           <div className="text-sm text-gray-400 mt-1 cursor-pointer" onClick={handleUsernameChange}>账号: {user.username}</div>
-
+          <div className="flex justify-center mt-4">
+              <button 
+                onClick={() => handleRefresh(true)} 
+                className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-500 rounded-full text-sm font-bold hover:bg-rose-100 transition shadow-sm border border-rose-100"
+              >
+                <RefreshCw size={16} className={loading ? "animate-spin" : ""} /> 
+                刷新状态 / 消息
+              </button>
+          </div>
           <div className="mt-6 pt-6 border-t border-gray-100">
               {user.coupleId ? (
                   <div className="animate-in fade-in zoom-in duration-500">
                       <div className="inline-block bg-rose-50 text-rose-500 px-4 py-1 rounded-full text-xs font-bold mb-4">❤️ 恋爱中</div>
+
+                    {/* ✅ 新增：解绑申请卡片 */}
+                      {disconnectRequest && (
+                          <div className="mb-6 p-4 bg-gray-50 rounded-2xl border-2 border-gray-200 animate-pulse text-left">
+                              <h3 className="text-gray-700 font-bold mb-2">💔 对方申请解除关系</h3>
+                              <p className="text-xs text-gray-500 mb-3">如果同意，双方将恢复单身状态。</p>
+                              <div className="flex gap-2">
+                                  <button onClick={handleAgreeDisconnect} className="flex-1 bg-red-500 text-white py-2 rounded-xl font-bold shadow-md">同意解绑</button>
+                                  <button onClick={() => setDisconnectRequest(null)} className="flex-1 bg-white text-gray-500 py-2 rounded-xl font-bold shadow-sm">忽略</button>
+                              </div>
+                          </div>
+                      )}
+                    
                       {/* 显示另一半信息的 UI 保持不变 */}
                       <div className="flex items-center justify-center gap-4">
                           <div className="text-center"><div className="w-12 h-12 bg-gray-100 rounded-full mb-1 overflow-hidden mx-auto">{partner?.avatarUrl ? <img src={partner.avatarUrl} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-xl">👤</div>}</div><div className="text-xs font-bold text-gray-700">{partner?.nickname || "另一半"}</div></div>
                           <div className="text-rose-300"><Heart fill="currentColor" size={20} /></div>
                           <div className="text-center"><div className="w-12 h-12 bg-gray-100 rounded-full mb-1 overflow-hidden mx-auto">{user.avatarUrl ? <img src={user.avatarUrl} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-xl">👤</div>}</div><div className="text-xs font-bold text-gray-700">我</div></div>
                       </div>
-                      <button onClick={handleUnbind} className="mt-6 text-xs text-gray-400 underline hover:text-red-500">解除关系</button>
-                  </div>
-              ) : (
+                      <button onClick={handleRequestUnbind} className="mt-6 text-xs text-gray-400 underline hover:text-red-500">申请解除关系</button>
+                      </div>
+                  ) : (
                   <div>
                       <div className="inline-block bg-gray-100 text-gray-400 px-4 py-1 rounded-full text-xs font-bold mb-6">🐶 单身状态</div>
                       
@@ -935,7 +1021,7 @@ const MemoriesViewContent = ({
       <div className="px-4 pb-10 max-w-2xl mx-auto min-h-[50vh] bg-white">
           {activeTab === 'moments' ? (
               <div className="space-y-8">
-                  {memories.map((memory: Memory) => (
+                  {(memories || []).map((memory: Memory) => (
                       <div key={memory.id} className="flex gap-3 pb-6 border-b border-gray-50 last:border-0">
                           <div className="w-10 h-10 rounded-lg bg-rose-100 overflow-hidden shrink-0 cursor-pointer" onClick={() => handleListAvatarClick(memory.creatorAvatar)}>
                               {memory.creatorAvatar ? <img src={memory.creatorAvatar} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xl">👤</div>}
