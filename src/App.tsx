@@ -531,14 +531,16 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           // 2. 如果未绑定，检查有没有人申请绑定我
           if (!user.coupleId) {
               const q = Bmob.Query('ConnectionRequest');
-              q.equalTo('toId', String(user.objectId)); // 核心修复：加 String()
+              q.equalTo('toId', String(user.objectId));
               q.equalTo('status', 'pending');
-              q.find().then((res: any) => setRequests(res));
+              // 修复：添加 catch 忽略表不存在时的报错
+              q.find().then((res: any) => setRequests(res)).catch(() => {});
               
               // 3. 检查我发出的申请是否通过
               const q2 = Bmob.Query('ConnectionRequest');
-              q2.equalTo('fromId', String(user.objectId)); // 核心修复：加 String()
+              q2.equalTo('fromId', String(user.objectId));
               q2.equalTo('status', 'accepted');
+              // 修复：添加 catch
               q2.find().then(async (res: any) => {
                   if (res.length > 0) {
                       // 对方已同意！自动完成绑定
@@ -676,33 +678,43 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
       const partnerId = decodedText.split(':')[1];
       if (partnerId === user.objectId) return alert('不能绑定自己');
       
-      // 检查是否已发送过
-      const q = Bmob.Query('ConnectionRequest');
-      q.equalTo('fromId', String(user.objectId)); // 核心修复：加 String()
-      q.equalTo('toId', String(partnerId));       // 核心修复：加 String()
-      q.equalTo('status', 'pending');
-      const exist = await q.find();
-      
-      if (exist.length > 0) {
-          alert("你已经发送过申请啦，请让对方同意即可！");
-          setShowScanner(false);
-          setSentStatus('waiting');
-          return;
-      }
-      
-      // 创建申请
-      const req = Bmob.Query('ConnectionRequest');
-      req.set('fromId', user.objectId);
-      req.set('fromName', user.nickname || user.username);
-      req.set('toId', partnerId);
-      req.set('status', 'pending');
-      await req.save();
-      
-      alert(`申请已发送！\n请通知对方登录并在“我的”页面点击同意。`);
+      // 扫码成功后立即关闭界面
       setShowScanner(false);
-      setSentStatus('waiting');
-    }
-  };
+      
+      // 步骤1：尝试检查是否已申请（即使报错也继续，因为表可能不存在）
+      let shouldSave = true;
+      try {
+          const q = Bmob.Query('ConnectionRequest');
+          q.equalTo('fromId', String(user.objectId)); 
+          q.equalTo('toId', String(partnerId));       
+          q.equalTo('status', 'pending');
+          const exist = await q.find();
+          
+          if (exist && exist.length > 0) {
+              alert("你已经发送过申请啦，请让对方同意即可！");
+              setSentStatus('waiting');
+              shouldSave = false;
+          }
+      } catch (e) {
+          console.log("查询失败(可能是新表未创建)，尝试直接保存创建...");
+      }
+
+      if (!shouldSave) return;
+
+      // 步骤2：执行保存（这一步会自动创建表）
+      try {
+          const req = Bmob.Query('ConnectionRequest');
+          req.set('fromId', String(user.objectId));
+          req.set('fromName', user.nickname || user.username);
+          req.set('toId', String(partnerId));
+          req.set('status', 'pending');
+          await req.save();
+          
+          alert(`申请已发送！\n请通知对方登录并在“我的”页面点击同意。`);
+          setSentStatus('waiting');
+      } catch (e: any) {
+          alert("申请失败: " + e.message);
+      }
 
   const handleLogoutClick = () => { if(window.confirm("确定要退出登录吗？")) onLogout(); };
 
