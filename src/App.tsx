@@ -680,7 +680,7 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
       finally { setLoading(false); }
   };
 
-  // 扫码回调：发送申请
+// 扫码回调：发送申请
   const onScan = async (decodedText: string) => {
     if (decodedText && decodedText.startsWith('BIND:')) {
       const rawId = decodedText.split(':')[1];
@@ -694,10 +694,10 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
       // 步骤1：检查是否已申请 (前端过滤法)
       let shouldSave = true;
       try {
+          // 这里查询也可能报415，如果你删除了后台表，这里就会恢复正常
           const q = Bmob.Query('BondingRequest');
           q.equalTo('status', 'pending');
           const res = await q.find();
-          // 手动过滤
           const exist = res.find((r:any) => 
               String(r.senderId) === String(user.objectId) && 
               String(r.receiverId) === String(partnerId)
@@ -722,12 +722,12 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           req.set('receiverId', String(partnerId));   
           req.set('status', 'pending');
 
-          // 【修复】设置 ACL 权限，让对方也能读写这条申请
-          const acl = Bmob.ACL();
-          acl.setReadAccess(user.objectId, true); // 自己可读
+          // 【修复】必须使用 new 关键字
+          const acl = new Bmob.ACL();
+          acl.setReadAccess(user.objectId, true); // 自己可见
           acl.setWriteAccess(user.objectId, true); // 自己可写
-          acl.setReadAccess(partnerId, true); // 对方可读 (关键！)
-          acl.setWriteAccess(partnerId, true); // 对方可写 (方便对方修改状态)
+          acl.setReadAccess(partnerId, true); // 对方可见 (关键！)
+          acl.setWriteAccess(partnerId, true); // 对方可写
           req.setACL(acl);
 
           await req.save();
@@ -1434,7 +1434,7 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
   
   // ================= Bmob 云端数据加载逻辑 (开始) =================
 
- // 1. 定义查询辅助函数 (增加类型强制转换)
+// 1. 定义查询辅助函数
   const getQuery = (tableName: string) => {
         const q = Bmob.Query(tableName);
         
@@ -1442,9 +1442,10 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
         if (user.coupleId) {
             q.equalTo('coupleId', String(user.coupleId));
         } else {
-            // 【修复】creatorId 是 Pointer 类型，必须构造 Pointer 对象进行查询
-            // 假设 creatorId 指向 _User 表
-            q.equalTo('creatorId', Bmob.Pointer('_User', String(user.objectId)));
+            // 【再次确认】这里必须用 Pointer，否则 MainApp 轮询会报 415
+            // 如果 Bmob SDK 版本较新，Bmob.Pointer 不需要 new
+            const userPointer = Bmob.Pointer('_User', String(user.objectId));
+            q.equalTo('creatorId', userPointer);
         }
         return q;
     };
