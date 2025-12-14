@@ -1462,15 +1462,18 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
        // --- 1. 加载朋友圈 (Moments) ---
        const momentsQuery = safeFind('Moments');
        if (momentsQuery) {
-           momentsQuery.order('-createdAt').find().then((res: any) => {
-               setMemories(res.map((m: any) => ({
-                   ...m, 
-                   id: m.objectId, 
-                   date: m.createdAt ? m.createdAt.slice(0, 10) : getBeijingDateString(), 
-                   media: m.images || [], 
-                   comments: m.comments || [] 
-               })));
-           }).catch((e: any) => console.warn("加载Moments失败", e));
+           // 修改后 (增加 creatorId 的 fallback 映射)
+          momentsQuery.order('-createdAt').find().then((res: any) => {
+             setMemories(res.map((m: any) => ({
+                 ...m, 
+                 id: m.objectId, 
+                 date: m.createdAt ? m.createdAt.slice(0, 10) : getBeijingDateString(), 
+                 media: m.images || [], 
+                 comments: m.comments || [],
+                 // [新增] 优先取 creatorId，如果没存(旧数据)则取 writer_id，确保显示发布者时不为空
+                 creatorId: m.creatorId || m.writer_id 
+             })));
+          }).catch((e: any) => console.warn("加载Moments失败", e));
        }
 
        // --- 2. 加载相册 (Album) ---
@@ -1687,16 +1690,23 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                                                                     const localUrl = URL.createObjectURL(file);
                                                                     setUploadImages((prev: string[]) => [...prev, localUrl]);
                                                         
-                                                                    // 2. 后台上传，成功后替换为云端 URL
+                                                                    
                                                                     safeUpload(file).then(serverUrl => {
                                                                         if (serverUrl) {
                                                                             console.log("图片上传完成:", serverUrl);
                                                                             setUploadImages((prev: string[]) => 
                                                                                 prev.map(url => url === localUrl ? serverUrl : url)
                                                                             );
+                                                                        } else {
+                                                                            // [修复] 如果返回空字符串(失败)，从数组中移除这个 blob 地址，防止卡死
+                                                                            console.warn("图片上传失败，移除占位符");
+                                                                            setUploadImages((prev: string[]) => prev.filter(url => url !== localUrl));
+                                                                            alert(`图片 ${file.name} 上传失败，请重试`);
                                                                         }
                                                                     }).catch(err => {
-                                                                        console.error("图片上传显示异常(可能超时)", err);
+                                                                        console.error("图片上传异常", err);
+                                                                        // [修复] 发生异常也要移除
+                                                                        setUploadImages((prev: string[]) => prev.filter(url => url !== localUrl));
                                                                     });
                                                                 }
                                                             }
@@ -1738,10 +1748,13 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                                                                   const q = Bmob.Query('Moments');
                                                                   q.set('images', uploadImages); 
                                                                   q.set('caption', uploadCaption);
+                                                                  
                                                                   q.set('type', uploadType);
                                                                   
                                                                   // 【修复2】写入新字段 writer_id，确保一定是 String 类型
                                                                   q.set('writer_id', String(user.objectId));
+                                                                  // [新增] 同时也写入 creatorId，与你的 types.ts 定义保持一致，方便前端读取
+                                                                  q.set('creatorId', String(user.objectId)); 
                                                                   
                                                                   q.set('creatorName', user.nickname || user.username);
                                                                   if (user.coupleId) {
