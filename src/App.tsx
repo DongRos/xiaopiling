@@ -534,11 +534,11 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           // 2. 如果未绑定，检查有没有人申请绑定我
           if (!user.coupleId) {
               const q = Bmob.Query('BondingRequest');
-              // 【修复】必须明确查询 receiverId 等于当前用户 ID
-              q.equalTo('receiverId', myId); 
+              // 【核心修复】必须明确查询 "发给我" 的申请 (receiverId = 我)
+              q.equalTo('receiverId', String(user.objectId)); 
               q.equalTo('status', 'pending');
+              
               q.find().then((res: any[]) => {
-                  // 服务端已筛选，直接使用即可
                   setRequests(res);
               }).catch((e) => console.log("查询申请失败", e));
               
@@ -720,12 +720,14 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           req.set('receiverId', String(partnerId));   
           req.set('status', 'pending');
 
-          // 【修复】使用 Bmob.ACL() 构造标准权限对象
-          // 解决因权限对象格式错误导致接收方无法读取数据的问题
-          const acl = Bmob.ACL();
-          acl.setPublicReadAccess(true);    // 允许公开读取 (关键！)
-          acl.setWriteAccess(String(user.objectId), true); // 自己可写
-          acl.setWriteAccess(String(partnerId), true);     // 对方可写
+          // 【核心修复】hydrogen-js-sdk 不支持 new Bmob.ACL()
+          // 必须直接构造一个普通的 JSON 对象传给 set('ACL', ...)
+          // 键名 "*" 代表所有人，值必须是 { read: true } 等格式
+          const acl = {
+              "*": { "read": true }, 
+              [String(user.objectId)]: { "write": true },
+              [String(partnerId)]: { "write": true }
+          };
           req.set('ACL', acl);
 
           await req.save();
