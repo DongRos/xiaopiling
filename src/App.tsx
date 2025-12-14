@@ -1433,48 +1433,7 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
 
 
 
-      // [新增] 真实的云端点赞逻辑
-  const handleRealLike = async (id: string) => {
-      const memory = memories.find(m => m.id === id);
-      if (!memory) return;
-      
-      // 1. 乐观更新 UI
-      setMemories(memories.map(m => m.id === id ? { ...m, likes: m.isLiked ? m.likes - 1 : m.likes + 1, isLiked: !m.isLiked } : m));
 
-      // 2. 更新云端
-      try {
-          const m = AV.Object.createWithoutData('Moments', id);
-          if (memory.isLiked) {
-              m.increment('likes', -1);
-              m.remove('likedBy', user.objectId); // 移除我的ID
-          } else {
-              m.increment('likes', 1);
-              m.addUnique('likedBy', user.objectId); // 添加我的ID
-          }
-          await m.save();
-      } catch (e) { console.error("点赞失败", e); }
-  };
-
-  // [新增] 真实的云端评论逻辑
-  const handleRealComment = async (id: string, text: string) => {
-      const newComment = { 
-          id: Date.now().toString(), 
-          text: text, 
-          authorId: user.objectId, 
-          authorName: user.nickname || user.username, // [修复] 保存名字而不是 "me"
-          date: getBeijingDateString() 
-      };
-
-      // 1. 乐观更新 UI
-      setMemories(memories.map(m => m.id === id ? { ...m, comments: [...m.comments, newComment] } : m));
-
-      // 2. 更新云端
-      try {
-          const m = AV.Object.createWithoutData('Moments', id);
-          m.add('comments', newComment); // 添加到数组
-          await m.save();
-      } catch (e) { console.error("评论失败", e); }
-  };
 
 
 
@@ -1544,8 +1503,55 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
     const timer = setInterval(loadData, 5000);
 
     // 页面销毁时清除定时器
-    return () => clearInterval(timer);
-  }, [user]); // 依赖 user：当切换账号时会自动重新加载
+        return () => clearInterval(timer);
+      }, [user]); // 依赖 user：当切换账号时会自动重新加载
+
+          // [新增] 真实的云端点赞逻辑
+  const handleRealLike = async (id: string) => {
+      const memory = memories.find(m => m.id === id);
+      if (!memory) return;
+      
+      // 1. 乐观更新 UI
+      setMemories(memories.map(m => m.id === id ? { ...m, likes: m.isLiked ? m.likes - 1 : m.likes + 1, isLiked: !m.isLiked } : m));
+
+      // 2. 更新云端
+      try {
+          const m = AV.Object.createWithoutData('Moments', id);
+          if (memory.isLiked) {
+              m.increment('likes', -1);
+              m.remove('likedBy', user.objectId); // 移除我的ID
+          } else {
+              m.increment('likes', 1);
+              m.addUnique('likedBy', user.objectId); // 添加我的ID
+          }
+          await m.save();
+      } catch (e) { console.error("点赞失败", e); }
+  };
+
+  // [新增] 真实的云端评论逻辑
+  const handleRealComment = async (id: string, text: string) => {
+      const newComment = { 
+          id: Date.now().toString(), 
+          text: text, 
+          authorId: user.objectId, 
+          authorName: user.nickname || user.username, // [修复] 保存名字而不是 "me"
+          date: getBeijingDateString() 
+      };
+
+      // 1. 乐观更新 UI
+      setMemories(memories.map(m => m.id === id ? { ...m, comments: [...m.comments, newComment] } : m));
+
+      // 2. 更新云端
+      try {
+          const m = AV.Object.createWithoutData('Moments', id);
+          m.add('comments', newComment); // 添加到数组
+          await m.save();
+      } catch (e) { console.error("评论失败", e); }
+  };
+
+
+    
+    
 
   // ================= Bmob 云端数据加载逻辑 (结束) =================
   // 注意：原有的 useSafeStorage 已被删除，因为不需要存本地了
