@@ -791,8 +791,19 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
   )
 }  
 const ScannerMounter = ({onSuccess}: any) => {
-    useEffect(() => { const s = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 }, false); s.render(onSuccess, console.log); return ()=>s.clear(); }, []);
-    return null;
+    useEffect(() => { 
+        // 初始化扫码器
+        const s = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 }, false); 
+        s.render(onSuccess, (err: any) => console.warn(err)); 
+        
+        // 清理函数：组件卸载时停止摄像头
+        return () => { 
+            s.clear().catch(err => console.error("Failed to clear scanner", err)); 
+        }; 
+    }, []);
+
+    // 关键修复：必须渲染一个 id="reader" 的 div 给插件使用
+    return <div id="reader" className="w-full h-full min-h-[300px] bg-black"></div>;
 }
 // === 新增组件结束 ===
 
