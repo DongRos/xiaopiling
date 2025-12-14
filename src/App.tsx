@@ -1528,6 +1528,7 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
           } catch (e) {
               console.error("同步共享设置失败:", e);
           }
+      };
         
   const handleTakePhoto = () => {
     const allImages = [
