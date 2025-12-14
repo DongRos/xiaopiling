@@ -1729,8 +1729,11 @@ export default function App() {
                 const freshUser = await q.get(current.objectId);
                 setUser(freshUser);
             } catch (e) {
-                console.warn("同步用户信息失败，使用本地缓存", e);
-                setUser(current);
+                console.warn("同步用户信息失败，强制重新登录以获取最新数据", e);
+                // 【修复】移除 setUser(current)，如果后端获取失败，则视为未登录/Token失效
+                // 这样能保证只要进去了，就一定是最新的后端数据
+                Bmob.User.logout();
+                setUser(null);
             }
         }
         setLoading(false);
