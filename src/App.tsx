@@ -1343,15 +1343,20 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
 
     // --- 新增：加载情侣共享设置 (背景图和共享头像) ---
        if (user.coupleId) {
-           const q = Bmob.Query('CoupleSettings');
-           q.equalTo('coupleId', String(user.coupleId));
-           q.find().then((res: any) => {
-               if (res.length > 0) {
-                   const settings = res[0];
-                   if (settings.coverUrl) setMomentsCover(settings.coverUrl);
-                   if (settings.avatarUrl) setMomentsAvatar(settings.avatarUrl);
-               }
-           }).catch(e => console.log("加载CoupleSettings失败(可能是新用户未创建)", e));
+           // 【修复】增加 try-catch 包裹，防止 equalTo 同步报错导致白屏
+           try {
+               const q = Bmob.Query('CoupleSettings');
+               q.equalTo('coupleId', String(user.coupleId));
+               q.find().then((res: any) => {
+                   if (res.length > 0) {
+                       const settings = res[0];
+                       if (settings.coverUrl) setMomentsCover(settings.coverUrl);
+                       if (settings.avatarUrl) setMomentsAvatar(settings.avatarUrl);
+                   }
+               }).catch(e => console.log("加载CoupleSettings失败(可能是新用户未创建)", e));
+           } catch (err) {
+               console.warn("CoupleSettings查询构造失败，已忽略错误防止白屏:", err);
+           }
        }
     
     
@@ -1386,28 +1391,30 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
           if (type === 'cover') setMomentsCover(url);
           else setMomentsAvatar(url);
 
+          
           // 3. 保存到 Bmob 共享表
-          const q = Bmob.Query('CoupleSettings');
-          q.equalTo('coupleId', String(user.coupleId));
-          const res = await q.find();
+          // 【修复】增加 try-catch 并在 set 时也强制转 String
+          try {
+              const q = Bmob.Query('CoupleSettings');
+              q.equalTo('coupleId', String(user.coupleId));
+              const res = await q.find();
 
-          if (res.length > 0) {
-              // 更新现有记录
-              const item = await Bmob.Query('CoupleSettings').get(res[0].objectId);
-              item.set(type === 'cover' ? 'coverUrl' : 'avatarUrl', url);
-              await item.save();
-          } else {
-              // 创建新记录
-              const qNew = Bmob.Query('CoupleSettings');
-              qNew.set('coupleId', user.coupleId);
-              qNew.set(type === 'cover' ? 'coverUrl' : 'avatarUrl', url);
-              await qNew.save();
-          }
-      } catch (err) {
-          console.error(err);
-          alert("同步更新失败，请检查网络");
-      }
-  };
+              if (res.length > 0) {
+                  // 更新现有记录
+                  const item = await Bmob.Query('CoupleSettings').get(res[0].objectId);
+                  item.set(type === 'cover' ? 'coverUrl' : 'avatarUrl', url);
+                  await item.save();
+              } else {
+                  // 创建新记录
+                  const qNew = Bmob.Query('CoupleSettings');
+                  qNew.set('coupleId', String(user.coupleId)); // 这里也建议加 String()
+                  qNew.set(type === 'cover' ? 'coverUrl' : 'avatarUrl', url);
+                  await qNew.save();
+              }
+          } catch (e) {
+              console.error("同步共享设置失败:", e);
+              // 不阻断流程，仅提示
+          };
 
   
   const handleTakePhoto = () => {
