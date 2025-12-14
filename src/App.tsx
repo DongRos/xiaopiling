@@ -507,6 +507,7 @@ const AuthPage = () => {
 };
 
 // 1. 接收 onUpdateUser 参数
+// 1. 接收 onUpdateUser 参数
 const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => void, onUpdateUser: (u:any)=>void }) => {
   const [showScanner, setShowScanner] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -516,9 +517,12 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
 
   // --- 轮询检查：收到的申请 & 发出的申请是否被同意 ---
   useEffect(() => {
-      if(!user) return;
+      if(!user || !user.objectId) return;
       
       const checkStatus = async () => {
+        try {
+          const myId = String(user.objectId);
+
           // 1. 如果已绑定，获取另一半信息
           if (user.coupleId && !partner) {
               const ids = user.coupleId.split('_');
@@ -531,21 +535,19 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           // 2. 如果未绑定，检查有没有人申请绑定我
           if (!user.coupleId) {
               const q = Bmob.Query('ConnectionRequest');
-              q.equalTo('toId', String(user.objectId));
+              q.equalTo('receiverId', myId); // 【修复】改名：彻底避开旧列
               q.equalTo('status', 'pending');
-              // 修复：添加 catch 忽略表不存在时的报错
               q.find().then((res: any) => setRequests(res)).catch(() => {});
               
               // 3. 检查我发出的申请是否通过
               const q2 = Bmob.Query('ConnectionRequest');
-              q2.equalTo('fromId', String(user.objectId));
+              q2.equalTo('senderId', myId); // 【修复】改名：彻底避开旧列
               q2.equalTo('status', 'accepted');
-              // 修复：添加 catch
               q2.find().then(async (res: any) => {
                   if (res.length > 0) {
                       // 对方已同意！自动完成绑定
                       const match = res[0];
-                      const ids = [user.objectId, match.toId].sort();
+                      const ids = [user.objectId, match.receiverId].sort(); // 注意这里用 match.receiverId
                       const commonId = `${ids[0]}_${ids[1]}`;
                       
                       const u = Bmob.Query('_User');
@@ -557,8 +559,9 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
                       alert("恭喜！对方已同意绑定！");
                       setSentStatus('');
                   }
-              });
+              }).catch(() => {}); // 【修复】补全 catch
           }
+        } catch(e) { console.warn("Polling error:", e); }
       };
       
       checkStatus();
@@ -568,11 +571,12 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
 
   // 同意绑定
   const handleAgree = async (req: any) => {
-      if(!confirm(`同意与 ${req.fromName} 绑定情侣关系吗？`)) return;
+      // 【修复】senderName
+      if(!confirm(`同意与 ${req.senderName} 绑定情侣关系吗？`)) return;
       setLoading(true);
       try {
-          // 1. 计算公共ID
-          const ids = [req.fromId, user.objectId].sort();
+          // 1. 计算公共ID (req.senderId)
+          const ids = [req.senderId, user.objectId].sort();
           const commonId = `${ids[0]}_${ids[1]}`;
           
           // 2. 更新自己
@@ -674,19 +678,22 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
 
   // 扫码回调：发送申请
   const onScan = async (decodedText: string) => {
-    if (decodedText.startsWith('BIND:')) {
-      const partnerId = decodedText.split(':')[1];
-      if (partnerId === user.objectId) return alert('不能绑定自己');
+    if (decodedText && decodedText.startsWith('BIND:')) {
+      const rawId = decodedText.split(':')[1];
+      const partnerId = rawId ? rawId.trim() : ""; 
       
+      if (!partnerId) return;
+      if (partnerId === user.objectId) return alert('不能绑定自己');
+
       // 扫码成功后立即关闭界面
       setShowScanner(false);
       
-      // 步骤1：尝试检查是否已申请（即使报错也继续，因为表可能不存在）
+      // 步骤1：尝试检查是否已申请
       let shouldSave = true;
       try {
           const q = Bmob.Query('ConnectionRequest');
-          q.equalTo('fromId', String(user.objectId)); 
-          q.equalTo('toId', String(partnerId));       
+          q.equalTo('senderId', String(user.objectId)); // 【修复】改名 senderId
+          q.equalTo('receiverId', String(partnerId));   // 【修复】改名 receiverId
           q.equalTo('status', 'pending');
           const exist = await q.find();
           
@@ -701,12 +708,12 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
 
       if (!shouldSave) return;
 
-      // 步骤2：执行保存（这一步会自动创建表）
+      // 步骤2：执行保存（自动创建新列）
       try {
           const req = Bmob.Query('ConnectionRequest');
-          req.set('fromId', String(user.objectId));
-          req.set('fromName', user.nickname || user.username);
-          req.set('toId', String(partnerId));
+          req.set('senderId', String(user.objectId)); // 【修复】改名 senderId
+          req.set('senderName', user.nickname || user.username); // 【修复】改名 senderName
+          req.set('receiverId', String(partnerId));   // 【修复】改名 receiverId
           req.set('status', 'pending');
           await req.save();
           
@@ -715,8 +722,8 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
       } catch (e: any) {
           alert("申请失败: " + e.message);
       }
-    } // 补上：闭合 if (decodedText...)
-  };  // 补上：闭合 const onScan = ...
+    }
+  };
 
   const handleLogoutClick = () => { if(window.confirm("确定要退出登录吗？")) onLogout(); };
 
@@ -772,7 +779,8 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
                                   <div key={i} className="bg-rose-50 border border-rose-100 p-4 rounded-2xl flex items-center justify-between animate-bounce">
                                       <div className="text-left">
                                           <div className="text-xs text-rose-400 font-bold">收到绑定申请</div>
-                                          <div className="font-bold text-gray-700">{req.fromName} 想和你绑定</div>
+                                          {/* 【修复】显示 senderName */}
+                                          <div className="font-bold text-gray-700">{req.senderName} 想和你绑定</div>
                                       </div>
                                       <button onClick={() => handleAgree(req)} className="bg-rose-500 text-white px-4 py-2 rounded-full text-sm font-bold shadow-md hover:bg-rose-600">同意</button>
                                   </div>
@@ -803,7 +811,7 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
        <button onClick={handleLogoutClick} className="w-full bg-white text-red-500 py-4 rounded-3xl font-bold shadow-sm flex items-center justify-center gap-2"><LogOut size={20}/> 退出登录</button>
     </div>
   )
-}  
+}
 const ScannerMounter = ({onSuccess}: any) => {
     useEffect(() => { 
         // 初始化扫码器
