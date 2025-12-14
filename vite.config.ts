@@ -1,6 +1,11 @@
 import path from 'path';
+import { fileURLToPath } from 'url'; // [新增]
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+
+// [新增] 手动定义 __dirname (因为在 "type": "module" 模式下不可用)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export default defineConfig(({ mode }) => {
     // 加载 .env 文件中的变量
@@ -17,13 +22,12 @@ export default defineConfig(({ mode }) => {
       plugins: [react()],
       define: {
         // 这里是将 API Key 注入到前端代码的关键
-        // 注意：这会将 Key 硬编码到构建后的 JS 文件中，属于不安全做法（详见下文）
         'process.env.API_KEY': JSON.stringify(apiKey),
         'process.env.GEMINI_API_KEY': JSON.stringify(apiKey)
       },
       resolve: {
         alias: {
-          '@': path.resolve(__dirname, '.'),
+          '@': path.resolve(__dirname, '.'), // ✅ 现在可以正常使用了
         }
       }
     };
