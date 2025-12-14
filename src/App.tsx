@@ -715,6 +715,8 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
       } catch (e: any) {
           alert("申请失败: " + e.message);
       }
+    } // 补上：闭合 if (decodedText...)
+  };  // 补上：闭合 const onScan = ...
 
   const handleLogoutClick = () => { if(window.confirm("确定要退出登录吗？")) onLogout(); };
 
