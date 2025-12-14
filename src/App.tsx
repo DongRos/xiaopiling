@@ -1437,18 +1437,15 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
 
 // 1. 定义查询辅助函数
   const getQuery = (tableName: string) => {
-        const q = Bmob.Query(tableName);
-        
-        // 强制转换为 String，防止后台列类型误判
-        if (user.coupleId) {
-            q.equalTo('coupleId', String(user.coupleId));
-        } else {
-            // 【修复】改回 String 查询！
-            // 因为发布动态时 creatorId 存的是 String，用 Pointer 查会报 415 错误
-            q.equalTo('creatorId', String(user.objectId));
-        }
-        return q;
-    };
+          const q = Bmob.Query(tableName);
+          // 【绝杀修复】全部换新字段名，避开 Bmob 缓存的类型错误
+          if (user.coupleId) {
+              q.equalTo('binding_id', String(user.coupleId)); 
+          } else {
+              q.equalTo('author_id', String(user.objectId)); 
+          }
+          return q;
+      };
   useEffect(() => {
     // 设置头像 (从登录用户数据中获取)
     if (user.avatarUrl) setAvatarUrl(user.avatarUrl);
@@ -1739,13 +1736,14 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                     // 2. 同步保存到 Bmob 云端
                     try {
                         const q = Bmob.Query('Moments');
-                        q.set('images', uploadImages); // 注意字段名是否对齐，云端好像叫 images
+                        q.set('images', uploadImages); 
                         q.set('caption', uploadCaption);
                         q.set('type', uploadType);
-                        q.set('creatorId', user.objectId);
+                        // 【绝杀修复】写入新字段名
+                        q.set('author_id', String(user.objectId));
                         q.set('creatorName', user.nickname || user.username);
                         if (user.coupleId) {
-                            q.set('coupleId', user.coupleId);
+                            q.set('binding_id', String(user.coupleId));
                         }
                         await q.save();
                         // 可以在这里重新 loadData() 确保 ID 同步，或者等待轮询自动同步
