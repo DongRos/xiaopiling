@@ -1296,10 +1296,12 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
            } catch(e) { return null; }
        };
 
-       // --- 加载朋友圈 (Memory) ---
-       const momentsQuery = safeFind('Moments');
-       if (momentsQuery) {
-           momentsQuery.order('-createdAt').find().then((res: any) => {
+       // 【修复】拆解链式调用，防止 undefined.find() 导致白屏
+       
+       // 1. Moments
+       const qMoments = safeFind('Moments');
+       if (qMoments) {
+           qMoments.order('-createdAt').find().then((res: any) => {
                setMemories(res.map((m: any) => ({
                    ...m, 
                    id: m.objectId, 
@@ -1310,36 +1312,52 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
            }).catch((e: any) => console.warn("加载Moments失败", e));
        }
 
-       // --- 加载相册 (Album) ---
-       safeFind('Album')?.order('-createdAt').find().then((res: any) => {
-            setAlbums(res.map((a: any) => ({ ...a, id: a.objectId })));
-       }).catch(e => console.warn("加载Album失败", e));
+       // 2. Album
+       const qAlbum = safeFind('Album');
+       if (qAlbum) {
+            qAlbum.order('-createdAt').find().then((res: any) => {
+                setAlbums(res.map((a: any) => ({ ...a, id: a.objectId })));
+            }).catch((e: any) => console.warn("加载Album失败", e));
+       }
 
-       // --- 加载留言板 (Message) ---
-       safeFind('Message')?.order('-createdAt').find().then((res: any) => 
-           setMessages(res.map((m: any) => ({...m, id: m.objectId})))
-       ).catch(e => console.warn("加载Message失败", e));
+       // 3. Message
+       const qMessage = safeFind('Message');
+       if (qMessage) {
+           qMessage.order('-createdAt').find().then((res: any) => 
+               setMessages(res.map((m: any) => ({...m, id: m.objectId})))
+           ).catch((e: any) => console.warn("加载Message失败", e));
+       }
 
-       // --- 加载首页照片墙 (PinnedPhoto) ---
-       safeFind('PinnedPhoto')?.find().then((res:any) => 
-           setPinnedPhotos(res.map((p:any)=>({...p, id: p.objectId})))
-       ).catch(e => console.warn("加载PinnedPhoto失败", e));
+       // 4. PinnedPhoto
+       const qPinned = safeFind('PinnedPhoto');
+       if (qPinned) {
+           qPinned.find().then((res:any) => 
+               setPinnedPhotos(res.map((p:any)=>({...p, id: p.objectId})))
+           ).catch((e: any) => console.warn("加载PinnedPhoto失败", e));
+       }
 
-       // --- 加载经期 (Period) ---
-       safeFind('Period')?.find().then((res:any) => setPeriods(res))
-         .catch(e => console.warn("加载Period失败", e));
+       // 5. Period
+       const qPeriod = safeFind('Period');
+       if (qPeriod) {
+           qPeriod.find().then((res:any) => setPeriods(res))
+             .catch((e: any) => console.warn("加载Period失败", e));
+       }
 
-       // --- 加载冲突记录 (Conflict) ---
-       safeFind('Conflict')?.order('-createdAt').find().then((res:any) => 
-           setConflicts(res.map((c:any)=>({...c, id: c.objectId})))
-       ).catch(e => console.warn("加载Conflict失败", e));
+       // 6. Conflict
+       const qConflict = safeFind('Conflict');
+       if (qConflict) {
+           qConflict.order('-createdAt').find().then((res:any) => 
+               setConflicts(res.map((c:any)=>({...c, id: c.objectId})))
+           ).catch((e: any) => console.warn("加载Conflict失败", e));
+       }
 
-       // --- 加载待办 (Todo) ---
-       safeFind('Todo')?.find().then((res:any) => 
-           setTodos(res.map((t:any)=>({...t, id: t.objectId})))
-       ).catch(e => console.warn("加载Todo失败", e));
-    };
-
+       // 7. Todo
+       const qTodo = safeFind('Todo');
+       if (qTodo) {
+           qTodo.find().then((res:any) => 
+               setTodos(res.map((t:any)=>({...t, id: t.objectId})))
+           ).catch((e: any) => console.warn("加载Todo失败", e));
+       }
 
     // --- 新增：加载情侣共享设置 (背景图和共享头像) ---
        if (user.coupleId) {
@@ -1614,15 +1632,14 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const checkUser = async () => {
+    // 【修复】启动时强制拉取云端最新用户信息，防止本地缓存缺少 coupleId 导致白屏
+    const initUser = async () => {
         const current = Bmob.User.current();
         if (current) {
             try {
-                // 【关键】强制从服务器拉取最新用户信息
-                // 防止本地缓存没有 coupleId，导致绑定状态不同步
                 const q = Bmob.Query('_User');
-                const freshUser = await q.get(current.objectId);
-                setUser(freshUser);
+                const latestUser = await q.get(current.objectId);
+                setUser(latestUser);
             } catch (e) {
                 console.warn("同步用户信息失败，使用本地缓存", e);
                 setUser(current);
@@ -1630,8 +1647,8 @@ export default function App() {
         }
         setLoading(false);
     };
-    checkUser();
-  }, []);;
+    initUser();
+  }, []);
 
   // 新增：处理退出登录，必须手动 setUser(null) 才会切回登录页
   const handleLogout = () => {
