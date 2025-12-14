@@ -508,6 +508,7 @@ const AuthPage = () => {
 
 // 1. 接收 onUpdateUser 参数
 // 1. 接收 onUpdateUser 参数
+// 1. 接收 onUpdateUser 参数
 const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => void, onUpdateUser: (u:any)=>void }) => {
   const [showScanner, setShowScanner] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -534,20 +535,21 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
 
           // 2. 如果未绑定，检查有没有人申请绑定我
           if (!user.coupleId) {
-              const q = Bmob.Query('ConnectionRequest');
-              q.equalTo('receiverId', myId); // 【修复】改名：彻底避开旧列
+              // 【核心修复】表名改为 LoveConnection，避开旧表错误
+              const q = Bmob.Query('LoveConnection');
+              q.equalTo('receiverId', myId); 
               q.equalTo('status', 'pending');
               q.find().then((res: any) => setRequests(res)).catch(() => {});
               
               // 3. 检查我发出的申请是否通过
-              const q2 = Bmob.Query('ConnectionRequest');
-              q2.equalTo('senderId', myId); // 【修复】改名：彻底避开旧列
+              const q2 = Bmob.Query('LoveConnection');
+              q2.equalTo('senderId', myId); 
               q2.equalTo('status', 'accepted');
               q2.find().then(async (res: any) => {
                   if (res.length > 0) {
                       // 对方已同意！自动完成绑定
                       const match = res[0];
-                      const ids = [user.objectId, match.receiverId].sort(); // 注意这里用 match.receiverId
+                      const ids = [user.objectId, match.receiverId].sort();
                       const commonId = `${ids[0]}_${ids[1]}`;
                       
                       const u = Bmob.Query('_User');
@@ -559,7 +561,7 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
                       alert("恭喜！对方已同意绑定！");
                       setSentStatus('');
                   }
-              }).catch(() => {}); // 【修复】补全 catch
+              }).catch(() => {});
           }
         } catch(e) { console.warn("Polling error:", e); }
       };
@@ -571,11 +573,10 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
 
   // 同意绑定
   const handleAgree = async (req: any) => {
-      // 【修复】senderName
       if(!confirm(`同意与 ${req.senderName} 绑定情侣关系吗？`)) return;
       setLoading(true);
       try {
-          // 1. 计算公共ID (req.senderId)
+          // 1. 计算公共ID
           const ids = [req.senderId, user.objectId].sort();
           const commonId = `${ids[0]}_${ids[1]}`;
           
@@ -585,8 +586,9 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           me.set('coupleId', commonId);
           await me.save();
           
-          // 3. 更新申请单状态为 accepted (让对方也能检测到)
-          const r = Bmob.Query('ConnectionRequest');
+          // 3. 更新申请单状态为 accepted
+          // 【核心修复】表名改为 LoveConnection
+          const r = Bmob.Query('LoveConnection');
           const reqObj = await r.get(req.objectId);
           reqObj.set('status', 'accepted');
           await reqObj.save();
@@ -615,8 +617,7 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           me.set('coupleId', ''); 
           await me.save();
           
-          // 2. 尝试清除对方 (如果权限允许)，如果不行则依赖对方自己解绑
-          // 注意：通常为了安全，普通用户不能改别人数据，这里尽力而为
+          // 2. 尝试清除对方
           if (partner) {
                try {
                    const p = await u.get(partner.objectId);
@@ -691,9 +692,10 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
       // 步骤1：尝试检查是否已申请
       let shouldSave = true;
       try {
-          const q = Bmob.Query('ConnectionRequest');
-          q.equalTo('senderId', String(user.objectId)); // 【修复】改名 senderId
-          q.equalTo('receiverId', String(partnerId));   // 【修复】改名 receiverId
+          // 【核心修复】表名改为 LoveConnection
+          const q = Bmob.Query('LoveConnection');
+          q.equalTo('senderId', String(user.objectId)); 
+          q.equalTo('receiverId', String(partnerId));   
           q.equalTo('status', 'pending');
           const exist = await q.find();
           
@@ -710,10 +712,11 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
 
       // 步骤2：执行保存（自动创建新列）
       try {
-          const req = Bmob.Query('ConnectionRequest');
-          req.set('senderId', String(user.objectId)); // 【修复】改名 senderId
-          req.set('senderName', user.nickname || user.username); // 【修复】改名 senderName
-          req.set('receiverId', String(partnerId));   // 【修复】改名 receiverId
+          // 【核心修复】表名改为 LoveConnection
+          const req = Bmob.Query('LoveConnection');
+          req.set('senderId', String(user.objectId)); 
+          req.set('senderName', user.nickname || user.username); 
+          req.set('receiverId', String(partnerId));   
           req.set('status', 'pending');
           await req.save();
           
@@ -779,7 +782,6 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
                                   <div key={i} className="bg-rose-50 border border-rose-100 p-4 rounded-2xl flex items-center justify-between animate-bounce">
                                       <div className="text-left">
                                           <div className="text-xs text-rose-400 font-bold">收到绑定申请</div>
-                                          {/* 【修复】显示 senderName */}
                                           <div className="font-bold text-gray-700">{req.senderName} 想和你绑定</div>
                                       </div>
                                       <button onClick={() => handleAgree(req)} className="bg-rose-500 text-white px-4 py-2 rounded-full text-sm font-bold shadow-md hover:bg-rose-600">同意</button>
