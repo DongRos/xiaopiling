@@ -1415,8 +1415,12 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
               console.error("同步共享设置失败:", e);
               // 不阻断流程，仅提示
           };
-
-  
+      } catch (err) {
+                console.error(err);
+                alert("同步更新失败，请检查网络");
+            }
+        };
+        
   const handleTakePhoto = () => {
     const allImages = [
         ...memories.filter(m => m.type === 'media').flatMap(m => m.media.map(url => ({ 
