@@ -20,7 +20,9 @@ import pailideIcon from './pailide.png';
 
 // 恢复为标准上传模式 (不压缩)
 const safeUpload = async (file: File) => {
-  Bmob.debug(true);
+  // [修改] 直接使用 LeanCloud 的 uploadFile，并移除 Bmob.debug
+  return await uploadFile(file);
+};
 
 // [新增] LeanCloud 时间格式化辅助函数
 const formatDate = (date: any) => {
@@ -1647,7 +1649,7 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
     </div>
   );
 };  
-}
+
 
 
 
