@@ -507,7 +507,6 @@ const AuthPage = () => {
 };
 
 // 1. 接收 onUpdateUser 参数
-// 1. 接收 onUpdateUser 参数
 const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => void, onUpdateUser: (u:any)=>void }) => {
   const [showScanner, setShowScanner] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -790,59 +789,7 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
        <button onClick={handleLogoutClick} className="w-full bg-white text-red-500 py-4 rounded-3xl font-bold shadow-sm flex items-center justify-center gap-2"><LogOut size={20}/> 退出登录</button>
     </div>
   )
-}
-  return (
-    <div className="p-6 bg-gray-50 min-h-screen pb-24">
-       <div className="bg-white rounded-3xl p-6 text-center shadow-sm mb-6 relative">
-          {loading && <div className="absolute inset-0 bg-white/60 z-10 flex items-center justify-center"><Loader2 className="animate-spin text-rose-500"/></div>}
-          
-          <div className="relative inline-block group">
-              <img src={user.avatarUrl || DEFAULT_AVATAR} className="w-24 h-24 rounded-full border-4 border-rose-100 object-cover mx-auto" />
-              {/* 头像上的编辑按钮 */}
-              <label className="absolute bottom-0 right-0 bg-rose-500 text-white p-2 rounded-full cursor-pointer shadow-lg hover:scale-110 transition">
-                  <Edit2 size={14} />
-                  <input type="file" className="hidden" accept="image/*" onChange={handleAvatarChange} />
-              </label>
-          </div>
-
-          {/* 昵称 (大字，可修改) */}
-          <div onClick={handleNicknameChange} className="mt-4 flex items-center justify-center gap-2 cursor-pointer hover:text-rose-500 transition group">
-              <h2 className="text-2xl font-bold text-gray-800 group-hover:text-rose-500">
-                  {user.nickname || "点击设置昵称"}
-              </h2>
-              <Edit2 size={18} className="text-gray-300 group-hover:text-rose-400" />
-          </div>
-
-          {/* 用户名 (小字，可修改) */}
-          <div onClick={handleUsernameChange} className="mt-2 flex items-center justify-center gap-1 cursor-pointer text-gray-400 hover:text-rose-500 transition">
-              <span className="text-sm font-mono bg-gray-100 px-2 py-0.5 rounded-md">账号: {user.username}</span>
-              <Edit2 size={12} />
-          </div>
-
-          <div className="mt-2 text-gray-400 text-sm">{user.coupleId ? '❤️ 恋爱中' : '🐶 单身狗'}</div>
-          {user.coupleId && <div className="mt-1 text-xs text-gray-300">ID: {user.coupleId}</div>}
-       </div>
-
-       {/* 保持原有的绑定逻辑不变 */}
-       {!user.coupleId && (
-         <div className="bg-white rounded-3xl p-6 shadow-sm mb-6 text-center">
-            <h3 className="font-bold mb-4 text-gray-700">绑定另一半</h3>
-            {showScanner ? (
-                <div id="reader" className="rounded-xl overflow-hidden mb-4"><ScannerMounter onSuccess={onScan}/></div> 
-            ) : (
-                <>
-                  <div className="flex justify-center mb-4"><QRCodeSVG value={`BIND:${user.objectId}`} size={150} /></div>
-                  <p className="text-xs text-gray-400 mb-4">让对方扫描此码，或点击下方按钮扫对方</p>
-                  <button onClick={() => setShowScanner(true)} className="bg-rose-500 text-white px-6 py-2 rounded-full flex items-center gap-2 mx-auto"><Scan size={16}/> 扫描 TA 的二维码</button>
-                </>
-            )}
-         </div>
-       )}
-       {/* 修改这里的 onClick */}
-       <button onClick={handleLogoutClick} className="w-full bg-white text-red-500 py-4 rounded-3xl font-bold shadow-sm flex items-center justify-center gap-2"><LogOut size={20}/> 退出登录</button>
-    </div>
-  )
-}
+}  
 const ScannerMounter = ({onSuccess}: any) => {
     useEffect(() => { const s = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 }, false); s.render(onSuccess, console.log); return ()=>s.clear(); }, []);
     return null;
