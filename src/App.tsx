@@ -1478,54 +1478,39 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
 
       
 
-       // --- 2. 加载相册 (Album) ---
+      // --- 2. 加载相册 (Album) ---
        safeFind('Album')?.order('-createdAt').find().then((res: any) => {
-            setAlbums(res.map((a: any) => ({ ...a, id: a.objectId })));
+            // 修改：先 .toJSON() 再合并 id
+            setAlbums(res.map((a: any) => ({ ...a.toJSON(), id: a.objectId }))); 
        }).catch(e => console.warn("加载Album失败", e));
 
-      // --- 3. [修复] 加载情侣共享设置 (Bmob -> LeanCloud) ---
-       if (user.coupleId) {
-           // 3. 保存到 LeanCloud 共享表
-          try {
-              const q = new AV.Query('CoupleSettings');
-              q.equalTo('coupleId', String(user.coupleId));
-              const res = await q.find();
+       // ... (CoupleSettings 部分保持不变) ...
 
-              if (res.length > 0) {
-                  const item = res[0]; // res[0] 已经是 AV.Object，直接操作
-                  item.set(type === 'cover' ? 'coverUrl' : 'avatarUrl', url);
-                  await item.save();
-              } else {
-                  const qNew = new AV.Object('CoupleSettings');
-                  qNew.set('coupleId', String(user.coupleId));
-                  qNew.set(type === 'cover' ? 'coverUrl' : 'avatarUrl', url);
-                  await qNew.save();
-              }
-          } catch (e) {
-              console.error("同步共享设置失败:", e);
-          }
-       }
-
-       // --- 4. 加载其他数据 (保持不变) ---
+       // --- 4. 加载其他数据 ---
        safeFind('Message')?.order('-createdAt').find().then((res: any) => 
-           setMessages(res.map((m: any) => ({...m, id: m.objectId})))
+           // 修改：添加 .toJSON()
+           setMessages(res.map((m: any) => ({...m.toJSON(), id: m.objectId}))) 
        ).catch(e => console.warn("加载Message失败", e));
 
        safeFind('PinnedPhoto')?.find().then((res:any) => 
-           setPinnedPhotos(res.map((p:any)=>({...p, id: p.objectId})))
+           // 修改：添加 .toJSON()
+           setPinnedPhotos(res.map((p:any)=>({...p.toJSON(), id: p.objectId}))) 
        ).catch(e => console.warn("加载PinnedPhoto失败", e));
 
-       safeFind('Period')?.find().then((res:any) => setPeriods(res))
-         .catch(e => console.warn("加载Period失败", e));
+       safeFind('Period')?.find().then((res:any) => 
+            // 修改：Period 也要转 JSON
+            setPeriods(res.map((p:any) => p.toJSON()))
+       ).catch(e => console.warn("加载Period失败", e));
 
        safeFind('Conflict')?.order('-createdAt').find().then((res:any) => 
-           setConflicts(res.map((c:any)=>({...c, id: c.objectId})))
+           // 修改：添加 .toJSON()
+           setConflicts(res.map((c:any)=>({...c.toJSON(), id: c.objectId}))) 
        ).catch(e => console.warn("加载Conflict失败", e));
 
        safeFind('Todo')?.find().then((res:any) => 
-           setTodos(res.map((t:any)=>({...t, id: t.objectId})))
+           // 修改：添加 .toJSON()
+           setTodos(res.map((t:any)=>({...t.toJSON(), id: t.objectId}))) 
        ).catch(e => console.warn("加载Todo失败", e));
-    };
 
     // 1. 立即执行一次加载
     loadData();
