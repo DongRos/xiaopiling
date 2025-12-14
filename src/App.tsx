@@ -530,23 +530,23 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
       }
   }, [user]);
 
-  // 生成口令（账号1操作）
+// 生成口令（账号1操作）
   const generateCode = async () => {
       setLoading(true);
       try {
-          // 【修复】生成纯数字，不要转 toString()
-          const codeNum = Math.floor(100000 + Math.random() * 900000); 
+          // 【修复】生成后立即转为字符串，适配后台 String 类型
+          const code = Math.floor(100000 + Math.random() * 900000).toString(); 
           
           const u = Bmob.Query('_User');
           const me = await u.get(user.objectId);
-          // 【修复】存入数字类型，匹配后台字段定义
-          me.set('bindingCode', codeNum);
+          // 存入字符串
+          me.set('bindingCode', code);
           await me.save();
           
-          setMyCode(codeNum.toString()); 
-          // 【修复】变量名应为 codeNum，与上面定义保持一致
-          onUpdateUser({ ...user, bindingCode: codeNum }); 
-          alert(`口令生成成功：${codeNum}\n请让另一半输入此口令绑定。`);
+          setMyCode(code); 
+          // 【修复】这里使用正确的变量名 code
+          onUpdateUser({ ...user, bindingCode: code }); 
+          alert(`口令生成成功：${code}\n请让另一半输入此口令绑定。`);
       } catch (e: any) {
           alert("生成失败: " + e.message);
       } finally {
@@ -563,9 +563,8 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
       try {
           // 1. 去 User 表找谁拥有这个口令
           const q = Bmob.Query('_User');
-          // 【绝杀修复】使用 parseInt 强制转为数字进行查询
-          // 解决 Bmob 报 415 incorrect parameter type 的问题
-          q.equalTo('bindingCode', parseInt(bindCode));
+          // 【修复】去掉 parseInt，直接查字符串，解决 415 类型不匹配
+          q.equalTo('bindingCode', bindCode);
           const users = await q.find();
 
           if (!users || users.length === 0) {
