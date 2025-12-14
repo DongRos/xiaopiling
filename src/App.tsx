@@ -722,12 +722,14 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           req.set('receiverId', String(partnerId));   
           req.set('status', 'pending');
 
-          // 【修复】手动构造 ACL 对象 (直接操作 JSON，避开 SDK 构造函数兼容性问题)
+          // 【绝杀修复】直接设置为“公开可读”，确保对方100%能收到
+          // 写入权限保留给自己和对方
           const acl = {
-              [String(user.objectId)]: { read: true, write: true }, // 自己读写
-              [String(partnerId)]: { read: true, write: true }      // 对方读写
+              "*": { read: true }, 
+              [String(user.objectId)]: { write: true },
+              [String(partnerId)]: { write: true }
           };
-          req.set('ACL', acl); // 直接作为字段设置
+          req.set('ACL', acl);
 
           await req.save();
           
