@@ -757,7 +757,7 @@ return (
        <button onClick={onLogout} className="w-full bg-white text-red-500 py-4 rounded-3xl font-bold shadow-sm flex items-center justify-center gap-2"><LogOut size={20}/> 退出登录</button>
     </div>
   )
-
+}
 
 const ScannerMounter = ({onSuccess}: any) => {
     useEffect(() => { 
