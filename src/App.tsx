@@ -675,7 +675,7 @@ const [partner, setPartner] = useState<any>(null);
                                       <button onClick={generateCode} className="text-xs text-rose-400 underline hover:text-rose-600">
                                           重新生成
                                       </button>
-                                    /* {incomingRequest && (
+                                     {incomingRequest && (
                                               <div className="mt-4 p-3 bg-white rounded-xl border-2 border-rose-500 animate-pulse">
                                                   <p className="text-xs text-rose-500 font-bold mb-2">收到绑定申请！</p>
                                                   <button onClick={handleAcceptRequest} className="w-full bg-rose-500 text-white py-2 rounded-lg font-bold">
@@ -683,7 +683,7 @@ const [partner, setPartner] = useState<any>(null);
                                                   </button>
                                               </div>
                                           )}
-                                        */
+                                        
                                   </div>
                               ) : (
                                   <button onClick={generateCode} className="w-full bg-rose-500 text-white py-2 rounded-xl font-bold shadow-md hover:bg-rose-600">生成绑定口令</button>
