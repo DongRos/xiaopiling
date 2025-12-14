@@ -721,6 +721,15 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           req.set('senderName', user.nickname || user.username); 
           req.set('receiverId', String(partnerId));   
           req.set('status', 'pending');
+
+          // 【修复】设置 ACL 权限，让对方也能读写这条申请
+          const acl = Bmob.ACL();
+          acl.setReadAccess(user.objectId, true); // 自己可读
+          acl.setWriteAccess(user.objectId, true); // 自己可写
+          acl.setReadAccess(partnerId, true); // 对方可读 (关键！)
+          acl.setWriteAccess(partnerId, true); // 对方可写 (方便对方修改状态)
+          req.setACL(acl);
+
           await req.save();
           
           alert(`申请已发送！\n请通知对方登录并在“我的”页面点击同意。`);
@@ -728,8 +737,6 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
       } catch (e: any) {
           alert("申请失败: " + e.message);
       }
-    }
-  };
 
   const handleLogoutClick = () => { if(window.confirm("确定要退出登录吗？")) onLogout(); };
 
@@ -1433,7 +1440,9 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
         if (user.coupleId) {
             q.equalTo('coupleId', String(user.coupleId));
         } else {
-            q.equalTo('creatorId', String(user.objectId));
+            // 【修复】creatorId 是 Pointer 类型，必须构造 Pointer 对象进行查询
+            // 假设 creatorId 指向 _User 表
+            q.equalTo('creatorId', Bmob.Pointer('_User', String(user.objectId)));
         }
         return q;
     };
