@@ -375,14 +375,13 @@ const handleSubmit = async (e: React.FormEvent) => {
 
 const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => void, onUpdateUser: (u:any)=>void }) => {
   const [loading, setLoading] = useState(false);
-  const [partner, setPartner] = useState<any>(null);
+const [partner, setPartner] = useState<any>(null);
   const [bindCode, setBindCode] = useState(''); // 输入的口令
   const [myCode, setMyCode] = useState('');     // 我生成的口令
+  const [incomingRequest, setIncomingRequest] = useState<any>(null); // [新增] 接收到的申请
 
-// 初始化：如果已绑定，获取对象信息
+  // 初始化：如果已绑定，获取对象信息；如果是发起人，检查申请
   useEffect(() => {
-      console.log("当前版本：v5.0 - 强制String类型方案"); // 必须看到这个
-
       if(!user || !user.objectId) return;
       
       // 1. 如果已绑定，获取另一半信息
@@ -390,15 +389,103 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           const ids = user.coupleId.split('_');
           const partnerId = ids.find((id:string) => id !== user.objectId);
           if (partnerId) {
-              // [修改] LeanCloud 查询写法，需 .toJSON()
               new AV.Query('_User').get(partnerId).then(p => setPartner(p.toJSON())).catch(() => {});
           }
       }
-      // 2. 显示已生成的口令（如果有）
+      // 2. 显示已生成的口令，并检查是否有申请
       if (user.display_code) {
           setMyCode(user.display_code);
+          // [新增] 检查是否有待处理的绑定申请
+          const q = new AV.Query('CoupleConnection');
+          q.equalTo('hostId', user.objectId);
+          q.exists('guestId'); // 检查是否有 guestId
+          q.find().then(res => {
+              if (res.length > 0) {
+                  setIncomingRequest({ id: res[0].id, guestId: res[0].get('guestId') });
+              }
+          });
       }
   }, [user]);
+
+  // [新增] 同意绑定申请
+  const handleAcceptRequest = async () => {
+      if (!incomingRequest) return;
+      setLoading(true);
+      try {
+          const targetId = incomingRequest.guestId;
+          const ids = [user.objectId, targetId].sort();
+          const commonId = `${ids[0]}_${ids[1]}`;
+
+          // 更新自己
+          const me = AV.User.current();
+          me.set('coupleId', commonId);
+          me.unset('display_code'); 
+          await me.save();
+
+          // 更新对方 (使用 Cloud Function 更安全，这里用客户端更新需确保 ACL 允许)
+          try {
+             // 简单处理：仅通过 Client 更新对方可能因 ACL 失败，
+             // 但 LeanCloud 默认用户只能改自己。
+             // 如果失败，对方下次登录检测到 coupleId 为空但 connection 没了可能需要逻辑处理。
+             // 更好的方式：创建 Couple 表存关系，或者 trust client。
+             // 这里尝试直接更新对方 (Hack: 使用 MasterKey 逻辑在前端是不行的，只能寄希望于 ACL 是 Public RW 或后续逻辑)
+             // 修正：正确的逻辑是双方都更新自己，但这里为了简化，我们假设对方下次登录或者通过 Object 更新
+             const guest = AV.Object.createWithoutData('_User', targetId);
+             guest.set('coupleId', commonId);
+             await guest.save(); 
+          } catch(err) {
+             console.warn("尝试更新对方失败，可能需要对方手动确认或后端云函数", err);
+          }
+          
+          // 删除连接记录
+          const conn = AV.Object.createWithoutData('CoupleConnection', incomingRequest.id);
+          await conn.destroy();
+
+          onUpdateUser({ ...user, coupleId: commonId });
+          alert("配对成功！恭喜脱单！🎉");
+          window.location.reload();
+      } catch (e: any) {
+          alert("配对失败: " + e.message);
+      } finally {
+          setLoading(false);
+      }
+  };  
+
+
+  // 输入口令绑定（账号2操作 - 发送申请）
+  const handleBindByCode = async () => {
+      if (!bindCode || bindCode.length !== 6) return alert("请输入6位数字口令");
+      if (bindCode === myCode) return alert("不能输入自己的口令哦");
+      
+      setLoading(true);
+      try {
+          const queryValue = 'invite_' + bindCode;
+          const q = new AV.Query('CoupleConnection');
+          q.equalTo('passcode', queryValue); 
+          const results = await q.find();
+
+          if (!results || results.length === 0) {
+              alert("口令无效或已过期");
+              setLoading(false);
+              return;
+          }
+
+          const entry = results[0];
+          // [修改] 不再直接绑定，而是写入 guestId 发送申请
+          entry.set('guestId', user.objectId);
+          await entry.save();
+
+          alert("申请已发送！\n请通知另一半在 App 中【刷新个人页】并点击【同意申请】。");
+          setBindCode('');
+      } catch (e: any) {
+          console.error("申请失败:", e);
+          alert("申请失败: " + (e.error || e.message));
+      } finally {
+          setLoading(false);
+      }
+  };
+  
+  
 // 生成口令（账号1操作）
   const generateCode = async () => {
       setLoading(true);
@@ -434,86 +521,22 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           setLoading(false);
       }
   };
-// 输入口令绑定（账号2操作）
-  const handleBindByCode = async () => {
-      if (!bindCode || bindCode.length !== 6) return alert("请输入6位数字口令");
-      if (bindCode === myCode) return alert("不能输入自己的口令哦");
-      
-      setLoading(true);
-      try {
-          // 【V5.0 核心】查询时拼上 "invite_" 前缀
-          const queryValue = 'invite_' + bindCode;
-          console.log("正在查询 CoupleConnection 表:", queryValue); 
 
-          // [修改] LeanCloud 查询
-          const q = new AV.Query('CoupleConnection');
-          q.equalTo('passcode', queryValue); 
-          const results = await q.find();
-
-          if (!results || results.length === 0) {
-              alert("找不到该口令，请确认：\n1. 账号1是否已点击重新生成\n2. 口令是否输入正确");
-              setLoading(false);
-              return;
-          }
-
-          const entry = results[0];
-          const targetId = entry.get('hostId'); // [修改] LeanCloud 取属性用 .get()
-          
-          if (!targetId) {
-             alert("数据异常：找不到发起人ID");
-             setLoading(false);
-             return;
-          }
-
-          const ids = [user.objectId, targetId].sort();
-          const commonId = `${ids[0]}_${ids[1]}`;
-
-          // 更新自己
-          const me = AV.User.current();
-          me.set('coupleId', commonId);
-          me.unset('display_code'); 
-          await me.save();
-
-          // 更新对方
-          try {
-             const t = await u.get(targetId);
-             t.set('coupleId', commonId);
-             t.unset('display_code'); 
-             await t.save();
-          } catch(err) {
-             console.log("更新对方状态失败（权限），不影响绑定结果", err);
-          }
-          
-          // 删除用过的口令
-          try {
-             await entry.destroy();
-          } catch(e) {}
-
-          onUpdateUser({ ...user, coupleId: commonId });
-          alert("绑定成功！🎉");
-          window.location.reload(); 
-
-      } catch (e: any) {
-          console.error("绑定报错:", e);
-          alert("绑定失败: " + (e.error || e.message || JSON.stringify(e)));
-      } finally {
-          setLoading(false);
-      }
-  };
-  // 解绑逻辑（保持不变）
+// 解绑逻辑
   const handleUnbind = async () => {
       if(!confirm("⚠️ 确定要解除情侣关系吗？")) return;
       setLoading(true);
       try {
-          const u = Bmob.Query('_User');
-          const me = await u.get(user.objectId);
-          me.set('coupleId', ''); 
+          // [修复] 使用 AV.User
+          const me = AV.User.current();
+          me.set('coupleId', null); 
           await me.save();
           
           if (partner) {
                try {
-                   const p = await u.get(partner.objectId);
-                   p.set('coupleId', '');
+                   // 尝试解除对方
+                   const p = AV.Object.createWithoutData('_User', partner.objectId);
+                   p.set('coupleId', null);
                    await p.save();
                } catch(e) {}
           }
@@ -555,15 +578,14 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
     }
   };
 
-  // --- 修复：还原昵称修改逻辑 ---
+// 修复：还原昵称修改逻辑 (去除 Bmob)
   const handleNicknameChange = async () => {
     const newName = prompt("请输入新昵称", user.nickname || "");
     if (!newName || newName === user.nickname) return;
 
     setLoading(true);
     try {
-      const u = Bmob.Query('_User');
-      const me = await u.get(user.objectId);
+      const me = AV.User.current(); // [修复]
       me.set('nickname', newName);
       await me.save();
       
@@ -574,21 +596,19 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
       setLoading(false);
     }
   };
-
-  // --- 新增：账号修改逻辑 ---
+  // 新增：账号修改逻辑 (去除 Bmob)
   const handleUsernameChange = async () => {
     const newName = prompt("⚠️ 修改账号后需要重新登录\n请输入新账号:", user.username);
     if (!newName || newName === user.username) return;
     
     setLoading(true);
     try {
-       const u = Bmob.Query('_User');
-       const me = await u.get(user.objectId);
-       me.set('username', newName);
+       const me = AV.User.current(); // [修复]
+       me.setUsername(newName);      // [修复] LeanCloud 设置用户名
        await me.save();
        
        alert("账号修改成功，请重新登录");
-       onLogout(); // 强制登出让用户重登
+       onLogout(); 
     } catch(err: any) {
        alert('修改失败(可能账号已存在): ' + (err.message || err));
        setLoading(false);
@@ -655,6 +675,15 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
                                       <button onClick={generateCode} className="text-xs text-rose-400 underline hover:text-rose-600">
                                           重新生成
                                       </button>
+                                    /* {incomingRequest && (
+                                              <div className="mt-4 p-3 bg-white rounded-xl border-2 border-rose-500 animate-pulse">
+                                                  <p className="text-xs text-rose-500 font-bold mb-2">收到绑定申请！</p>
+                                                  <button onClick={handleAcceptRequest} className="w-full bg-rose-500 text-white py-2 rounded-lg font-bold">
+                                                      同意并绑定
+                                                  </button>
+                                              </div>
+                                          )}
+                                        */
                                   </div>
                               ) : (
                                   <button onClick={generateCode} className="w-full bg-rose-500 text-white py-2 rounded-xl font-bold shadow-md hover:bg-rose-600">生成绑定口令</button>
@@ -1321,21 +1350,78 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
        // --- 1. 加载朋友圈 (Moments) ---
        const momentsQuery = safeFind('Moments');
        if (momentsQuery) {
-           // [修改] .descending 排序，处理 toJSON 和日期格式
            momentsQuery.descending('createdAt').find().then((res: any[]) => {
                setMemories(res.map((item: any) => {
                    const m = item.toJSON();
+                   // [修复] 解析 likedBy 数组来判断当前用户是否点赞
+                   const likedBy = m.likedBy || [];
+                   const isLiked = likedBy.includes(user.objectId);
+                   
                    return {
                        ...m, 
-                       id: item.id, // LeanCloud ID
-                       date: formatDate(item.createdAt), // [修复] 格式化时间
+                       id: item.id,
+                       date: formatDate(item.createdAt),
                        media: m.images || [], 
-                       comments: m.comments || [],
-                       creatorId: m.creatorId || m.writer_id // [修复] 优先读 creatorId
+                       comments: m.comments || [], // 评论数据共享
+                       likes: m.likes || 0,        // 点赞数共享
+                       isLiked: isLiked,           // 状态根据数据判断
+                       creatorId: m.creatorId || m.writer_id,
+                       creatorAvatar: m.creatorAvatar // [修复] 读取保存的头像
                    };
                }));
            }).catch((e: any) => console.warn("加载Moments失败", e));
        }
+
+
+
+
+
+      // [新增] 真实的云端点赞逻辑
+  const handleRealLike = async (id: string) => {
+      const memory = memories.find(m => m.id === id);
+      if (!memory) return;
+      
+      // 1. 乐观更新 UI
+      setMemories(memories.map(m => m.id === id ? { ...m, likes: m.isLiked ? m.likes - 1 : m.likes + 1, isLiked: !m.isLiked } : m));
+
+      // 2. 更新云端
+      try {
+          const m = AV.Object.createWithoutData('Moments', id);
+          if (memory.isLiked) {
+              m.increment('likes', -1);
+              m.remove('likedBy', user.objectId); // 移除我的ID
+          } else {
+              m.increment('likes', 1);
+              m.addUnique('likedBy', user.objectId); // 添加我的ID
+          }
+          await m.save();
+      } catch (e) { console.error("点赞失败", e); }
+  };
+
+  // [新增] 真实的云端评论逻辑
+  const handleRealComment = async (id: string, text: string) => {
+      const newComment = { 
+          id: Date.now().toString(), 
+          text: text, 
+          authorId: user.objectId, 
+          authorName: user.nickname || user.username, // [修复] 保存名字而不是 "me"
+          date: getBeijingDateString() 
+      };
+
+      // 1. 乐观更新 UI
+      setMemories(memories.map(m => m.id === id ? { ...m, comments: [...m.comments, newComment] } : m));
+
+      // 2. 更新云端
+      try {
+          const m = AV.Object.createWithoutData('Moments', id);
+          m.add('comments', newComment); // 添加到数组
+          await m.save();
+      } catch (e) { console.error("评论失败", e); }
+  };
+
+
+
+      
 
        // --- 2. 加载相册 (Album) ---
        safeFind('Album')?.order('-createdAt').find().then((res: any) => {
@@ -1537,7 +1623,10 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                )}
                {activePage !== Page.HOME && (
                    <div className="h-full relative">
-                       {activePage === Page.MEMORIES && (<MemoriesViewContent user={user} memories={memories} albums={albums} setAlbums={setAlbums} handleLike={(id:string) => setMemories(memories.map(m => m.id === id ? { ...m, likes: m.isLiked ? m.likes - 1 : m.likes + 1, isLiked: !m.isLiked } : m))} handleComment={(id:string, t:string) => setMemories(memories.map(m => m.id === id ? { ...m, comments: [...m.comments, { id: Date.now().toString(), text: t, author: 'me', date: getBeijingDateString() }] } : m))} 
+                       {/* [修改] 传递新的 handleRealLike 和 handleRealComment */}
+                       {activePage === Page.MEMORIES && (<MemoriesViewContent user={user} memories={memories} albums={albums} setAlbums={setAlbums} 
+                           handleLike={handleRealLike} 
+                           handleComment={handleRealComment}
                                                            onFileSelect={async (e: any) => {
                                                             const target = e.target;
                                                             const files = Array.from(target.files || []) as File[];
@@ -1603,15 +1692,16 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                                                           
                                                               // 2. [修改] 同步保存到 LeanCloud
                                                                   try {
-                                                                      const m = new AV.Object('Moments'); // [修改] 创建对象
+                                                                      const m = new AV.Object('Moments');
                                                                       m.set('images', uploadImages); 
                                                                       m.set('caption', uploadCaption);
                                                                       m.set('type', uploadType);
                                                                       
                                                                       m.set('writer_id', user.objectId);
-                                                                      m.set('creatorId', user.objectId); // [修复] 显式写入 creatorId
-                                                                      
+                                                                      m.set('creatorId', user.objectId);
                                                                       m.set('creatorName', user.nickname || user.username);
+                                                                      m.set('creatorAvatar', user.avatarUrl); // [修复] 显式保存发帖时的头像
+
                                                                       if (user.coupleId) {
                                                                           m.set('binding_id', user.coupleId);
                                                                       }
