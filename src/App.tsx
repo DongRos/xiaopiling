@@ -748,7 +748,7 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           </div>
           <div className="text-2xl font-bold text-gray-800 cursor-pointer" onClick={handleNicknameChange}>{user.nickname || "点击设置昵称"}</div>
           <div className="text-sm text-gray-400 mt-1 cursor-pointer hover:text-rose-500 transition" onClick={handleUsernameChange} title="点击修改账号">账号: {user.username}</div>
-          <div className="text-sm text-gray-400 mt-1">账号: {user.username}</div>
+          
 
           {/* 状态显示区 */}
           <div className="mt-6 pt-6 border-t border-gray-100">
