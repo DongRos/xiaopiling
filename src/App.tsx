@@ -720,13 +720,12 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           req.set('receiverId', String(partnerId));   
           req.set('status', 'pending');
 
-          // 【绝杀修复】直接设置为“公开可读”，确保对方100%能收到
-          // 写入权限保留给自己和对方
-          const acl = {
-              "*": { read: true }, 
-              [String(user.objectId)]: { write: true },
-              [String(partnerId)]: { write: true }
-          };
+          // 【修复】使用 Bmob.ACL() 构造标准权限对象
+          // 解决因权限对象格式错误导致接收方无法读取数据的问题
+          const acl = Bmob.ACL();
+          acl.setPublicReadAccess(true);    // 允许公开读取 (关键！)
+          acl.setWriteAccess(String(user.objectId), true); // 自己可写
+          acl.setWriteAccess(String(partnerId), true);     // 对方可写
           req.set('ACL', acl);
 
           await req.save();
