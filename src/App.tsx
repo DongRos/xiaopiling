@@ -678,8 +678,8 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
       
       // 检查是否已发送过
       const q = Bmob.Query('ConnectionRequest');
-      q.equalTo('fromId', user.objectId);
-      q.equalTo('toId', partnerId);
+      q.equalTo('fromId', String(user.objectId)); // 核心修复：加 String()
+      q.equalTo('toId', String(partnerId));       // 核心修复：加 String()
       q.equalTo('status', 'pending');
       const exist = await q.find();
       
