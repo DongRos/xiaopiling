@@ -507,8 +507,6 @@ const AuthPage = () => {
 };
 
 // 1. 接收 onUpdateUser 参数
-// 1. 接收 onUpdateUser 参数
-// 1. 接收 onUpdateUser 参数
 const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => void, onUpdateUser: (u:any)=>void }) => {
   const [showScanner, setShowScanner] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -535,20 +533,26 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
 
           // 2. 如果未绑定，检查有没有人申请绑定我
           if (!user.coupleId) {
-              // 【核心修复】表名改为 LoveConnection，避开旧表错误
-              const q = Bmob.Query('LoveConnection');
-              q.equalTo('receiverId', myId); 
+              // 【核心修复】改为 "BondingRequest" 表
+              // 【重要技巧】只查询 'pending' 状态，不查询 ID，避免 Bmob 报 415 类型错误
+              const q = Bmob.Query('BondingRequest');
               q.equalTo('status', 'pending');
-              q.find().then((res: any) => setRequests(res)).catch(() => {});
+              q.find().then((res: any[]) => {
+                  // 在前端手动过滤，百分百安全
+                  const myRequests = res.filter(r => String(r.receiverId) === myId);
+                  setRequests(myRequests);
+              }).catch(() => {});
               
               // 3. 检查我发出的申请是否通过
-              const q2 = Bmob.Query('LoveConnection');
-              q2.equalTo('senderId', myId); 
+              const q2 = Bmob.Query('BondingRequest');
+              // 这里查询 'accepted' 状态，同样拉回所有已同意的，再前端过滤
               q2.equalTo('status', 'accepted');
-              q2.find().then(async (res: any) => {
-                  if (res.length > 0) {
+              q2.find().then(async (res: any[]) => {
+                  // 前端过滤：找到是我发的，且已被同意的
+                  const match = res.find(r => String(r.senderId) === myId);
+                  
+                  if (match) {
                       // 对方已同意！自动完成绑定
-                      const match = res[0];
                       const ids = [user.objectId, match.receiverId].sort();
                       const commonId = `${ids[0]}_${ids[1]}`;
                       
@@ -587,8 +591,7 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           await me.save();
           
           // 3. 更新申请单状态为 accepted
-          // 【核心修复】表名改为 LoveConnection
-          const r = Bmob.Query('LoveConnection');
+          const r = Bmob.Query('BondingRequest');
           const reqObj = await r.get(req.objectId);
           reqObj.set('status', 'accepted');
           await reqObj.save();
@@ -686,34 +689,34 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
       if (!partnerId) return;
       if (partnerId === user.objectId) return alert('不能绑定自己');
 
-      // 扫码成功后立即关闭界面
       setShowScanner(false);
       
-      // 步骤1：尝试检查是否已申请
+      // 步骤1：检查是否已申请 (前端过滤法)
       let shouldSave = true;
       try {
-          // 【核心修复】表名改为 LoveConnection
-          const q = Bmob.Query('LoveConnection');
-          q.equalTo('senderId', String(user.objectId)); 
-          q.equalTo('receiverId', String(partnerId));   
+          const q = Bmob.Query('BondingRequest');
           q.equalTo('status', 'pending');
-          const exist = await q.find();
+          const res = await q.find();
+          // 手动过滤
+          const exist = res.find((r:any) => 
+              String(r.senderId) === String(user.objectId) && 
+              String(r.receiverId) === String(partnerId)
+          );
           
-          if (exist && exist.length > 0) {
+          if (exist) {
               alert("你已经发送过申请啦，请让对方同意即可！");
               setSentStatus('waiting');
               shouldSave = false;
           }
       } catch (e) {
-          console.log("查询失败(可能是新表未创建)，尝试直接保存创建...");
+          console.log("查询失败，尝试直接创建...");
       }
 
       if (!shouldSave) return;
 
-      // 步骤2：执行保存（自动创建新列）
+      // 步骤2：执行保存
       try {
-          // 【核心修复】表名改为 LoveConnection
-          const req = Bmob.Query('LoveConnection');
+          const req = Bmob.Query('BondingRequest');
           req.set('senderId', String(user.objectId)); 
           req.set('senderName', user.nickname || user.username); 
           req.set('receiverId', String(partnerId));   
