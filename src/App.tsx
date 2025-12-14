@@ -533,15 +533,14 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
 
           // 2. 如果未绑定，检查有没有人申请绑定我
           if (!user.coupleId) {
-              // 【核心修复】改为 "BondingRequest" 表
-              // 【重要技巧】只查询 'pending' 状态，不查询 ID，避免 Bmob 报 415 类型错误
               const q = Bmob.Query('BondingRequest');
+              // 【修复】必须明确查询 receiverId 等于当前用户 ID
+              q.equalTo('receiverId', myId); 
               q.equalTo('status', 'pending');
               q.find().then((res: any[]) => {
-                  // 在前端手动过滤，百分百安全
-                  const myRequests = res.filter(r => String(r.receiverId) === myId);
-                  setRequests(myRequests);
-              }).catch(() => {});
+                  // 服务端已筛选，直接使用即可
+                  setRequests(res);
+              }).catch((e) => console.log("查询申请失败", e));
               
               // 3. 检查我发出的申请是否通过
               const q2 = Bmob.Query('BondingRequest');
@@ -691,19 +690,18 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
 
       setShowScanner(false);
       
-      // 步骤1：检查是否已申请 (前端过滤法)
+      // 步骤1：检查是否已申请 (服务端精确查询)
       let shouldSave = true;
       try {
-          // 这里查询也可能报415，如果你删除了后台表，这里就会恢复正常
           const q = Bmob.Query('BondingRequest');
+          // 【修复】加上精确的发送者和接收者条件，不要查全表
+          q.equalTo('senderId', String(user.objectId));
+          q.equalTo('receiverId', String(partnerId));
           q.equalTo('status', 'pending');
-          const res = await q.find();
-          const exist = res.find((r:any) => 
-              String(r.senderId) === String(user.objectId) && 
-              String(r.receiverId) === String(partnerId)
-          );
           
-          if (exist) {
+          const res = await q.find();
+          // 如果结果大于0，说明已存在
+          if (res.length > 0) {
               alert("你已经发送过申请啦，请让对方同意即可！");
               setSentStatus('waiting');
               shouldSave = false;
