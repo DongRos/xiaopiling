@@ -512,9 +512,9 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
   const [bindCode, setBindCode] = useState(''); // 输入的口令
   const [myCode, setMyCode] = useState('');     // 我生成的口令
 
-  // 初始化：如果已绑定，获取对象信息
+ // 初始化：如果已绑定，获取对象信息
   useEffect(() => {
-      console.log("当前版本：v3.0 - 修复415专用版"); // 【关键】如果在控制台没看到这句话，说明你运行的还是旧代码！请重新打包/重启服务。
+      console.log("当前版本：v4.0 - 启用独立表 LoveBinding"); // 看到这个日志才算更新成功
 
       if(!user || !user.objectId) return;
       
@@ -527,31 +527,38 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           }
       }
       // 2. 显示已生成的口令（如果有）
-      // 【绝对修复】读取新字段 match_code
-      if (user.match_code) {
-          // 去掉前缀 'm_' 显示
-          setMyCode(user.match_code.replace('m_', ''));
+      // 【V4.0修复】只读取 display_code 用于展示，不涉及查询逻辑
+      if (user.display_code) {
+          setMyCode(user.display_code);
       }
   }, [user]);
 // 生成口令（账号1操作）
   const generateCode = async () => {
       setLoading(true);
       try {
-          // 生成随机数
+          // 生成 6 位纯数字字符串
           const rawCode = Math.floor(100000 + Math.random() * 900000).toString();
-          // 【绝对修复】加前缀 m_，确保 Bmob 100% 识别为 String
-          const dbValue = 'm_' + rawCode; 
           
-          const u = Bmob.Query('_User');
-          const me = await u.get(user.objectId);
+          // 【V4.0 核心方案】
+          // 1. 在全新的普通表 LoveBinding 中创建一条记录用于查询
+          // Bmob 会自动创建这个表，普通表没有 User 表的 strict schema 限制
+          const bindingQuery = Bmob.Query('LoveBinding');
+          bindingQuery.set('code', rawCode); // 存纯字符串
+          bindingQuery.set('hostId', user.objectId); // 存发起人的 ID
+          await bindingQuery.save();
+
+          // 2. 仅更新 User 表用于前端展示（如果这一步报415也不影响对方查询绑定，仅仅是刷新后不显示码）
+          try {
+            const u = Bmob.Query('_User');
+            const me = await u.get(user.objectId);
+            me.set('display_code', rawCode);
+            await me.save();
+          } catch(err) {
+            console.warn("展示字段更新失败，但不影响功能", err);
+          }
           
-          // 使用全新字段 match_code，避开一切旧数据干扰
-          me.set('match_code', dbValue);
-          await me.save();
-          
-          setMyCode(rawCode); // UI只显示数字
-          // 更新本地状态
-          onUpdateUser({ ...user, match_code: dbValue }); 
+          setMyCode(rawCode);
+          onUpdateUser({ ...user, display_code: rawCode }); 
           alert(`口令生成成功：${rawCode}\n请让另一半输入此口令绑定。`);
       } catch (e: any) {
           console.error("生成失败详情:", e);
@@ -568,24 +575,29 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
       
       setLoading(true);
       try {
-          // 【绝对修复】查询时加上前缀 m_
-          const queryValue = 'm_' + bindCode;
-          console.log("正在查询绑定口令:", queryValue); // 调试日志
+          console.log("正在查询 LoveBinding 表:", bindCode); 
 
-          const q = Bmob.Query('_User');
-          // 查询全新字段 match_code
-          q.equalTo('match_code', queryValue);
-          const users = await q.find();
+          // 【V4.0 核心方案】查询 LoveBinding 表，而不是 User 表
+          const q = Bmob.Query('LoveBinding');
+          q.equalTo('code', bindCode); // 这里是普通表查询，绝对不会报 415
+          const results = await q.find();
 
-          if (!users || users.length === 0) {
-              alert("找不到该口令，请确认：\n1. 对方已点击生成\n2. 对方没有刷新页面（刷新可能会丢失未保存的码）\n3. 你输入的数字完全正确");
+          if (!results || results.length === 0) {
+              alert("找不到该口令，请确认对方已生成并未失效");
               setLoading(false);
               return;
           }
 
-          const targetUser = users[0];
-          const targetId = targetUser.objectId;
+          // 获取发起人的 ID
+          const entry = results[0];
+          const targetId = entry.hostId;
           
+          if (!targetId) {
+             alert("数据异常：找不到发起人ID");
+             setLoading(false);
+             return;
+          }
+
           const ids = [user.objectId, targetId].sort();
           const commonId = `${ids[0]}_${ids[1]}`;
 
@@ -593,18 +605,24 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           const u = Bmob.Query('_User');
           const me = await u.get(user.objectId);
           me.set('coupleId', commonId);
-          me.unset('match_code'); // 清理新字段
+          me.unset('display_code'); // 清理展示码
           await me.save();
 
           // 4. 更新对方
           try {
              const t = await u.get(targetId);
              t.set('coupleId', commonId);
-             t.unset('match_code'); // 清理新字段
+             t.unset('display_code'); // 清理展示码
              await t.save();
           } catch(err) {
              console.log("尝试更新对方失败(权限问题)", err);
           }
+          
+          // 5. (可选) 删除用过的口令记录
+          try {
+             const binder = Bmob.Query('LoveBinding');
+             binder.destroy(entry.objectId);
+          } catch(e) {}
 
           onUpdateUser({ ...user, coupleId: commonId });
           alert("绑定成功！🎉");
