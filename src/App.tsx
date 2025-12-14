@@ -1344,7 +1344,7 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
     // --- 新增：加载情侣共享设置 (背景图和共享头像) ---
        if (user.coupleId) {
            const q = Bmob.Query('CoupleSettings');
-           q.equalTo('coupleId', user.coupleId);
+           q.equalTo('coupleId', String(user.coupleId));
            q.find().then((res: any) => {
                if (res.length > 0) {
                    const settings = res[0];
@@ -1388,7 +1388,7 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
 
           // 3. 保存到 Bmob 共享表
           const q = Bmob.Query('CoupleSettings');
-          q.equalTo('coupleId', user.coupleId);
+          q.equalTo('coupleId', String(user.coupleId));
           const res = await q.find();
 
           if (res.length > 0) {
