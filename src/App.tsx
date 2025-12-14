@@ -514,6 +514,8 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
 
   // 初始化：如果已绑定，获取对象信息
   useEffect(() => {
+      console.log("当前版本：v3.0 - 修复415专用版"); // 【关键】如果在控制台没看到这句话，说明你运行的还是旧代码！请重新打包/重启服务。
+
       if(!user || !user.objectId) return;
       
       // 1. 如果已绑定，获取另一半信息
@@ -525,34 +527,34 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           }
       }
       // 2. 显示已生成的口令（如果有）
-      // 【终极修复】读取全新字段 lover_key，去掉首字母 k 显示
-      if (user.lover_key) {
-          setMyCode(user.lover_key.substring(1));
+      // 【绝对修复】读取新字段 match_code
+      if (user.match_code) {
+          // 去掉前缀 'm_' 显示
+          setMyCode(user.match_code.replace('m_', ''));
       }
   }, [user]);
-
 // 生成口令（账号1操作）
   const generateCode = async () => {
       setLoading(true);
       try {
+          // 生成随机数
           const rawCode = Math.floor(100000 + Math.random() * 900000).toString();
-          // 【终极修复】强制加前缀 k，确保数据库 100% 识别为 String
-          const dbValue = 'k' + rawCode; 
+          // 【绝对修复】加前缀 m_，确保 Bmob 100% 识别为 String
+          const dbValue = 'm_' + rawCode; 
           
           const u = Bmob.Query('_User');
           const me = await u.get(user.objectId);
           
-          // 使用全新字段 lover_key，避开之前的脏数据
-          me.set('lover_key', dbValue);
+          // 使用全新字段 match_code，避开一切旧数据干扰
+          me.set('match_code', dbValue);
           await me.save();
           
           setMyCode(rawCode); // UI只显示数字
           // 更新本地状态
-          onUpdateUser({ ...user, lover_key: dbValue }); 
+          onUpdateUser({ ...user, match_code: dbValue }); 
           alert(`口令生成成功：${rawCode}\n请让另一半输入此口令绑定。`);
       } catch (e: any) {
-          console.error(e);
-          // 保留这个修复，防止 undefined
+          console.error("生成失败详情:", e);
           alert("生成失败: " + (e.error || e.message || JSON.stringify(e)));
       } finally {
           setLoading(false);
@@ -566,16 +568,17 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
       
       setLoading(true);
       try {
-          // 【终极修复】查询时加上前缀 k
-          const queryValue = 'k' + bindCode;
+          // 【绝对修复】查询时加上前缀 m_
+          const queryValue = 'm_' + bindCode;
+          console.log("正在查询绑定口令:", queryValue); // 调试日志
 
           const q = Bmob.Query('_User');
-          // 查询新字段 lover_key
-          q.equalTo('lover_key', queryValue);
+          // 查询全新字段 match_code
+          q.equalTo('match_code', queryValue);
           const users = await q.find();
 
           if (!users || users.length === 0) {
-              alert("找不到该口令，请确认对方已生成并未失效");
+              alert("找不到该口令，请确认：\n1. 对方已点击生成\n2. 对方没有刷新页面（刷新可能会丢失未保存的码）\n3. 你输入的数字完全正确");
               setLoading(false);
               return;
           }
@@ -590,17 +593,17 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           const u = Bmob.Query('_User');
           const me = await u.get(user.objectId);
           me.set('coupleId', commonId);
-          me.unset('lover_key'); // 清理新字段
+          me.unset('match_code'); // 清理新字段
           await me.save();
 
           // 4. 更新对方
           try {
              const t = await u.get(targetId);
              t.set('coupleId', commonId);
-             t.unset('lover_key'); // 清理新字段
+             t.unset('match_code'); // 清理新字段
              await t.save();
           } catch(err) {
-             console.log("尝试更新对方失败(权限问题)，对方需手动输入口令", err);
+             console.log("尝试更新对方失败(权限问题)", err);
           }
 
           onUpdateUser({ ...user, coupleId: commonId });
@@ -608,7 +611,7 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           window.location.reload(); 
 
       } catch (e: any) {
-          console.error(e);
+          console.error("绑定报错:", e);
           alert("绑定失败: " + (e.error || e.message || JSON.stringify(e)));
       } finally {
           setLoading(false);
