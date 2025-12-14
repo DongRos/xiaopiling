@@ -662,24 +662,21 @@ const handleUsernameChange = async () => {
 
 return (
     <div className="p-6 bg-gray-50 h-full overflow-y-auto pb-32 relative">
-       
-
        <div className="bg-white rounded-3xl p-6 text-center shadow-sm mb-6 relative overflow-hidden">
           {loading && <div className="absolute inset-0 bg-white/80 z-20 flex items-center justify-center"><Loader2 className="animate-spin text-rose-500"/></div>}
           
-          {/* 头像昵称区 */}
+          {/* 头像昵称区 (含小铅笔修复) */}
           <div className="relative inline-block group mb-2">
               <img src={user.avatarUrl || "https://cdn-icons-png.flaticon.com/512/4140/4140048.png"} className="w-24 h-24 rounded-full border-4 border-rose-100 object-cover mx-auto" />
-                      {/* ✅ 修复：找回小铅笔按钮 */}
               <label className="absolute bottom-0 right-0 bg-rose-500 text-white p-2 rounded-full cursor-pointer shadow-md hover:bg-rose-600 transition active:scale-90">
                   <Edit2 size={14} />
                   <input type="file" className="hidden" accept="image/*" onChange={handleAvatarChange} />
               </label>
-          </div>  
-            {/* 这里保留你的上传 input */}
           </div>
           <div className="text-2xl font-bold text-gray-800 cursor-pointer" onClick={handleNicknameChange}>{user.nickname || "点击设置昵称"}</div>
           <div className="text-sm text-gray-400 mt-1 cursor-pointer" onClick={handleUsernameChange}>账号: {user.username}</div>
+
+          {/* 常驻刷新按钮 */}
           <div className="flex justify-center mt-4">
               <button 
                 onClick={() => handleRefresh(true)} 
@@ -689,14 +686,22 @@ return (
                 刷新状态 / 消息
               </button>
           </div>
+
           <div className="mt-6 pt-6 border-t border-gray-100">
               {user.coupleId ? (
                   <div className="animate-in fade-in zoom-in duration-500">
                       <div className="inline-block bg-rose-50 text-rose-500 px-4 py-1 rounded-full text-xs font-bold mb-4">❤️ 恋爱中</div>
+                      
+                      {/* 另一半信息 */}
+                      <div className="flex items-center justify-center gap-4">
+                          <div className="text-center"><div className="w-12 h-12 bg-gray-100 rounded-full mb-1 overflow-hidden mx-auto">{partner?.avatarUrl ? <img src={partner.avatarUrl} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-xl">👤</div>}</div><div className="text-xs font-bold text-gray-700">{partner?.nickname || "另一半"}</div></div>
+                          <div className="text-rose-300"><Heart fill="currentColor" size={20} /></div>
+                          <div className="text-center"><div className="w-12 h-12 bg-gray-100 rounded-full mb-1 overflow-hidden mx-auto">{user.avatarUrl ? <img src={user.avatarUrl} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-xl">👤</div>}</div><div className="text-xs font-bold text-gray-700">我</div></div>
+                      </div>
 
-                    {/* ✅ 新增：解绑申请卡片 */}
+                      {/* 解绑申请卡片 */}
                       {disconnectRequest && (
-                          <div className="mb-6 p-4 bg-gray-50 rounded-2xl border-2 border-gray-200 animate-pulse text-left">
+                          <div className="mb-6 p-4 bg-gray-50 rounded-2xl border-2 border-gray-200 animate-pulse text-left mt-4">
                               <h3 className="text-gray-700 font-bold mb-2">💔 对方申请解除关系</h3>
                               <p className="text-xs text-gray-500 mb-3">如果同意，双方将恢复单身状态。</p>
                               <div className="flex gap-2">
@@ -705,20 +710,13 @@ return (
                               </div>
                           </div>
                       )}
-                    
-                      {/* 显示另一半信息的 UI 保持不变 */}
-                      <div className="flex items-center justify-center gap-4">
-                          <div className="text-center"><div className="w-12 h-12 bg-gray-100 rounded-full mb-1 overflow-hidden mx-auto">{partner?.avatarUrl ? <img src={partner.avatarUrl} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-xl">👤</div>}</div><div className="text-xs font-bold text-gray-700">{partner?.nickname || "另一半"}</div></div>
-                          <div className="text-rose-300"><Heart fill="currentColor" size={20} /></div>
-                          <div className="text-center"><div className="w-12 h-12 bg-gray-100 rounded-full mb-1 overflow-hidden mx-auto">{user.avatarUrl ? <img src={user.avatarUrl} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-xl">👤</div>}</div><div className="text-xs font-bold text-gray-700">我</div></div>
-                      </div>
+                      
                       <button onClick={handleRequestUnbind} className="mt-6 text-xs text-gray-400 underline hover:text-red-500">申请解除关系</button>
-                      </div>
-                  ) : (
+                  </div>
+              ) : (
                   <div>
                       <div className="inline-block bg-gray-100 text-gray-400 px-4 py-1 rounded-full text-xs font-bold mb-6">🐶 单身状态</div>
                       
-                      {/* [新增] 收到申请的提示卡片 */}
                       {incomingRequest && (
                         <div className="mb-6 p-4 bg-rose-50 rounded-2xl border-2 border-rose-200 animate-pulse">
                             <h3 className="text-rose-600 font-bold mb-2">💌 收到绑定申请！</h3>
@@ -733,12 +731,9 @@ return (
                               {myCode ? (
                                   <div className="text-center">
                                       <div className="text-xs text-gray-400 mb-1">把这个告诉 TA</div>
-                                      
                                       <div className="flex items-center justify-center gap-3 my-2">
                                           <div className="text-3xl font-black text-gray-800 tracking-widest select-all">{myCode}</div>
-                                
                                       </div>
-
                                       <div className="text-xs font-bold text-rose-400 mb-2">有效期: {timeLeft}</div>
                                       <button onClick={generateCode} className="text-xs text-gray-400 underline hover:text-rose-600">重新生成</button>
                                   </div>
@@ -762,7 +757,6 @@ return (
        <button onClick={onLogout} className="w-full bg-white text-red-500 py-4 rounded-3xl font-bold shadow-sm flex items-center justify-center gap-2"><LogOut size={20}/> 退出登录</button>
     </div>
   )
-}
 
 
 const ScannerMounter = ({onSuccess}: any) => {
