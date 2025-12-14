@@ -1442,10 +1442,10 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
       // 这样不仅能看到绑定后的数据，两人绑定前的“个人历史”也会按时间线合并在一起
       if (user.coupleId) {
           const ids = user.coupleId.split('_'); // user.coupleId 格式为 "id1_id2"
-          q.containedIn('author_id', ids);      // 查询作者是“我”或者“TA”的记录
+          q.containedIn('writer_id', ids);      // 查询作者是“我”或者“TA”的记录
       } else {
           // 单身状态，只查自己
-          q.equalTo('author_id', String(user.objectId)); 
+          q.equalTo('writer_id', String(user.objectId)); 
       }
       return q;
   };
@@ -1702,50 +1702,59 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                                                             }
                                                             if (target) target.value = ''; 
                                                         }}
-                                                           onTextPost={() => { setUploadType('text'); setUploadImages([]); setShowUploadModal(true); }} showUploadModal={showUploadModal} setShowUploadModal={setShowUploadModal} uploadImages={uploadImages} setUploadImages={setUploadImages} uploadCaption={uploadCaption} setUploadCaption={setUploadCaption} uploadType={uploadType} confirmUpload={async () => { 
-                     if((uploadType === 'media' && !uploadImages.length) || (uploadType === 'text' && !uploadCaption.trim())) return; // 构造新对象
-                    const newMemory = {
-                         media: uploadImages,
-                         caption: uploadCaption,
-                         date: getBeijingDateString(),
-                         type: uploadType,
-                         likes: 0,
-                         isLiked: false,
-                         comments: [],
-                         // --- 修复2：保存发布者信息 ---
-                         creatorId: user.objectId,
-                         creatorName: user.nickname || user.username, // 存入当时的昵称快照
-                         creatorAvatar: user.avatarUrl
-                    };
-            
-                    // 1. 先更新本地 UI (为了反应快)
-                    // 注意：本地暂时用 Date.now() 做 ID，刷新后会变成 Bmob 的 objectId
-                    setMemories([{ ...newMemory, id: Date.now().toString() } as any, ...memories]); 
-                    
-                    setShowUploadModal(false); 
-                    setUploadImages([]); 
-                    setUploadCaption(''); 
-                    setUploadType('media');
-            
-                    // 2. 同步保存到 Bmob 云端
-                    try {
-                        const q = Bmob.Query('Moments');
-                        q.set('images', uploadImages); 
-                        q.set('caption', uploadCaption);
-                        q.set('type', uploadType);
-                        // 【绝杀修复】写入新字段名
-                        q.set('author_id', String(user.objectId));
-                        q.set('creatorName', user.nickname || user.username);
-                        if (user.coupleId) {
-                            q.set('binding_id', String(user.coupleId));
-                        }
-                        await q.save();
-                        // 可以在这里重新 loadData() 确保 ID 同步，或者等待轮询自动同步
-                    } catch(e) {
-                        console.error("发布失败", e);
-                        alert("云端同步失败，请检查网络");
-                    }
-                }} coverUrl={momentsCover} onUpdateCover={(e: any) => updateCoupleSettings('cover', e)} momentsAvatar={momentsAvatar} onUpdateMomentsAvatar={(e: any) => updateCoupleSettings('avatar', e)}  onDeleteMemory={(id:string) => { if(confirm("删除?")) setMemories(memories.filter(m => m.id !== id)); }} momentsTitle={momentsTitle} setMomentsTitle={setMomentsTitle} avatarUrl={avatarUrl} setAvatarUrl={setAvatarUrl} setMomentsCover={setMomentsCover} />)}
+                                                           onTextPost={() => { setUploadType('text'); setUploadImages([]); setShowUploadModal(true); }} showUploadModal={showUploadModal} setShowUploadModal={setShowUploadModal} uploadImages={uploadImages} setUploadImages={setUploadImages} uploadCaption={uploadCaption} setUploadCaption={setUploadCaption} uploadType={uploadType} 
+                                                           confirmUpload={async () => { 
+                                                              if((uploadType === 'media' && !uploadImages.length) || (uploadType === 'text' && !uploadCaption.trim())) return;
+                                                              
+                                                              // 【修复1】检查图片是否还在上传中（防止存入 blob: 开头的无效本地地址）
+                                                              if (uploadType === 'media' && uploadImages.some((img: string) => img.startsWith('blob:'))) {
+                                                                  alert("图片正在拼命上传中...请稍等几秒后再点发布！");
+                                                                  return;
+                                                              }
+                                                          
+                                                              const newMemory = {
+                                                                   media: uploadImages,
+                                                                   caption: uploadCaption,
+                                                                   date: getBeijingDateString(),
+                                                                   type: uploadType,
+                                                                   likes: 0,
+                                                                   isLiked: false,
+                                                                   comments: [],
+                                                                   creatorId: user.objectId,
+                                                                   creatorName: user.nickname || user.username,
+                                                                   creatorAvatar: user.avatarUrl
+                                                              };
+                                                          
+                                                              // 1. 本地先显示
+                                                              setMemories([{ ...newMemory, id: Date.now().toString() } as any, ...memories]); 
+                                                              
+                                                              setShowUploadModal(false); 
+                                                              setUploadImages([]); 
+                                                              setUploadCaption(''); 
+                                                              setUploadType('media');
+                                                          
+                                                              // 2. 同步保存到 Bmob
+                                                              try {
+                                                                  const q = Bmob.Query('Moments');
+                                                                  q.set('images', uploadImages); 
+                                                                  q.set('caption', uploadCaption);
+                                                                  q.set('type', uploadType);
+                                                                  
+                                                                  // 【修复2】写入新字段 writer_id，确保一定是 String 类型
+                                                                  q.set('writer_id', String(user.objectId));
+                                                                  
+                                                                  q.set('creatorName', user.nickname || user.username);
+                                                                  if (user.coupleId) {
+                                                                      q.set('binding_id', String(user.coupleId));
+                                                                  }
+                                                                  await q.save();
+                                                                  console.log("发布成功，已保存到云端");
+                                                              } catch(e: any) {
+                                                                  console.error("发布失败", e);
+                                                                  // 如果失败，最好弹窗告诉用户
+                                                                  alert("云端保存失败: " + (e.error || e.message) + "\n请检查网络或刷新页面");
+                                                              }
+                                                          }} coverUrl={momentsCover} onUpdateCover={(e: any) => updateCoupleSettings('cover', e)} momentsAvatar={momentsAvatar} onUpdateMomentsAvatar={(e: any) => updateCoupleSettings('avatar', e)}  onDeleteMemory={(id:string) => { if(confirm("删除?")) setMemories(memories.filter(m => m.id !== id)); }} momentsTitle={momentsTitle} setMomentsTitle={setMomentsTitle} avatarUrl={avatarUrl} setAvatarUrl={setAvatarUrl} setMomentsCover={setMomentsCover} />)}
                        {activePage === Page.CYCLE && <CycleViewContent 
                            periods={periods} 
                            nextPeriod={calculateNextPeriod()} 
