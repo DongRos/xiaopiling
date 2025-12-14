@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 // --- 新增引用开始 ---
-import Bmob, { uploadFile } from './services/bmob'; // 引入Bmob
+import AV, { uploadFile } from './services/leancloud'; // [修改] 引入LeanCloud
 import { QRCodeSVG } from 'qrcode.react';           // 引入二维码
 import { Html5QrcodeScanner } from 'html5-qrcode';  // 引入扫码
 // --- 新增引用结束 ---
@@ -22,151 +22,11 @@ import pailideIcon from './pailide.png';
 const safeUpload = async (file: File) => {
   Bmob.debug(true);
 
-  const uploadTask = async () => {
-      const ext = file.name.split('.').pop() || 'jpg';
-      const cleanName = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-      const fileData = new File([file], cleanName, { type: file.type || 'image/jpeg' });
-
-      console.log(`Step 1: 准备上传 ${cleanName}, 大小: ${(file.size / 1024).toFixed(2)}KB`);
-
-      const params = Bmob.File(cleanName, fileData);
-
-      console.log("Step 2: 开始发送网络请求...");
-      const res: any = await params.save();
-      console.log("Step 3: Bmob响应:", res);
-
-      // 【核心修复1】解析 URL 优先
-      // 只要能拿到 URL，哪怕有错误码(如10007)也视为成功，防止误报
-      let finalUrl = "";
-      if (typeof res === 'string') {
-           try { finalUrl = JSON.parse(res).url; } catch(e) { finalUrl = res; }
-      } else if (Array.isArray(res) && res.length > 0) {
-           finalUrl = res[0].url;
-      } else if (res && typeof res === 'object') {
-           finalUrl = res.url;
-      }
-
-      // 只有在真的拿不到 URL 时，才检查错误码
-      if (!finalUrl && res && res.code && res.code !== 200) {
-          // 忽略 10007 错误，因为用户反馈实际上后台有数据
-          if (res.code === 10007) {
-             console.warn("忽略Bmob域名警告(10007)，尝试继续");
-             // 如果Bmob只返回错误没返回URL，这里确实没法显示，但至少不弹窗报错
-             // 这里尝试构造一个假URL防止后续崩溃，或者抛出一个温和的警告
-             // 实际上如果能看到图，说明 finalUrl 应该是有值的，可能是解析路径漏了
-          } else {
-             throw new Error(`Bmob上传失败: ${res.error} (${res.code})`);
-          }
-      }
-
-      // 【核心修复2】强制 HTTPS
-      if (finalUrl && finalUrl.startsWith('http://')) {
-          finalUrl = finalUrl.replace('http://', 'https://');
-      }
-
-      if (!finalUrl) {
-          // 如果真的没拿到URL，但也别直接报错让用户恐慌，返回一个空字符串或日志
-          console.warn("上传完成但未获取到直链，可能是域名问题");
-          return ""; // 返回空字符串，让UI层自己处理
-      }
-      return finalUrl;
-  };
-
-  // 【核心修复3】超时延长到 3分钟 (180秒)
-  const timeoutTask = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error("网络请求超时(180s)，请检查网络连接")), 180000)
-  );
-
-  try {
-      return await Promise.race([uploadTask(), timeoutTask]);
-  } catch (e) {
-      console.error("safeUpload 异常:", e);
-      // 【修复】注释掉超时抛错，防止弹窗。即使超时也返回空，让流程继续。
-      // if ((e as Error).message.includes('超时')) throw e; 
-      console.warn("上传请求超时，但后台可能已接收");
-      return ""; 
-  }
-};
-
-
-
-// --- 专门用于头像上传 (绕过 Bmob 文件域名限制) ---
-// 原理：将图片死循环压缩到 30KB 以内，转为 Base64 文本直接存入 User 表
-const uploadAvatar = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    // 1. 初始检查
-    if (file.size > 10 * 1024 * 1024) {
-      reject(new Error("头像太大了，请选择 10MB 以内的图片"));
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    
-    reader.onload = (e) => {
-      const img = new Image();
-      img.src = e.target?.result as string;
-      
-      img.onload = () => {
-        // 初始参数：头像不需要太大，300px 足够了
-        let quality = 0.6; 
-        let maxSize = 300; 
-        let compressedDataUrl = "";
-        
-        // 创建 Canvas
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        if (!ctx) { resolve(img.src); return; }
-
-        // --- 核心：死循环压缩逻辑 ---
-        // 最多尝试 6 次，确保体积压到 30KB 以下 (Bmob 免费数据库字段限制约为 40KB)
-        for (let i = 0; i < 6; i++) {
-            let width = img.width;
-            let height = img.height;
-            
-            // 计算尺寸
-            if (width > height) {
-                if (width > maxSize) { height *= maxSize / width; width = maxSize; }
-            } else {
-                if (height > maxSize) { width *= maxSize / height; height = maxSize; }
-            }
-            
-            canvas.width = width;
-            canvas.height = height;
-            
-            // 铺白底 (防止 PNG 透明变黑)
-            ctx.fillStyle = '#FFFFFF';
-            ctx.fillRect(0, 0, width, height);
-            ctx.drawImage(img, 0, 0, width, height);
-            
-            // 导出
-            compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
-            const sizeKB = compressedDataUrl.length / 1024;
-            
-            console.log(`头像压缩尝试 ${i+1}: ${Math.floor(width)}x${Math.floor(height)}, 质量${quality.toFixed(1)}, 大小${sizeKB.toFixed(2)}KB`);
-
-            // 如果小于 32KB，成功退出
-            if (sizeKB < 32) {
-                break;
-            }
-
-            // 否则继续阉割：尺寸缩小 20%，质量降低
-            maxSize *= 0.8; 
-            quality -= 0.1; 
-            if (quality < 0.1) quality = 0.1;
-        }
-
-        // 最终检查
-        if (compressedDataUrl.length > 39 * 1024) {
-             reject(new Error("图片太复杂无法压缩，请换一张简单的图片"));
-        } else {
-             resolve(compressedDataUrl);
-        }
-      };
-      img.onerror = () => reject(new Error("图片加载失败"));
-    };
-    reader.onerror = () => reject(new Error("读取文件失败"));
-  });
+// [新增] LeanCloud 时间格式化辅助函数
+const formatDate = (date: any) => {
+    if (!date) return getBeijingDateString();
+    if (date instanceof Date) return date.toISOString().slice(0, 10);
+    return String(date).slice(0, 10);
 };
 
 
@@ -468,21 +328,26 @@ const AuthPage = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
       if (isLogin) {
-        await Bmob.User.login(username, password);
+        await AV.User.logIn(username, password); // [修改] LeanCloud 登录
         window.location.reload();
       } else {
-        const params = { username, password, avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}` };
-        await Bmob.User.register(params);
+        // [修改] LeanCloud 注册
+        const user = new AV.User();
+        user.setUsername(username);
+        user.setPassword(password);
+        user.set('avatarUrl', `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}`);
+        await user.signUp();
+        
         alert('注册成功，请登录');
         setIsLogin(true);
       }
     } catch (err: any) {
-      alert('操作失败: ' + (err.error || err.message));
+      alert('操作失败: ' + (err.rawMessage || err.message));
     } finally {
       setLoading(false);
     }
@@ -523,7 +388,8 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           const ids = user.coupleId.split('_');
           const partnerId = ids.find((id:string) => id !== user.objectId);
           if (partnerId) {
-              Bmob.Query('_User').get(partnerId).then(setPartner).catch(() => {});
+              // [修改] LeanCloud 查询写法，需 .toJSON()
+              new AV.Query('_User').get(partnerId).then(p => setPartner(p.toJSON())).catch(() => {});
           }
       }
       // 2. 显示已生成的口令（如果有）
@@ -541,16 +407,15 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           // 只要包含字母，Bmob 100% 只能创建 String 类型的列，杜绝 415 错误
           const safeDbValue = 'invite_' + rawCode;
 
-          // 2. 存入全新表 CoupleConnection
-          const bindingQuery = Bmob.Query('CoupleConnection');
-          bindingQuery.set('passcode', safeDbValue); // 字段名 passcode, 值 invite_xxxxxx
-          bindingQuery.set('hostId', user.objectId);
-          await bindingQuery.save();
+         // 2. [修改] LeanCloud 创建新对象使用 new AV.Object
+          const binding = new AV.Object('CoupleConnection');
+          binding.set('passcode', safeDbValue);
+          binding.set('hostId', user.objectId);
+          await binding.save();
 
-          // 3. 仅更新 User 表用于前端展示（只存纯数字用于显示）
+          // 3. [修改] 更新当前用户
           try {
-            const u = Bmob.Query('_User');
-            const me = await u.get(user.objectId);
+            const me = AV.User.current();
             me.set('display_code', rawCode);
             await me.save();
           } catch(err) {
@@ -578,9 +443,9 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           const queryValue = 'invite_' + bindCode;
           console.log("正在查询 CoupleConnection 表:", queryValue); 
 
-          // 查询全新表
-          const q = Bmob.Query('CoupleConnection');
-          q.equalTo('passcode', queryValue); // 查字符串 invite_xxxxxx
+          // [修改] LeanCloud 查询
+          const q = new AV.Query('CoupleConnection');
+          q.equalTo('passcode', queryValue); 
           const results = await q.find();
 
           if (!results || results.length === 0) {
@@ -590,7 +455,7 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           }
 
           const entry = results[0];
-          const targetId = entry.hostId;
+          const targetId = entry.get('hostId'); // [修改] LeanCloud 取属性用 .get()
           
           if (!targetId) {
              alert("数据异常：找不到发起人ID");
@@ -602,8 +467,7 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           const commonId = `${ids[0]}_${ids[1]}`;
 
           // 更新自己
-          const u = Bmob.Query('_User');
-          const me = await u.get(user.objectId);
+          const me = AV.User.current();
           me.set('coupleId', commonId);
           me.unset('display_code'); 
           await me.save();
@@ -620,8 +484,7 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
           
           // 删除用过的口令
           try {
-             const binder = Bmob.Query('CoupleConnection');
-             binder.destroy(entry.objectId);
+             await entry.destroy();
           } catch(e) {}
 
           onUpdateUser({ ...user, coupleId: commonId });
@@ -669,13 +532,12 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
 
     setLoading(true);
     try {
-      // 1. 使用前文定义的 uploadAvatar (转Base64) 或 safeUpload (转URL)
-      // 这里建议用 uploadAvatar 配合 User 表，避免跨域问题
-      const url = await uploadAvatar(file);
+      // 1. [修改] 使用 LeanCloud 上传
+      const url = await uploadFile(file);
+      if(!url) throw new Error("上传失败");
       
-      // 2. 更新 Bmob 用户表
-      const u = Bmob.Query('_User');
-      const me = await u.get(user.objectId);
+      // 2. [修改] 更新当前用户
+      const me = AV.User.current();
       me.set('avatarUrl', url);
       await me.save();
 
@@ -1433,19 +1295,14 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
   
   // ================= Bmob 云端数据加载逻辑 (开始) =================
 
-// 1. 定义查询辅助函数
-  const getQuery = (tableName: string) => {
-      const q = Bmob.Query(tableName);
-      
-      // 【核心修改】实现情侣数据共享 & 历史数据合并
-      // 如果已绑定情侣，查询 author_id 在 [我, TA] 列表中的所有数据
-      // 这样不仅能看到绑定后的数据，两人绑定前的“个人历史”也会按时间线合并在一起
+// [修改] LeanCloud 查询辅助函数
+  const getQuery = (className: string) => {
+      const q = new AV.Query(className); 
       if (user.coupleId) {
-          const ids = user.coupleId.split('_'); // user.coupleId 格式为 "id1_id2"
-          q.containedIn('writer_id', ids);      // 查询作者是“我”或者“TA”的记录
+          const ids = user.coupleId.split('_'); 
+          q.containedIn('writer_id', ids);      
       } else {
-          // 单身状态，只查自己
-          q.equalTo('writer_id', String(user.objectId)); 
+          q.equalTo('writer_id', user.objectId); 
       }
       return q;
   };
@@ -1462,18 +1319,20 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
        // --- 1. 加载朋友圈 (Moments) ---
        const momentsQuery = safeFind('Moments');
        if (momentsQuery) {
-           // 修改后 (增加 creatorId 的 fallback 映射)
-          momentsQuery.order('-createdAt').find().then((res: any) => {
-             setMemories(res.map((m: any) => ({
-                 ...m, 
-                 id: m.objectId, 
-                 date: m.createdAt ? m.createdAt.slice(0, 10) : getBeijingDateString(), 
-                 media: m.images || [], 
-                 comments: m.comments || [],
-                 // [新增] 优先取 creatorId，如果没存(旧数据)则取 writer_id，确保显示发布者时不为空
-                 creatorId: m.creatorId || m.writer_id 
-             })));
-          }).catch((e: any) => console.warn("加载Moments失败", e));
+           // [修改] .descending 排序，处理 toJSON 和日期格式
+           momentsQuery.descending('createdAt').find().then((res: any[]) => {
+               setMemories(res.map((item: any) => {
+                   const m = item.toJSON();
+                   return {
+                       ...m, 
+                       id: item.id, // LeanCloud ID
+                       date: formatDate(item.createdAt), // [修复] 格式化时间
+                       media: m.images || [], 
+                       comments: m.comments || [],
+                       creatorId: m.creatorId || m.writer_id // [修复] 优先读 creatorId
+                   };
+               }));
+           }).catch((e: any) => console.warn("加载Moments失败", e));
        }
 
        // --- 2. 加载相册 (Album) ---
@@ -1685,30 +1544,27 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                                                                 setUploadType('media');
                                                                 setShowUploadModal(true); // 立即弹窗
                                                         
-                                                                for (const file of files) {
-                                                                    // 1. 立即显示本地预览图 (不用等上传)
-                                                                    const localUrl = URL.createObjectURL(file);
-                                                                    setUploadImages((prev: string[]) => [...prev, localUrl]);
-                                                        
-                                                                    
-                                                                    safeUpload(file).then(serverUrl => {
-                                                                        if (serverUrl) {
-                                                                            console.log("图片上传完成:", serverUrl);
-                                                                            setUploadImages((prev: string[]) => 
-                                                                                prev.map(url => url === localUrl ? serverUrl : url)
-                                                                            );
-                                                                        } else {
-                                                                            // [修复] 如果返回空字符串(失败)，从数组中移除这个 blob 地址，防止卡死
-                                                                            console.warn("图片上传失败，移除占位符");
-                                                                            setUploadImages((prev: string[]) => prev.filter(url => url !== localUrl));
-                                                                            alert(`图片 ${file.name} 上传失败，请重试`);
-                                                                        }
-                                                                    }).catch(err => {
-                                                                        console.error("图片上传异常", err);
-                                                                        // [修复] 发生异常也要移除
-                                                                        setUploadImages((prev: string[]) => prev.filter(url => url !== localUrl));
-                                                                    });
-                                                                }
+                                                                // ... (LeanCloud 版本逻辑)
+                                                                  for (const file of files) {
+                                                                      const localUrl = URL.createObjectURL(file);
+                                                                      setUploadImages((prev: string[]) => [...prev, localUrl]);
+                                                          
+                                                                      // [修改] 调用 uploadFile 并处理失败情况
+                                                                      uploadFile(file).then(serverUrl => {
+                                                                          if (serverUrl) {
+                                                                              setUploadImages((prev: string[]) => 
+                                                                                  prev.map(url => url === localUrl ? serverUrl : url)
+                                                                              );
+                                                                          } else {
+                                                                              // [修复] 失败时移除占位符，防止卡死
+                                                                              alert('上传失败，已从列表中移除');
+                                                                              setUploadImages((prev: string[]) => prev.filter(url => url !== localUrl));
+                                                                          }
+                                                                      }).catch(err => {
+                                                                          console.error("上传异常", err);
+                                                                          setUploadImages((prev: string[]) => prev.filter(url => url !== localUrl));
+                                                                      });
+                                                                  }
                                                             }
                                                             if (target) target.value = ''; 
                                                         }}
@@ -1743,24 +1599,21 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                                                               setUploadCaption(''); 
                                                               setUploadType('media');
                                                           
-                                                              // 2. 同步保存到 Bmob
-                                                              try {
-                                                                  const q = Bmob.Query('Moments');
-                                                                  q.set('images', uploadImages); 
-                                                                  q.set('caption', uploadCaption);
-                                                                  
-                                                                  q.set('type', uploadType);
-                                                                  
-                                                                  // 【修复2】写入新字段 writer_id，确保一定是 String 类型
-                                                                  q.set('writer_id', String(user.objectId));
-                                                                  // [新增] 同时也写入 creatorId，与你的 types.ts 定义保持一致，方便前端读取
-                                                                  q.set('creatorId', String(user.objectId)); 
-                                                                  
-                                                                  q.set('creatorName', user.nickname || user.username);
-                                                                  if (user.coupleId) {
-                                                                      q.set('binding_id', String(user.coupleId));
-                                                                  }
-                                                                  await q.save();
+                                                              // 2. [修改] 同步保存到 LeanCloud
+                                                                  try {
+                                                                      const m = new AV.Object('Moments'); // [修改] 创建对象
+                                                                      m.set('images', uploadImages); 
+                                                                      m.set('caption', uploadCaption);
+                                                                      m.set('type', uploadType);
+                                                                      
+                                                                      m.set('writer_id', user.objectId);
+                                                                      m.set('creatorId', user.objectId); // [修复] 显式写入 creatorId
+                                                                      
+                                                                      m.set('creatorName', user.nickname || user.username);
+                                                                      if (user.coupleId) {
+                                                                          m.set('binding_id', user.coupleId);
+                                                                      }
+                                                                      await m.save();
                                                                   console.log("发布成功，已保存到云端");
                                                               } catch(e: any) {
                                                                   console.error("发布失败", e);
@@ -1804,32 +1657,27 @@ export default function App() {
 
   useEffect(() => {
     const checkUser = async () => {
-        const current = Bmob.User.current();
-        if (current) {
-            try {
-                // 【关键】强制从服务器拉取最新用户信息
-                // 防止本地缓存没有 coupleId，导致绑定状态不同步
-                const q = Bmob.Query('_User');
-                const freshUser = await q.get(current.objectId);
-                setUser(freshUser);
-            } catch (e) {
-                console.warn("同步用户信息失败，强制重新登录以获取最新数据", e);
-                // 【修复】移除 setUser(current)，如果后端获取失败，则视为未登录/Token失效
-                // 这样能保证只要进去了，就一定是最新的后端数据
-                Bmob.User.logout();
-                setUser(null);
+            const current = AV.User.current(); // [修改] LeanCloud 获取用户
+            if (current) {
+                try {
+                    // [修改] fetch() 拉取最新数据
+                    const freshUser = await current.fetch();
+                    setUser(freshUser.toJSON()); // [修改] 转 JSON
+                } catch (e) {
+                    AV.User.logOut();
+                    setUser(null);
+                }
             }
-        }
-        setLoading(false);
-    };
+            setLoading(false);
+        };
     checkUser();
   }, []);;
 
   // 新增：处理退出登录，必须手动 setUser(null) 才会切回登录页
   const handleLogout = () => {
-      Bmob.User.logout();
-      setUser(null);
-  };
+        AV.User.logOut(); // [修改] 登出
+        setUser(null);
+    };
 
   if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-rose-500"/></div>;
 
