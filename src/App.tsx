@@ -1646,7 +1646,7 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
       <Navbar active={activePage} setPage={navigateTo} />
     </div>
   );
-}
+};  
 
 
 
