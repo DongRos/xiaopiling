@@ -1435,29 +1435,31 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
 
 // 1. 定义查询辅助函数
   const getQuery = (tableName: string) => {
-          const q = Bmob.Query(tableName);
-          // 【绝杀修复】全部换新字段名，避开 Bmob 缓存的类型错误
-          if (user.coupleId) {
-              q.equalTo('binding_id', String(user.coupleId)); 
-          } else {
-              q.equalTo('author_id', String(user.objectId)); 
-          }
-          return q;
-      };
+      const q = Bmob.Query(tableName);
+      
+      // 【核心修改】实现情侣数据共享 & 历史数据合并
+      // 如果已绑定情侣，查询 author_id 在 [我, TA] 列表中的所有数据
+      // 这样不仅能看到绑定后的数据，两人绑定前的“个人历史”也会按时间线合并在一起
+      if (user.coupleId) {
+          const ids = user.coupleId.split('_'); // user.coupleId 格式为 "id1_id2"
+          q.containedIn('author_id', ids);      // 查询作者是“我”或者“TA”的记录
+      } else {
+          // 单身状态，只查自己
+          q.equalTo('author_id', String(user.objectId)); 
+      }
+      return q;
+  };
   useEffect(() => {
     // 设置头像 (从登录用户数据中获取)
     if (user.avatarUrl) setAvatarUrl(user.avatarUrl);
 
     // 定义加载数据的异步函数
     const loadData = async () => {
-       // 辅助函数：安全查询，防止报错卡死
        const safeFind = (table: string) => {
-           try {
-               return getQuery(table);
-           } catch(e) { return null; }
+           try { return getQuery(table); } catch(e) { return null; }
        };
 
-       // --- 加载朋友圈 (Memory) ---
+       // --- 1. 加载朋友圈 (Moments) ---
        const momentsQuery = safeFind('Moments');
        if (momentsQuery) {
            momentsQuery.order('-createdAt').find().then((res: any) => {
@@ -1471,60 +1473,54 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
            }).catch((e: any) => console.warn("加载Moments失败", e));
        }
 
-       // --- 加载相册 (Album) ---
+       // --- 2. 加载相册 (Album) ---
        safeFind('Album')?.order('-createdAt').find().then((res: any) => {
             setAlbums(res.map((a: any) => ({ ...a, id: a.objectId })));
        }).catch(e => console.warn("加载Album失败", e));
 
-       // --- 加载留言板 (Message) ---
-       safeFind('Message')?.order('-createdAt').find().then((res: any) => 
-           setMessages(res.map((m: any) => ({...m, id: m.objectId})))
-       ).catch(e => console.warn("加载Message失败", e));
-
-       // --- 加载首页照片墙 (PinnedPhoto) ---
-       safeFind('PinnedPhoto')?.find().then((res:any) => 
-           setPinnedPhotos(res.map((p:any)=>({...p, id: p.objectId})))
-       ).catch(e => console.warn("加载PinnedPhoto失败", e));
-
-       // --- 加载经期 (Period) ---
-       safeFind('Period')?.find().then((res:any) => setPeriods(res))
-         .catch(e => console.warn("加载Period失败", e));
-
-       // --- 加载冲突记录 (Conflict) ---
-       safeFind('Conflict')?.order('-createdAt').find().then((res:any) => 
-           setConflicts(res.map((c:any)=>({...c, id: c.objectId})))
-       ).catch(e => console.warn("加载Conflict失败", e));
-
-       // --- 加载待办 (Todo) ---
-       safeFind('Todo')?.find().then((res:any) => 
-           setTodos(res.map((t:any)=>({...t, id: t.objectId})))
-       ).catch(e => console.warn("加载Todo失败", e));
-    };
-
-
-    // --- 新增：加载情侣共享设置 (背景图和共享头像) ---
+       // --- 3. 加载情侣共享设置 (背景图和共享头像) - 放入轮询实现实时同步 ---
        if (user.coupleId) {
-           // 【修复】增加 try-catch 包裹，防止 equalTo 同步报错导致白屏
            try {
                const q = Bmob.Query('CoupleSettings');
                q.equalTo('coupleId', String(user.coupleId));
                q.find().then((res: any) => {
                    if (res.length > 0) {
                        const settings = res[0];
+                       // 自动更新本地显示的背景和头像
                        if (settings.coverUrl) setMomentsCover(settings.coverUrl);
                        if (settings.avatarUrl) setMomentsAvatar(settings.avatarUrl);
                    }
-               }).catch(e => console.log("加载CoupleSettings失败(可能是新用户未创建)", e));
+               });
            } catch (err) {
-               console.warn("CoupleSettings查询构造失败，已忽略错误防止白屏:", err);
+               console.warn("同步共享设置失败", err);
            }
        }
-    
-    
+
+       // --- 4. 加载其他数据 (保持不变) ---
+       safeFind('Message')?.order('-createdAt').find().then((res: any) => 
+           setMessages(res.map((m: any) => ({...m, id: m.objectId})))
+       ).catch(e => console.warn("加载Message失败", e));
+
+       safeFind('PinnedPhoto')?.find().then((res:any) => 
+           setPinnedPhotos(res.map((p:any)=>({...p, id: p.objectId})))
+       ).catch(e => console.warn("加载PinnedPhoto失败", e));
+
+       safeFind('Period')?.find().then((res:any) => setPeriods(res))
+         .catch(e => console.warn("加载Period失败", e));
+
+       safeFind('Conflict')?.order('-createdAt').find().then((res:any) => 
+           setConflicts(res.map((c:any)=>({...c, id: c.objectId})))
+       ).catch(e => console.warn("加载Conflict失败", e));
+
+       safeFind('Todo')?.find().then((res:any) => 
+           setTodos(res.map((t:any)=>({...t, id: t.objectId})))
+       ).catch(e => console.warn("加载Todo失败", e));
+    };
+
     // 1. 立即执行一次加载
     loadData();
     
-    // 2. 开启轮询：每5秒自动同步一次 (实现简单的实时效果)
+    // 2. 开启轮询：每5秒自动同步一次 (实现自动拉取最新数据)
     const timer = setInterval(loadData, 5000);
 
     // 页面销毁时清除定时器
