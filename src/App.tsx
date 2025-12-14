@@ -608,12 +608,17 @@ const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const ids = [user.objectId, partnerId].sort();
       const commonId = `${ids[0]}_${ids[1]}`;
       const q = Bmob.Query('_User');
-      q.set('id', user.objectId);
-      q.set('coupleId', commonId);
-      await q.save();
-      alert(`绑定成功! 请重启APP生效`);
+      // 1. 先获取最新对象
+      const u = await q.get(user.objectId);
+      // 2. 设置 coupleId
+      u.set('coupleId', commonId);
+      await u.save();
+      
+      // 3. 【关键】手动更新本地 user 状态，无需重启
+      onUpdateUser({ ...user, coupleId: commonId });
+      
+      alert(`绑定成功!`);
       setShowScanner(false);
-      window.location.reload();
     }
   };
 
@@ -1292,15 +1297,18 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
        };
 
        // --- 加载朋友圈 (Memory) ---
-       safeFind('Moments')?.order('-createdAt').find().then((res: any) => {
-           setMemories(res.map((m: any) => ({
-               ...m, 
-               id: m.objectId, 
-               date: m.createdAt ? m.createdAt.slice(0, 10) : getBeijingDateString(), 
-               media: m.images || [], 
-               comments: m.comments || [] 
-           })));
-       }).catch(e => console.warn("加载Moments失败", e));
+       const momentsQuery = safeFind('Moments');
+       if (momentsQuery) {
+           momentsQuery.order('-createdAt').find().then((res: any) => {
+               setMemories(res.map((m: any) => ({
+                   ...m, 
+                   id: m.objectId, 
+                   date: m.createdAt ? m.createdAt.slice(0, 10) : getBeijingDateString(), 
+                   media: m.images || [], 
+                   comments: m.comments || [] 
+               })));
+           }).catch((e: any) => console.warn("加载Moments失败", e));
+       }
 
        // --- 加载相册 (Album) ---
        safeFind('Album')?.order('-createdAt').find().then((res: any) => {
@@ -1606,12 +1614,24 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const current = Bmob.User.current();
-    if (current) {
-        setUser(current);
-    }
-    setLoading(false);
-  }, []);
+    const checkUser = async () => {
+        const current = Bmob.User.current();
+        if (current) {
+            try {
+                // 【关键】强制从服务器拉取最新用户信息
+                // 防止本地缓存没有 coupleId，导致绑定状态不同步
+                const q = Bmob.Query('_User');
+                const freshUser = await q.get(current.objectId);
+                setUser(freshUser);
+            } catch (e) {
+                console.warn("同步用户信息失败，使用本地缓存", e);
+                setUser(current);
+            }
+        }
+        setLoading(false);
+    };
+    checkUser();
+  }, []);;
 
   // 新增：处理退出登录，必须手动 setUser(null) 才会切回登录页
   const handleLogout = () => {
