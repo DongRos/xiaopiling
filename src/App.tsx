@@ -431,15 +431,6 @@ useEffect(() => {
           checkNewRequests();
       }
 
-          // 检查是否有 Guest 申请
-          const q = new AV.Query('CoupleConnection');
-          q.equalTo('hostId', user.objectId);
-          q.exists('guestId'); 
-          q.notEqualTo('status', 'connected'); // 排除已连接的
-          q.find().then(res => {
-              if (res.length > 0) setIncomingRequest({ id: res[0].id, guestId: res[0].get('guestId') });
-          });
-      }
 
       // 逻辑B: 如果我是申请方 (Guest)，检查对方是否同意
       if (!user.coupleId) {
