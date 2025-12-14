@@ -1484,7 +1484,28 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
             setAlbums(res.map((a: any) => ({ ...a.toJSON(), id: a.objectId }))); 
        }).catch(e => console.warn("加载Album失败", e));
 
-       // ... (CoupleSettings 部分保持不变) ...
+      // --- 3. [修复] 加载情侣共享设置 (Bmob -> LeanCloud) ---
+       if (user.coupleId) {
+           // 3. 保存到 LeanCloud 共享表
+          try {
+              const q = new AV.Query('CoupleSettings');
+              q.equalTo('coupleId', String(user.coupleId));
+              const res = await q.find();
+
+              if (res.length > 0) {
+                  const item = res[0]; // res[0] 已经是 AV.Object，直接操作
+                  item.set(type === 'cover' ? 'coverUrl' : 'avatarUrl', url);
+                  await item.save();
+              } else {
+                  const qNew = new AV.Object('CoupleSettings');
+                  qNew.set('coupleId', String(user.coupleId));
+                  qNew.set(type === 'cover' ? 'coverUrl' : 'avatarUrl', url);
+                  await qNew.save();
+              }
+          } catch (e) {
+              console.error("同步共享设置失败:", e);
+          }
+       }
 
        // --- 4. 加载其他数据 ---
        safeFind('Message')?.order('-createdAt').find().then((res: any) => 
@@ -1511,7 +1532,7 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
            // 修改：添加 .toJSON()
            setTodos(res.map((t:any)=>({...t.toJSON(), id: t.objectId}))) 
        ).catch(e => console.warn("加载Todo失败", e));
-
+    };
     // 1. 立即执行一次加载
     loadData();
     
