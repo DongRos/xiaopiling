@@ -68,6 +68,9 @@ const ImageViewer = ({ images, initialIndex, onClose, actions }: { images: strin
   const initialDistance = useRef<number | null>(null);
   const initialScale = useRef<number>(1);
 
+
+  if (!images || images.length === 0) return null;
+  
   // ✅ 修复：如果数据异常，直接不渲染
   if (!images || images.length === 0 || !images[index]) return null;
   const currentSrc = images[index];
@@ -667,7 +670,13 @@ return (
           {/* 头像昵称区 */}
           <div className="relative inline-block group mb-2">
               <img src={user.avatarUrl || "https://cdn-icons-png.flaticon.com/512/4140/4140048.png"} className="w-24 h-24 rounded-full border-4 border-rose-100 object-cover mx-auto" />
-              {/* 这里保留你的上传 input */}
+                      {/* ✅ 修复：找回小铅笔按钮 */}
+              <label className="absolute bottom-0 right-0 bg-rose-500 text-white p-2 rounded-full cursor-pointer shadow-md hover:bg-rose-600 transition active:scale-90">
+                  <Edit2 size={14} />
+                  <input type="file" className="hidden" accept="image/*" onChange={handleAvatarChange} />
+              </label>
+          </div>  
+            {/* 这里保留你的上传 input */}
           </div>
           <div className="text-2xl font-bold text-gray-800 cursor-pointer" onClick={handleNicknameChange}>{user.nickname || "点击设置昵称"}</div>
           <div className="text-sm text-gray-400 mt-1 cursor-pointer" onClick={handleUsernameChange}>账号: {user.username}</div>
@@ -727,14 +736,7 @@ return (
                                       
                                       <div className="flex items-center justify-center gap-3 my-2">
                                           <div className="text-3xl font-black text-gray-800 tracking-widest select-all">{myCode}</div>
-                                          {/* [新增] 方形圆角刷新按钮 */}
-                                          <button 
-                                            onClick={() => checkNewRequests(true)} 
-                                            className="w-10 h-10 bg-rose-50 text-rose-500 rounded-xl flex items-center justify-center shadow-sm border border-rose-100 hover:bg-rose-100 active:scale-95 transition"
-                                            title="刷新申请消息"
-                                          >
-                                            <RefreshCw size={18} />
-                                          </button>
+                                
                                       </div>
 
                                       <div className="text-xs font-bold text-rose-400 mb-2">有效期: {timeLeft}</div>
@@ -1020,31 +1022,45 @@ const MemoriesViewContent = ({
 
       <div className="px-4 pb-10 max-w-2xl mx-auto min-h-[50vh] bg-white">
           {activeTab === 'moments' ? (
-              <div className="space-y-8">
-                  {(memories || []).map((memory: Memory) => (
-                      <div key={memory.id} className="flex gap-3 pb-6 border-b border-gray-50 last:border-0">
-                          <div className="w-10 h-10 rounded-lg bg-rose-100 overflow-hidden shrink-0 cursor-pointer" onClick={() => handleListAvatarClick(memory.creatorAvatar)}>
-                              {memory.creatorAvatar ? <img src={memory.creatorAvatar} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xl">👤</div>}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                              <h4 className="font-bold text-gray-800 font-cute text-sm mb-1 text-blue-900">
-                                  {/* 如果创建者ID等于当前用户ID，显示当前用户的最新昵称(或用户名)，否则显示存下来的创建者名字 */}
-                                  {memory.creatorId === user.objectId 
-                                    ? (user.nickname || user.username) 
-                                    : (memory.creatorName || 'Ta')}
-                              </h4>
-                              <p className="mb-2 text-gray-800 text-sm leading-relaxed">{memory.caption}</p>
-                              {memory.type === 'media' && memory.media.length > 0 && (<div className={`grid gap-1 mb-2 max-w-[80%] ${memory.media.length === 1 ? 'grid-cols-1' : memory.media.length === 4 ? 'grid-cols-2 w-2/3' : 'grid-cols-3'}`}>{memory.media.map((url: string, idx: number) => (<div key={idx} onClick={() => handleViewImage(url, 'memory', memory.media)} className={`aspect-square bg-gray-100 cursor-pointer overflow-hidden ${memory.media.length === 1 ? 'max-w-[200px] max-h-[200px]' : ''}`}><img src={url} className="w-full h-full object-cover" alt="Memory" /></div>))}</div>)}
+    <div className="space-y-8">
+        {/* ✅ 修复1：防止 memories 为空导致白屏 */}
+        {(memories || []).map((memory: Memory) => (
+            <div key={memory.id} className="flex gap-3 pb-6 border-b border-gray-50 last:border-0">
+                <div className="w-10 h-10 rounded-lg bg-rose-100 overflow-hidden shrink-0 cursor-pointer" onClick={() => handleListAvatarClick(memory.creatorAvatar)}>
+                    {memory.creatorAvatar ? <img src={memory.creatorAvatar} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xl">👤</div>}
+                </div>
+                <div className="flex-1 min-w-0">
+                    <h4 className="font-bold text-gray-800 font-cute text-sm mb-1 text-blue-900">
+                        {memory.creatorId === user.objectId 
+                          ? (user.nickname || user.username) 
+                          : (memory.creatorName || 'Ta')}
+                    </h4>
+                    <p className="mb-2 text-gray-800 text-sm leading-relaxed">{memory.caption}</p>
+                              {/* ✅ 修复2：防止 media 为空导致白屏 */}
+                    {memory.type === 'media' && memory.media && memory.media.length > 0 && (
+                        <div className={`grid gap-1 mb-2 max-w-[80%] ${memory.media.length === 1 ? 'grid-cols-1' : memory.media.length === 4 ? 'grid-cols-2 w-2/3' : 'grid-cols-3'}`}>
+                            {(memory.media || []).map((url: string, idx: number) => (
+                                <div key={idx} onClick={() => handleViewImage(url, 'memory', memory.media)} className={`aspect-square bg-gray-100 cursor-pointer overflow-hidden ${memory.media.length === 1 ? 'max-w-[200px] max-h-[200px]' : ''}`}>
+                                    <img src={url} className="w-full h-full object-cover" alt="Memory" />
+                                </div>
+                            ))}
+                        </div>
+                    )}
                               <div className="flex justify-between items-center mt-2 relative">
                                   <div className="flex items-center gap-3"><span className="text-xs text-gray-400">{memory.date}</span><button onClick={() => onDeleteMemory(memory.id)} className="text-xs text-blue-900 hover:underline">删除</button></div>
-                                  <div className="relative"><button onClick={(e) => { e.stopPropagation(); setActiveMenuId(activeMenuId === memory.id ? null : memory.id); }} className="bg-gray-50 p-1 rounded-sm text-blue-800 hover:bg-gray-100"><MoreHorizontal size={16} /></button><AnimatePresence>{activeMenuId === memory.id && (<motion.div initial={{ opacity: 0, scale: 0.9, x: 10 }} animate={{ opacity: 1, scale: 1, x: 0 }} exit={{ opacity: 0, scale: 0.9, x: 10 }} className="absolute right-8 top-0 bg-gray-800 text-white rounded-md flex items-center overflow-hidden shadow-xl z-10" onClick={(e) => e.stopPropagation()}><button onClick={() => { handleLike(memory.id); setActiveMenuId(null); }} className="flex items-center gap-1 px-4 py-2 hover:bg-gray-700 text-xs font-bold min-w-[80px] justify-center"><Heart size={14} fill={memory.isLiked ? "red" : "none"} color={memory.isLiked ? "red" : "white"} />{memory.isLiked ? '取消' : '赞'}</button><div className="w-[1px] h-4 bg-gray-600"></div><button onClick={() => { const input = prompt('请输入评论'); if(input) { handleComment(memory.id, input); setActiveMenuId(null); } }} className="flex items-center gap-1 px-4 py-2 hover:bg-gray-700 text-xs font-bold min-w-[80px] justify-center"><MessageCircle size={14} />评论</button></motion.div>)}</AnimatePresence></div>
-                              </div>
-                              {(memory.likes > 0 || memory.comments.length > 0) && (<div className="mt-3 bg-gray-50 rounded-sm p-2 text-xs">{memory.likes > 0 && (<div className="flex items-center gap-1 text-blue-900 font-bold border-b border-gray-200/50 pb-1 mb-1"><Heart size={12} fill="currentColor" /><span>{memory.likes} 人觉得很赞</span></div>)}{memory.comments.map((c: any) => (<div key={c.id} className="leading-5"><span className="font-bold text-blue-900">我:</span> <span className="text-gray-600 ml-1">{c.text}</span></div>))}</div>)}
-                          </div>
-                      </div>
-                  ))}
-              </div>
-          ) : (
+                         <div className="relative"><button onClick={(e) => { e.stopPropagation(); setActiveMenuId(activeMenuId === memory.id ? null : memory.id); }} className="bg-gray-50 p-1 rounded-sm text-blue-800 hover:bg-gray-100"><MoreHorizontal size={16} /></button><AnimatePresence>{activeMenuId === memory.id && (<motion.div initial={{ opacity: 0, scale: 0.9, x: 10 }} animate={{ opacity: 1, scale: 1, x: 0 }} exit={{ opacity: 0, scale: 0.9, x: 10 }} className="absolute right-8 top-0 bg-gray-800 text-white rounded-md flex items-center overflow-hidden shadow-xl z-10" onClick={(e) => e.stopPropagation()}><button onClick={() => { handleLike(memory.id); setActiveMenuId(null); }} className="flex items-center gap-1 px-4 py-2 hover:bg-gray-700 text-xs font-bold min-w-[80px] justify-center"><Heart size={14} fill={memory.isLiked ? "red" : "none"} color={memory.isLiked ? "red" : "white"} />{memory.isLiked ? '取消' : '赞'}</button><div className="w-[1px] h-4 bg-gray-600"></div><button onClick={() => { const input = prompt('请输入评论'); if(input) { handleComment(memory.id, input); setActiveMenuId(null); } }} className="flex items-center gap-1 px-4 py-2 hover:bg-gray-700 text-xs font-bold min-w-[80px] justify-center"><MessageCircle size={14} />评论</button></motion.div>)}</AnimatePresence></div>
+                    </div>
+                              {(memory.likes > 0 || (memory.comments && memory.comments.length > 0)) && (
+                        <div className="mt-3 bg-gray-50 rounded-sm p-2 text-xs">
+                             {memory.likes > 0 && (<div className="flex items-center gap-1 text-blue-900 font-bold border-b border-gray-200/50 pb-1 mb-1"><Heart size={12} fill="currentColor" /><span>{memory.likes} 人觉得很赞</span></div>)}
+                             {(memory.comments || []).map((c: any) => (<div key={c.id} className="leading-5"><span className="font-bold text-blue-900">{c.authorName || 'Ta'}:</span> <span className="text-gray-600 ml-1">{c.text}</span></div>))}
+                        </div>
+                    )}
+                </div>
+            </div>
+        ))}
+    </div>
+) : (
               <div>
                   <div className="flex justify-between items-center mb-4 px-2">
                       <div onClick={() => setIsCreatingAlbum(true)} className="flex items-center gap-2 text-gray-500 cursor-pointer hover:text-rose-500"><FolderPlus size={20} /><span className="text-sm font-bold">新建相册</span></div>
