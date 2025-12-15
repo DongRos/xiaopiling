@@ -1557,8 +1557,8 @@ const handleSoloJudge = async () => {
 return (
         <div className="flex flex-col h-full bg-gray-50">
              <div className="flex bg-white shadow-sm pt-[env(safe-area-inset-top)] z-10 relative">
-                <button onClick={() => setActiveTab('solo')} className={`flex-1 py-4 font-bold text-sm transition-colors ${activeTab === 'solo' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-400'}`}>独自记录</button>
-                <button onClick={() => setActiveTab('joint')} className={`flex-1 py-4 font-bold text-sm transition-colors ${activeTab === 'joint' ? 'text-rose-500 border-b-2 border-rose-500' : 'text-gray-400'}`}>双方裁决</button>
+                <button onClick={() => setActiveTab('solo')} className={`flex-1 py-6 font-bold text-sm transition-colors ${activeTab === 'solo' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-400'}`}>独自记录</button>
+                <button onClick={() => setActiveTab('joint')} className={`flex-1 py-6 font-bold text-sm transition-colors ${activeTab === 'joint' ? 'text-rose-500 border-b-2 border-rose-500' : 'text-gray-400'}`}>双方裁决</button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 pb-24">
