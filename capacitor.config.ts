@@ -7,11 +7,6 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: 'https' // 建议加上这个，让安卓也使用 https 协议运行本地服务
   },
-  plugins: {
-    CapacitorHttp: {
-      enabled: true, // 开启原生 HTTP 插件，接管请求
-    },
-  },
 };
 
 export default config;
