@@ -1818,7 +1818,8 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
     setActivePage(page);
 
     // [新增] 自动刷新数据：当进入这些页面时，后台静默刷新一次数据
-    if ([Page.CYCLE, Page.CONFLICT, Page.CALENDAR, Page.BOARD].includes(page)) {
+    // [修改] 添加 Page.HOME，确保点击首页也能刷新日历和纪念日
+    if ([Page.HOME, Page.CYCLE, Page.CONFLICT, Page.CALENDAR, Page.BOARD].includes(page)) {
         console.log(`[Auto Refresh] Updating data for ${page}...`);
         // 使用 loadData(false) 进行静默刷新，不会触发全屏 Loading
         loadData(false);
@@ -1879,7 +1880,20 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
        const todoQ = getQuery('Todo');
        if(todoQ) silentFind(todoQ).then((res:any) => setTodos(res.map((t:any)=>({...t.toJSON(), id: t.id}))));
 
-    
+       // [修改] 共享设置也移出来刷新，并添加纪念日同步
+       if (user.coupleId) {
+          const q = new AV.Query('CoupleSettings');
+          q.equalTo('coupleId', String(user.coupleId));
+          silentFind(q).then(res => { 
+              if (res.length > 0) { 
+                  const item = res[0]; 
+                  if (item.get('coverUrl')) setMomentsCover(item.get('coverUrl')); 
+                  if (item.get('avatarUrl')) setMomentsAvatar(item.get('avatarUrl'));
+                  // [新增] 同步纪念日
+                  if (item.get('anniversaryDate')) setAnniversaryDate(item.get('anniversaryDate'));
+              } 
+          });
+       }
 
     
        // --- [关键] 手动刷新时才加载的数据 (包括首页照片) ---
@@ -1887,11 +1901,7 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
            const albumQuery = getQuery('Album');
            if(albumQuery) silentFind(albumQuery.descending('createdAt')).then((res: any) => setAlbums(res.map((a: any) => ({ ...a.toJSON(), id: a.id, media: a.media || [] }))));
 
-           if (user.coupleId) {
-              const q = new AV.Query('CoupleSettings');
-              q.equalTo('coupleId', String(user.coupleId));
-              silentFind(q).then(res => { if (res.length > 0) { const item = res[0]; if (item.get('coverUrl')) setMomentsCover(item.get('coverUrl')); if (item.get('avatarUrl')) setMomentsAvatar(item.get('avatarUrl')); } });
-           }
+           
 
            // [重点] 刷新首页照片
            const pinQ = getQuery('PinnedPhoto');
@@ -2271,7 +2281,30 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                       <p className="text-rose-400 text-xs md:text-sm mt-1 font-cute ml-1 md:ml-2 tracking-widest bg-white/50 backdrop-blur-sm inline-block px-2 rounded-lg">LOVE SPACE</p>
                     </div>
                     <div className="flex flex-col md:flex-row gap-2 md:gap-4 items-end pointer-events-auto">
-                        <AnniversaryTimer startDate={anniversaryDate} onSetDate={() => { const d = prompt("纪念日 (YYYY-MM-DD)", anniversaryDate); if(d) setAnniversaryDate(d); }} />
+                        <AnniversaryTimer startDate={anniversaryDate} onSetDate={async () => { 
+                              const d = prompt("纪念日 (YYYY-MM-DD)", anniversaryDate); 
+                              if(d) { 
+                                  setAnniversaryDate(d);
+                                  // [新增] 同步保存到云端 CoupleSettings
+                                  if (user.coupleId) {
+                                       try {
+                                           const q = new AV.Query('CoupleSettings');
+                                           q.equalTo('coupleId', String(user.coupleId));
+                                           const res = await q.find();
+                                           if (res.length > 0) {
+                                               res[0].set('anniversaryDate', d);
+                                               await res[0].save();
+                                           } else {
+                                               const newSet = new AV.Object('CoupleSettings');
+                                               newSet.set('coupleId', String(user.coupleId));
+                                               newSet.set('anniversaryDate', d);
+                                               await newSet.save();
+                                           }
+                                           alert("纪念日已同步");
+                                       } catch(e) { console.error(e); }
+                                  }
+                              } 
+                          }} />
                         <div className="bg-white/90 backdrop-blur-sm rounded-xl md:rounded-2xl shadow-lg border-2 border-rose-100 p-2 flex flex-col items-center min-w-[70px] cursor-pointer" onClick={() => navigateTo(Page.CYCLE)}><span className="text-[9px] text-rose-400 font-bold uppercase font-cute">姨妈倒计时</span>{calculateNextPeriod() ? (<div className="text-center"><span className="text-lg font-bold text-rose-500 font-cute">{calculateNextPeriod()?.daysLeft}</span><span className="text-[9px] text-gray-400 ml-0.5 font-bold">天</span></div>) : (<span className="text-[9px] text-gray-400 mt-1">无数据</span>)}</div>
                         {pinnedPhotos.length > 0 && (<button onClick={handleClearBoard} className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border-2 border-rose-100 p-2 text-gray-400 hover:text-rose-500 min-h-[50px] min-w-[50px] flex flex-col items-center justify-center"><Trash2 size={20} /><span className="text-[9px] font-bold mt-1 font-cute">清空</span></button>)}
                     </div>
