@@ -842,34 +842,91 @@ const MemoriesViewContent = ({
       }
   };
 
-  const createAlbum = () => {
+  const createAlbum = async () => {
     if(!newAlbumName.trim()) return;
-    setAlbums((prev: Album[]) => [{ id: Date.now().toString(), name: newAlbumName, coverUrl: '', createdAt: getBeijingDateString(), media: [] }, ...prev]);
+    const tempId = Date.now().toString();
+    // 1. 本地乐观更新
+    const newAlbum = { id: tempId, name: newAlbumName, coverUrl: '', createdAt: getBeijingDateString(), media: [], writer_id: user.objectId };
+    setAlbums((prev: Album[]) => [newAlbum, ...prev]);
     setNewAlbumName(''); setIsCreatingAlbum(false);
+
+    // 2. [修复] 同步到云端
+    try {
+        const AlbumObj = new AV.Object('Album');
+        AlbumObj.set('name', newAlbumName);
+        AlbumObj.set('coverUrl', '');
+        AlbumObj.set('media', []);
+        AlbumObj.set('writer_id', user.objectId);
+        if (user.coupleId) AlbumObj.set('binding_id', user.coupleId);
+        const saved = await AlbumObj.save();
+        // 更新本地 ID 为云端真实 ID
+        setAlbums((prev: Album[]) => prev.map(a => a.id === tempId ? { ...a, id: saved.id } : a));
+    } catch(e) { console.error("创建相册失败", e); }
   };
-  const handleAlbumUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+
+  
+  const handleAlbumUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       if (!selectedAlbum || !e.target.files) return;
-      const files = Array.from(e.target.files); const newMedia: AlbumMedia[] = []; let count = 0;
-      files.forEach(file => {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-              newMedia.push({ id: Date.now().toString() + Math.random(), url: reader.result as string, date: getBeijingDateString(), type: 'image' });
-              count++;
-              if (count === files.length) {
-                  setAlbums((prev: Album[]) => prev.map(a => a.id === selectedAlbum.id ? { ...a, coverUrl: !a.coverUrl && newMedia.length > 0 ? newMedia[0].url : a.coverUrl, media: [...newMedia, ...a.media] } : a));
-                  setSelectedAlbum(prev => prev ? { ...prev, coverUrl: !prev.coverUrl && newMedia.length > 0 ? newMedia[0].url : prev.coverUrl, media: [...newMedia, ...prev.media] } : null);
-              }
-          };
-          reader.readAsDataURL(file);
-      });
+      const files = Array.from(e.target.files); 
+      
+      // [修复] 循环上传并保存
+      try {
+          const newMediaItems: AlbumMedia[] = [];
+          for (const file of files) {
+               // 1. 上传文件
+               const url = await uploadFile(file);
+               if (url) {
+                   newMediaItems.push({ id: Date.now().toString() + Math.random(), url: url, date: getBeijingDateString(), type: 'image' });
+               }
+          }
+
+          if (newMediaItems.length > 0) {
+               // 2. 更新云端相册数据
+               const albumObj = AV.Object.createWithoutData('Album', selectedAlbum.id);
+               albumObj.add('media', newMediaItems); // 使用 add 原子操作追加图片
+               await albumObj.save();
+
+               // 3. 更新本地视图 (合并新旧图片)
+               const updatedMedia = [...newMediaItems, ...selectedAlbum.media];
+               const updatedAlbum = { ...selectedAlbum, media: updatedMedia, coverUrl: !selectedAlbum.coverUrl ? newMediaItems[0].url : selectedAlbum.coverUrl };
+               
+               // 如果是第一张图，顺便更新云端封面
+               if (!selectedAlbum.coverUrl) {
+                   const coverObj = AV.Object.createWithoutData('Album', selectedAlbum.id);
+                   coverObj.set('coverUrl', newMediaItems[0].url);
+                   coverObj.save();
+               }
+
+               setAlbums((prev: Album[]) => prev.map(a => a.id === selectedAlbum.id ? updatedAlbum : a));
+               setSelectedAlbum(updatedAlbum);
+               alert(`成功上传 ${newMediaItems.length} 张照片`);
+          }
+      } catch (e) { console.error("上传相册失败", e); alert("上传失败，请重试"); }
   };
-  const batchDeletePhotos = () => {
+
+  
+  const batchDeletePhotos = async () => {
       if(!selectedAlbum || !window.confirm(`确定要删除选中的 ${selectedItems.size} 张照片吗？`)) return;
       const updatedMedia = selectedAlbum.media.filter(m => !selectedItems.has(m.id));
+      
+      // 更新本地
       const updatedAlbum = { ...selectedAlbum, media: updatedMedia };
-      if (selectedAlbum.media.find(m => m.url === selectedAlbum.coverUrl && selectedItems.has(m.id))) updatedAlbum.coverUrl = updatedMedia.length > 0 ? updatedMedia[0].url : '';
+      if (selectedAlbum.media.find(m => m.url === selectedAlbum.coverUrl && selectedItems.has(m.id))) {
+          updatedAlbum.coverUrl = updatedMedia.length > 0 ? updatedMedia[0].url : '';
+      }
       setAlbums((prev: Album[]) => prev.map(a => a.id === selectedAlbum.id ? updatedAlbum : a));
       setSelectedAlbum(updatedAlbum); setIsManageMode(false);
+
+      // [修复] 同步云端 (直接覆盖 media 数组)
+      try {
+          const obj = AV.Object.createWithoutData('Album', selectedAlbum.id);
+          obj.set('media', updatedMedia); 
+          // 如果封面被删了，也要更新封面字段
+          if (updatedAlbum.coverUrl !== selectedAlbum.coverUrl) {
+              obj.set('coverUrl', updatedAlbum.coverUrl);
+          }
+          await obj.save();
+      } catch(e) { console.error(e); alert("删除同步失败"); }
   };
   
   const handleCoverClick = (e: React.MouseEvent) => {
@@ -913,14 +970,20 @@ const MemoriesViewContent = ({
       if (context === 'album' && selectedAlbum) {
           actions.push({
               label: '设为封面',
-              onClick: () => {
+              onClick: async () => {
                   setAlbums((prev: Album[]) => prev.map(a => a.id === selectedAlbum.id ? { ...a, coverUrl: url } : a));
                   setSelectedAlbum(prev => prev ? { ...prev, coverUrl: url } : null);
-                  setViewingImage(null); // 关闭
-                  alert('已设为相册封面');
+                  setViewingImage(null); 
+                  
+                  // [修复] 同步云端
+                  try {
+                      const obj = AV.Object.createWithoutData('Album', selectedAlbum.id);
+                      obj.set('coverUrl', url);
+                      await obj.save();
+                      alert('已设为相册封面');
+                  } catch(e) { console.error(e); }
               }
           });
-      }
       actions.push({
           label: '设为背景',
           primary: true,
@@ -934,11 +997,18 @@ const MemoriesViewContent = ({
       setViewerActions(actions);
   };
 
-  const saveAlbumName = () => {
+const saveAlbumName = async () => {
       if (selectedAlbum && tempAlbumName.trim()) {
           const updatedAlbum = { ...selectedAlbum, name: tempAlbumName };
           setAlbums((prev: Album[]) => prev.map(a => a.id === selectedAlbum.id ? updatedAlbum : a));
           setSelectedAlbum(updatedAlbum);
+          
+          // [修复] 同步云端
+          try {
+              const obj = AV.Object.createWithoutData('Album', selectedAlbum.id);
+              obj.set('name', tempAlbumName);
+              await obj.save();
+          } catch(e) { console.error(e); }
       }
       setIsEditingAlbumTitle(false);
   };
@@ -1456,15 +1526,14 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
               const res = await q.find();
 
               if (res.length > 0) {
-                  const item = res[0]; // res[0] 已经是 AV.Object，直接操作
-                  item.set(type === 'cover' ? 'coverUrl' : 'avatarUrl', url);
-                  await item.save();
-              } else {
-                  const qNew = new AV.Object('CoupleSettings');
-                  qNew.set('coupleId', String(user.coupleId));
-                  qNew.set(type === 'cover' ? 'coverUrl' : 'avatarUrl', url);
-                  await qNew.save();
+                  const item = res[0];
+                  // [修复] 读取云端数据并更新本地状态
+                  const cover = item.get('coverUrl');
+                  const avatar = item.get('avatarUrl');
+                  if (cover) setMomentsCover(cover);
+                  if (avatar) setMomentsAvatar(avatar);
               }
+              // else 分支不需要，读取时如果没有数据就不管
           } catch (e) {
               console.error("同步共享设置失败:", e);
           }
