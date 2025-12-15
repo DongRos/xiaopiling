@@ -1439,7 +1439,7 @@ const ConflictViewContent = ({ user, judgeConflict, conflicts, setConflicts }: a
     };
 
     // 独自裁决逻辑 (保持不变，但增加 type: 'solo' 并同步云端)
-    const handleSoloJudge = async () => {
+const handleSoloJudge = async () => {
         if (!reason || !hisPoint || !herPoint) return alert("请填写完整信息喵！");
         setIsJudging(true);
         const result = await judgeConflict(reason, hisPoint, herPoint);
@@ -1448,12 +1448,13 @@ const ConflictViewContent = ({ user, judgeConflict, conflicts, setConflicts }: a
             date: getBeijingDateString(),
             reason, hisPoint, herPoint,
             aiResponse: result,
-            type: 'solo', // 标记
+            type: 'solo', 
+            hisName: '男方', // [新增]
+            herName: '女方', // [新增]
             writer_id: user.objectId,
             binding_id: user.coupleId
         };
         
-        // 云端保存
         try {
             const Obj = new AV.Object('Conflict');
             Object.keys(newRecord).forEach(k => Obj.set(k, (newRecord as any)[k]));
@@ -1464,7 +1465,7 @@ const ConflictViewContent = ({ user, judgeConflict, conflicts, setConflicts }: a
         setIsJudging(false); setReason(''); setHisPoint(''); setHerPoint('');
     };
 
-    // 双人裁决逻辑
+// [修改] 双人裁决：保存真实昵称
     const handleJointSubmit = async () => {
         if (!myReason || !myPoint) return alert("请填写完整哦");
         if (!user.coupleId) return alert("请先绑定另一半");
@@ -1472,7 +1473,7 @@ const ConflictViewContent = ({ user, judgeConflict, conflicts, setConflicts }: a
         setIsJointLoading(true);
         try {
             if (!jointSession) {
-                // 1. 我是发起人
+                // 我是发起人
                 const session = new AV.Object('JointSession');
                 session.set('coupleId', user.coupleId);
                 session.set('status', 'waiting');
@@ -1483,24 +1484,28 @@ const ConflictViewContent = ({ user, judgeConflict, conflicts, setConflicts }: a
                 await session.save();
                 await checkJointSession();
             } else {
-                // 2. 我是响应人 (且我不是发起人)
+                // 我是响应人
                 if (jointSession.initiatorId === user.objectId) return alert("等待对方填写中...");
                 
-                // 执行裁决
+                const initiatorName = jointSession.initiatorName;
+                const responderName = user.nickname || '响应人';
+
                 const result = await judgeJointConflict(
-                    jointSession.initiatorName, jointSession.initiatorReason, jointSession.initiatorPoint,
-                    user.nickname || '响应人', myReason, myPoint
+                    initiatorName, jointSession.initiatorReason, jointSession.initiatorPoint,
+                    responderName, myReason, myPoint
                 );
 
-                // 保存最终 Conflict 记录
                 const finalRecord = {
                     date: getBeijingDateString(),
-                    reason: result.mergedReason, // AI 总结的客观原因
-                    hisPoint: jointSession.initiatorPoint, // 暂时对应
+                    reason: result.mergedReason, 
+                    hisPoint: jointSession.initiatorPoint,
                     herPoint: myPoint,
                     aiResponse: result,
                     type: 'joint',
-                    writer_id: user.objectId, // 记录人
+                    // [新增] 保存名字用于显示
+                    hisName: initiatorName, 
+                    herName: responderName,
+                    writer_id: user.objectId,
                     binding_id: user.coupleId
                 };
 
@@ -1508,126 +1513,111 @@ const ConflictViewContent = ({ user, judgeConflict, conflicts, setConflicts }: a
                 Object.keys(finalRecord).forEach(k => conflictObj.set(k, (finalRecord as any)[k]));
                 const savedConflict = await conflictObj.save();
 
-                // 更新会话状态为已解决
                 const sessionObj = AV.Object.createWithoutData('JointSession', jointSession.id);
                 sessionObj.set('status', 'resolved');
                 await sessionObj.save();
 
-                // 更新本地列表
                 setConflicts([{ ...finalRecord, id: savedConflict.id }, ...conflicts]);
-                setJointSession(null); 
-                setMyReason(''); setMyPoint('');
+                setJointSession(null); setMyReason(''); setMyPoint('');
                 alert("裁决完成！已生成客观判决书。");
             }
-        } catch (e) {
-            console.error(e);
-            alert("提交失败，请重试");
-        } finally {
-            setIsJointLoading(false);
-        }
+        } catch (e) { console.error(e); alert("提交失败"); } finally { setIsJointLoading(false); }
     };
 
-    return (
+return (
         <div className="flex flex-col h-full bg-gray-50">
-            {/* 顶部 Tab 切换 */}
-            <div className="flex bg-white shadow-sm pt-[env(safe-area-inset-top)]">
-                <button onClick={() => setActiveTab('solo')} className={`flex-1 py-4 font-bold text-sm ${activeTab === 'solo' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-400'}`}>独自记录</button>
-                <button onClick={() => setActiveTab('joint')} className={`flex-1 py-4 font-bold text-sm ${activeTab === 'joint' ? 'text-rose-500 border-b-2 border-rose-500' : 'text-gray-400'}`}>双方裁决</button>
+             <div className="flex bg-white shadow-sm pt-[env(safe-area-inset-top)] z-10 relative">
+                <button onClick={() => setActiveTab('solo')} className={`flex-1 py-4 font-bold text-sm transition-colors ${activeTab === 'solo' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-400'}`}>独自记录</button>
+                <button onClick={() => setActiveTab('joint')} className={`flex-1 py-4 font-bold text-sm transition-colors ${activeTab === 'joint' ? 'text-rose-500 border-b-2 border-rose-500' : 'text-gray-400'}`}>双方裁决</button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 pb-24">
                 {activeTab === 'solo' ? (
-                    // --- 独自记录 UI (保持原有风格，稍作简化) ---
-                    <div className="space-y-6">
-                         <div className="bg-white rounded-3xl p-6 shadow-lg border border-indigo-50">
-                            <h3 className="text-center font-bold text-indigo-900 mb-4 font-cute">✏️ 独自笔录</h3>
-                            <div className="space-y-4">
-                                <input className="w-full bg-gray-50 rounded-xl p-3 text-sm outline-none" placeholder="争吵原因..." value={reason} onChange={e => setReason(e.target.value)} />
-                                <div className="grid grid-cols-2 gap-3">
-                                    <textarea className="bg-blue-50/50 rounded-xl p-3 text-xs h-24 resize-none" placeholder="男方观点..." value={hisPoint} onChange={e => setHisPoint(e.target.value)} />
-                                    <textarea className="bg-rose-50/50 rounded-xl p-3 text-xs h-24 resize-none" placeholder="女方观点..." value={herPoint} onChange={e => setHerPoint(e.target.value)} />
-                                </div>
-                                <button onClick={handleSoloJudge} disabled={isJudging} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold shadow-md flex justify-center items-center gap-2">
-                                    {isJudging ? <Loader2 className="animate-spin" /> : <Gavel size={20} />} 请求裁决
-                                </button>
+                    // 独自记录输入区 (保持不变)
+                    <div className="bg-white rounded-3xl p-6 shadow-lg border border-indigo-50 mb-8">
+                        <h3 className="text-center font-bold text-indigo-900 mb-4 font-cute">✏️ 独自笔录</h3>
+                        <div className="space-y-4">
+                            <input className="w-full bg-gray-50 rounded-xl p-3 text-sm outline-none" placeholder="争吵原因..." value={reason} onChange={e => setReason(e.target.value)} />
+                            <div className="grid grid-cols-2 gap-3">
+                                <textarea className="bg-blue-50/50 rounded-xl p-3 text-xs h-24 resize-none" placeholder="男方观点..." value={hisPoint} onChange={e => setHisPoint(e.target.value)} />
+                                <textarea className="bg-rose-50/50 rounded-xl p-3 text-xs h-24 resize-none" placeholder="女方观点..." value={herPoint} onChange={e => setHerPoint(e.target.value)} />
                             </div>
-                         </div>
-                         {/* 历史记录复用下方代码 */}
+                            <button onClick={handleSoloJudge} disabled={isJudging} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold shadow-md flex justify-center items-center gap-2">
+                                {isJudging ? <Loader2 className="animate-spin" /> : <Gavel size={20} />} 请求裁决
+                            </button>
+                        </div>
                     </div>
                 ) : (
-                    // --- 双方裁决 UI ---
-                    <div className="space-y-6">
-                        <div className="bg-white rounded-3xl p-6 shadow-lg border border-rose-50 relative overflow-hidden">
-                             <div className="absolute top-0 right-0 p-2 bg-rose-100 rounded-bl-xl text-rose-500 text-xs font-bold">✨ 公平模式</div>
-                             
-                             {/* 状态 1: 等待对方 */}
-                             {jointSession && jointSession.initiatorId === user.objectId && (
-                                 <div className="text-center py-8">
-                                     <div className="animate-pulse text-4xl mb-2">⏳</div>
-                                     <h3 className="font-bold text-gray-700">已提交，等待对方填写...</h3>
-                                     <p className="text-xs text-gray-400 mt-2">快去叫 Ta 也就是现在填！</p>
-                                 </div>
-                             )}
-
-                             {/* 状态 2: 填写表单 (我是响应者 或 还没开始) */}
-                             {(!jointSession || jointSession.initiatorId !== user.objectId) && (
-                                 <div>
-                                     <h3 className="text-center font-bold text-rose-500 mb-4 font-cute">
-                                         {jointSession ? `回复 ${jointSession.initiatorName} 的申诉` : '⚖️ 发起双方裁决'}
-                                     </h3>
-                                     <div className="space-y-4">
-                                         <div>
-                                             <label className="text-xs font-bold text-gray-500 ml-1">你认为的原因</label>
-                                             <input className="w-full bg-gray-50 rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-rose-200" placeholder="简单描述..." value={myReason} onChange={e => setMyReason(e.target.value)} />
-                                         </div>
-                                         <div>
-                                             <label className="text-xs font-bold text-gray-500 ml-1">你的核心观点</label>
-                                             <textarea className="w-full bg-gray-50 rounded-xl p-3 text-sm h-24 resize-none focus:ring-2 focus:ring-rose-200" placeholder="我觉得..." value={myPoint} onChange={e => setMyPoint(e.target.value)} />
-                                         </div>
-                                         <button onClick={handleJointSubmit} disabled={isJointLoading} className="w-full bg-rose-500 text-white py-3 rounded-xl font-bold shadow-md flex justify-center items-center gap-2">
-                                             {isJointLoading ? <Loader2 className="animate-spin" /> : <ShieldCheck size={20} />}
-                                             {jointSession ? '提交并生成最终裁决' : '提交，等待对方'}
-                                         </button>
-                                     </div>
-                                 </div>
-                             )}
-                        </div>
+                    // [修改] 双方裁决输入区：标题修改
+                    <div className="bg-white rounded-3xl p-6 shadow-lg border border-rose-50 mb-8 relative overflow-hidden">
+                        <div className="absolute top-0 right-0 p-2 bg-rose-100 rounded-bl-xl text-rose-500 text-xs font-bold">✨ 双人模式</div>
+                        {jointSession && jointSession.initiatorId === user.objectId ? (
+                            <div className="text-center py-8">
+                                <div className="animate-pulse text-4xl mb-2">⏳</div>
+                                <h3 className="font-bold text-gray-700">已提交，等待 TA 来回应...</h3>
+                                <p className="text-xs text-gray-400 mt-2">快去叫 Ta 打开 App 填写！</p>
+                            </div>
+                        ) : (
+                            <div>
+                                <h3 className="text-center font-bold text-rose-500 mb-4 font-cute">
+                                    {jointSession ? `💖 回复 ${jointSession.initiatorName} 的心里话` : '💌 发起一次爱的沟通'}
+                                </h3>
+                                <div className="space-y-4">
+                                    <div><label className="text-xs font-bold text-gray-500 ml-1">你眼中的原因</label><input className="w-full bg-gray-50 rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-rose-200" placeholder="简单说说..." value={myReason} onChange={e => setMyReason(e.target.value)} /></div>
+                                    <div><label className="text-xs font-bold text-gray-500 ml-1">你的真实想法</label><textarea className="w-full bg-gray-50 rounded-xl p-3 text-sm h-24 resize-none focus:ring-2 focus:ring-rose-200" placeholder="其实我觉得..." value={myPoint} onChange={e => setMyPoint(e.target.value)} /></div>
+                                    <button onClick={handleJointSubmit} disabled={isJointLoading} className="w-full bg-rose-500 text-white py-3 rounded-xl font-bold shadow-md flex justify-center items-center gap-2">{isJointLoading ? <Loader2 className="animate-spin" /> : <ShieldCheck size={20} />}{jointSession ? '提交并召唤喵喵法官' : '提交，等待对方'}</button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 
-                {/* 底部历史记录 (显示对应类型的记录) */}
-                <div className="mt-8 space-y-4">
+                {/* [修改] 历史记录卡片：包含新进度条和三段式分析 */}
+                <div className="space-y-4">
                     <h3 className="text-center text-gray-300 text-xs font-bold tracking-widest uppercase">- {activeTab === 'solo' ? '独自记录' : '双方裁决'}历史 -</h3>
                     {conflicts.filter((c: any) => activeTab === 'solo' ? (c.type !== 'joint') : (c.type === 'joint')).map((c: ConflictRecord) => (
                         <div key={c.id} className={`bg-white rounded-3xl p-5 shadow-sm border ${c.type==='joint' ? 'border-rose-100 ring-1 ring-rose-50' : 'border-gray-100'}`}>
-                            <div className="flex justify-between items-center mb-2">
+                            <div className="flex justify-between items-center mb-4 border-b border-gray-50 pb-2">
                                 <span className="text-xs font-bold bg-gray-100 text-gray-500 px-2 py-0.5 rounded-md">{c.date}</span>
-                                {c.type === 'joint' && <span className="text-[10px] bg-rose-100 text-rose-500 px-2 py-0.5 rounded-full font-bold">双人AI客观版</span>}
-                                <button onClick={() => { if(confirm("删除此记录?")) {
-                                     // 简单删除逻辑
-                                     setConflicts(conflicts.filter((x:any)=>x.id!==c.id));
-                                     AV.Object.createWithoutData('Conflict', c.id).destroy();
-                                }}} className="text-gray-300"><Trash2 size={14}/></button>
+                                {c.type === 'joint' && <span className="text-[10px] bg-rose-100 text-rose-500 px-2 py-0.5 rounded-full font-bold">🐱 喵喵裁决书</span>}
+                                <button onClick={() => { if(confirm("删除此记录?")) { setConflicts(conflicts.filter((x:any)=>x.id!==c.id)); AV.Object.createWithoutData('Conflict', c.id).destroy(); }}} className="text-gray-300"><Trash2 size={14}/></button>
                             </div>
-                            <h4 className="font-bold text-gray-800 mb-3 text-center text-lg">{c.reason}</h4>
+                            <h4 className="font-bold text-gray-800 mb-4 text-center text-lg">{c.reason}</h4>
                             
-                            {/* 裁决结果展示 (复用原有样式) */}
                             {c.aiResponse && (
-                                <div className="space-y-3">
-                                    <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden flex">
-                                        <div style={{ width: `${c.aiResponse.hisFault}%` }} className="bg-blue-400 h-full" />
-                                        <div style={{ width: `${c.aiResponse.herFault}%` }} className="bg-rose-400 h-full" />
+                                <div className="space-y-4">
+                                    {/* [修改] 进度条：包含昵称和百分比 */}
+                                    <div className="space-y-1">
+                                        <div className="flex justify-between text-xs font-bold px-1">
+                                            <span className="text-blue-500 flex items-center gap-1">🔵 {c.hisName || '男方'} {c.aiResponse.hisFault}%</span>
+                                            <span className="text-rose-500 flex items-center gap-1">{c.aiResponse.herFault}% {c.herName || '女方'} 🔴</span>
+                                        </div>
+                                        <div className="h-3 w-full bg-gray-100 rounded-full overflow-hidden flex shadow-inner">
+                                            <div style={{ width: `${c.aiResponse.hisFault}%` }} className="bg-blue-400 h-full transition-all duration-1000 ease-out flex items-center justify-start pl-2 text-[8px] text-white font-bold opacity-80">锅</div>
+                                            <div style={{ width: `${c.aiResponse.herFault}%` }} className="bg-rose-400 h-full transition-all duration-1000 ease-out flex items-center justify-end pr-2 text-[8px] text-white font-bold opacity-80">锅</div>
+                                        </div>
                                     </div>
-                                    <div className="bg-gray-50 rounded-xl p-3 text-sm text-gray-600 leading-relaxed">
-                                        <span className="font-bold">🐱 喵喵复盘:</span> {c.aiResponse.analysis}
+
+                                    {/* [修改] 三段式内容 */}
+                                    <div className="space-y-3 mt-4">
+                                        <div className="bg-orange-50/50 rounded-xl p-3 text-sm border border-orange-100">
+                                            <p className="font-bold text-orange-800 text-xs mb-1 font-cute">🐱 喵喵复盘</p>
+                                            <p className="text-gray-600 text-xs leading-relaxed">{c.aiResponse.analysis}</p>
+                                        </div>
+                                        <div className="bg-green-50/50 rounded-xl p-3 text-sm border border-green-100">
+                                            <p className="font-bold text-green-800 text-xs mb-1 font-cute">🌱 喵喵和好方案</p>
+                                            <p className="text-gray-600 text-xs leading-relaxed">{c.aiResponse.advice}</p>
+                                        </div>
+                                        <div className="bg-blue-50/50 rounded-xl p-3 text-sm border border-blue-100">
+                                            <p className="font-bold text-blue-800 text-xs mb-1 font-cute">🛡️ 喵喵预防计划</p>
+                                            <p className="text-gray-600 text-xs leading-relaxed">{c.aiResponse.prevention}</p>
+                                        </div>
                                     </div>
                                 </div>
                             )}
                         </div>
                     ))}
-                    {conflicts.filter((c: any) => activeTab === 'solo' ? (c.type !== 'joint') : (c.type === 'joint')).length === 0 && (
-                        <p className="text-center text-gray-300 text-xs">暂无记录，要一直相爱哦</p>
-                    )}
+                    {conflicts.length === 0 && <p className="text-center text-gray-300 text-xs pt-4">这里空空的，说明感情很好哦 ~</p>}
                 </div>
             </div>
         </div>
@@ -1821,11 +1811,17 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
   }, [activePage]);
 
   // 封装一个切换页面的函数，替代直接 setPage
-  // 作用：每次切换页面，都往历史记录里推入一个状态
   const navigateTo = (page: Page) => {
     if (page === activePage) return;
     window.history.pushState({ page }, document.title);
     setActivePage(page);
+
+    // [新增] 自动刷新数据：当进入这些页面时，后台静默刷新一次数据
+    if ([Page.CYCLE, Page.CONFLICT, Page.CALENDAR, Page.BOARD].includes(page)) {
+        console.log(`[Auto Refresh] Updating data for ${page}...`);
+        // 使用 loadData(false) 进行静默刷新，不会触发全屏 Loading
+        loadData(false);
+    }
   };
   // --- 新增代码结束 ---
   
