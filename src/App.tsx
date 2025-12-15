@@ -996,7 +996,7 @@ const MemoriesViewContent = ({
       });
       setViewerActions(actions);
   };
-
+};
 const saveAlbumName = async () => {
       if (selectedAlbum && tempAlbumName.trim()) {
           const updatedAlbum = { ...selectedAlbum, name: tempAlbumName };
