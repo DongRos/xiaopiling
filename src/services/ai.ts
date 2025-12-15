@@ -1,4 +1,41 @@
-import { GoogleGenAI, Type } from "@google/genai";
+// src/services/ai.ts
+
+// [修改] 移除 Google GenAI 引用，替换为 DeepSeek 配置
+const API_KEY = "sk-7d1098ef9a8044ab86f9396a65f8053c";
+const API_URL = "https://api.deepseek.com/chat/completions";
+
+/**
+ * [新增] DeepSeek API 调用辅助函数
+ */
+async function callDeepSeek(content: string) {
+  try {
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${API_KEY}`
+      },
+      body: JSON.stringify({
+        model: "deepseek-chat", // DeepSeek V3
+        messages: [
+          { role: "user", content: content }
+        ],
+        temperature: 1.3, // 保持一定的创造性，适合猫咪口吻
+        stream: false
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`DeepSeek API Error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.choices[0].message.content;
+  } catch (error) {
+    console.error("DeepSeek Call Failed:", error);
+    return null;
+  }
+}
 
 export interface JudgeResult {
   hisFault: number;
@@ -33,31 +70,10 @@ export const judgeConflict = async (
     }
   `;
 
-  
-
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            hisFault: { type: Type.INTEGER },
-            herFault: { type: Type.INTEGER },
-            analysis: { type: Type.STRING },
-            advice: { type: Type.STRING },
-            prevention: { type: Type.STRING },
-          },
-          required: ["hisFault", "herFault", "analysis", "advice", "prevention"],
-        }
-      }
-    });
-
-    const text = response.text;
+    // [修改] 替换为 DeepSeek 调用
+    const text = await callDeepSeek(prompt);
+    
     if (!text) throw new Error("No response from AI");
     
     const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -95,15 +111,14 @@ export const extractTodosFromText = async (text: string, currentDate: string): P
     Current Context:
     - Current Date (Beijing Time): ${currentDate} (Format: YYYY-MM-DD).
     - The user is in the Beijing Time Zone (GMT+8).
-
     CRITICAL DATE RULES:
-    1. "今晚" (Tonight) MUST correspond to TODAY'S date (${currentDate}). Do NOT set it to tomorrow.
+    1. "今晚" (Tonight) MUST correspond to TODAY'S date (${currentDate}).
+    Do NOT set it to tomorrow.
     2. "今天" (Today) = ${currentDate}.
     3. "明天" (Tomorrow) = The day after ${currentDate}.
     4. "后天" = Two days after ${currentDate}.
     5. "周X" (Week X) = The *coming* Week X.
     6. If no date is mentioned, use ${currentDate}.
-
     Task: Extract actionable tasks.
     Input Text: "${text}"
 
@@ -111,27 +126,9 @@ export const extractTodosFromText = async (text: string, currentDate: string): P
   `;
 
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              text: { type: Type.STRING },
-              date: { type: Type.STRING }
-            },
-            required: ["text", "date"]
-          }
-        }
-      }
-    });
-
-    const textRes = response.text;
+    // [修改] 替换为 DeepSeek 调用
+    const textRes = await callDeepSeek(prompt);
+    
     if (!textRes) return [];
     
     const cleanText = textRes.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -167,18 +164,13 @@ export const judgeJointConflict = async (
       "analysis": "【喵喵复盘】请用猫咪口吻（如本喵、喵呜）可爱地分析吵架原因。重点：既要指出双方哪里做得不对，也要表扬双方做得好的地方（比如都在乎对方），语气要软萌、幽默、可爱但一针见血。",
       "advice": "【喵喵和好方案】用猫咪口吻（如本喵、喵呜）可爱地给出具体的、可执行的哄人或和好步骤（比如抱抱、买好吃的、具体的道歉话术）。",
       "prevention": "【喵喵预防计划】用猫咪口吻（如本喵、喵呜）可爱地针对这次的原因，给出下次避免同类争吵的注意事项。"
-    
     }
   `;
-  try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: { responseMimeType: "application/json" }
-    });
 
-    const text = response.text;
+  try {
+    // [修改] 替换为 DeepSeek 调用
+    const text = await callDeepSeek(prompt);
+    
     if (!text) throw new Error("AI无响应");
     const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
     return JSON.parse(cleanText);
@@ -192,6 +184,3 @@ export const judgeJointConflict = async (
     };
   }
 };
-
-
-
