@@ -173,7 +173,17 @@ export const judgeJointConflict = async (
     
     if (!text) throw new Error("AI无响应");
     const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
-    return JSON.parse(cleanText);
+    
+    // [修改] 增加数据清洗和容错，防止 AI 返回非 100% 总和或字符串
+    const parsed = JSON.parse(cleanText);
+    const hisFault = typeof parsed.hisFault === 'number' ? parsed.hisFault : Number(parsed.hisFault) || 50;
+    const herFault = typeof parsed.herFault === 'number' ? parsed.herFault : (100 - hisFault);
+
+    return {
+        ...parsed,
+        hisFault,
+        herFault
+    };
   } catch (error) {
     console.error("Joint Judge Error:", error);
     return {
