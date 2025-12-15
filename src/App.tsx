@@ -787,9 +787,11 @@ const MemoriesViewContent = ({
   memories, albums, setAlbums, handleLike, handleComment, onFileSelect, onTextPost, showUploadModal, setShowUploadModal,
   uploadImages, setUploadImages, uploadCaption, setUploadCaption, uploadType, confirmUpload, coverUrl, onUpdateCover, onDeleteMemory,
   momentsTitle, setMomentsTitle, avatarUrl, setAvatarUrl, setMomentsCover,
-  momentsAvatar, onUpdateMomentsAvatar // <--- 新增这两个参数
+  momentsAvatar, onUpdateMomentsAvatar, // <--- 新增这两个参数
+  notifications, onReadNotification // [新增]
 }: any) => {
   const [activeTab, setActiveTab] = useState<'moments' | 'albums'>('moments');
+  const [showMessageList, setShowMessageList] = useState(false); // [新增] 控制消息列表显示
   const [viewingImage, setViewingImage] = useState<{ list: string[], index: number } | null>(null);
   const [viewerActions, setViewerActions] = useState<{ label: string, onClick: () => void, primary?: boolean }[]>([]);
   const [isCreatingAlbum, setIsCreatingAlbum] = useState(false);
@@ -803,11 +805,27 @@ const MemoriesViewContent = ({
   const [isEditingAlbumTitle, setIsEditingAlbumTitle] = useState(false);
   const [tempAlbumName, setTempAlbumName] = useState('');
   const pressTimer = useRef<NodeJS.Timeout | null>(null);
+  // [新增] 计算未读消息
+  const unreadNotes = (notifications || []).filter((n:any) => !n.isRead);
+  const latestNote = unreadNotes.length > 0 ? unreadNotes[0] : null;
 
   useEffect(() => { const h = () => setActiveMenuId(null); document.addEventListener('click', h); return () => document.removeEventListener('click', h); }, []);
   useEffect(() => { if(!isManageMode) setSelectedItems(new Set()); }, [isManageMode]);
 
 
+  // [新增] 处理点击消息跳转
+  const handleNoteClick = (note: any) => {
+      onReadNotification(note.id);
+      setShowMessageList(false);
+      // 延时滚动，确保页面渲染完成
+      setTimeout(() => {
+          const el = document.getElementById(`moment-${note.momentId}`);
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          else alert("这条朋友圈可能已被删除");
+      }, 300);
+  };
+
+  
   // 2. 新增：专门处理朋友圈封面头像点击
   const handleHeaderAvatarClick = (e: React.MouseEvent) => {
       e.stopPropagation();
@@ -1041,6 +1059,17 @@ const saveAlbumName = async () => {
 
   return (
     <div className="h-full bg-white overflow-y-auto pb-[calc(6rem+env(safe-area-inset-bottom))] relative">
+      {/* [新增] 消息提示条 (仿微信，位于封面下方) */}
+        {activeTab === 'moments' && unreadNotes.length > 0 && (
+            <div className="flex justify-center -mt-8 relative z-40 mb-4 cursor-pointer" onClick={() => setShowMessageList(true)}>
+                <div className="bg-gray-800 text-white rounded-md px-4 py-2 flex items-center gap-2 shadow-lg text-sm font-bold animate-pulse">
+                    <div className="w-8 h-8 rounded bg-gray-600 overflow-hidden">
+                        <img src={latestNote.fromAvatar || DEFAULT_AVATAR} className="w-full h-full object-cover"/>
+                    </div>
+                    <span>{unreadNotes.length} 条新消息</span>
+                </div>
+            </div>
+        )}
         <div className="relative group cursor-pointer" style={{ height: '320px' }}>
              <div className="absolute inset-0 z-0" onClick={handleCoverClick}>
                  <img src={coverUrl} alt="Cover" className="w-full h-full object-cover" />
@@ -1084,12 +1113,13 @@ const saveAlbumName = async () => {
           <button onClick={() => setActiveTab('moments')} className={`px-6 py-2 font-bold transition-all relative ${activeTab === 'moments' ? 'text-rose-500' : 'text-gray-400'}`}>瞬间 {activeTab === 'moments' && <motion.div layoutId="tab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-rose-500" />}</button>
           <button onClick={() => setActiveTab('albums')} className={`px-6 py-2 font-bold transition-all relative ${activeTab === 'albums' ? 'text-rose-500' : 'text-gray-400'}`}>相册 {activeTab === 'albums' && <motion.div layoutId="tab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-rose-500" />}</button>
       </div>
-
+      
       <div className="px-4 pb-10 max-w-2xl mx-auto min-h-[50vh] bg-white">
           {activeTab === 'moments' ? (
     <div className="space-y-8">
         {/* ✅ 修复1：防止 memories 为空导致白屏 */}
         {(memories || []).map((memory: Memory) => (
+        <div key={memory.id} id={`moment-${memory.id}`} className="flex gap-3 pb-6 border-b border-gray-50 last:border-0">
             <div key={memory.id} className="flex gap-3 pb-6 border-b border-gray-50 last:border-0">
                 <div className="w-10 h-10 rounded-lg bg-rose-100 overflow-hidden shrink-0 cursor-pointer" onClick={() => handleListAvatarClick(memory.creatorAvatar)}>
                     {memory.creatorAvatar ? <img src={memory.creatorAvatar} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xl">👤</div>}
@@ -1116,16 +1146,33 @@ const saveAlbumName = async () => {
                          <div className="relative"><button onClick={(e) => { e.stopPropagation(); setActiveMenuId(activeMenuId === memory.id ? null : memory.id); }} className="bg-gray-50 p-1 rounded-sm text-blue-800 hover:bg-gray-100"><MoreHorizontal size={16} /></button><AnimatePresence>{activeMenuId === memory.id && (<motion.div initial={{ opacity: 0, scale: 0.9, x: 10 }} animate={{ opacity: 1, scale: 1, x: 0 }} exit={{ opacity: 0, scale: 0.9, x: 10 }} className="absolute right-8 top-0 bg-gray-800 text-white rounded-md flex items-center overflow-hidden shadow-xl z-10" onClick={(e) => e.stopPropagation()}><button onClick={() => { handleLike(memory.id); setActiveMenuId(null); }} className="flex items-center gap-1 px-4 py-2 hover:bg-gray-700 text-xs font-bold min-w-[80px] justify-center"><Heart size={14} fill={memory.isLiked ? "red" : "none"} color={memory.isLiked ? "red" : "white"} />{memory.isLiked ? '取消' : '赞'}</button><div className="w-[1px] h-4 bg-gray-600"></div><button onClick={() => { const input = prompt('请输入评论'); if(input) { handleComment(memory.id, input); setActiveMenuId(null); } }} className="flex items-center gap-1 px-4 py-2 hover:bg-gray-700 text-xs font-bold min-w-[80px] justify-center"><MessageCircle size={14} />评论</button></motion.div>)}</AnimatePresence></div>
                     </div>
                               {(memory.likes > 0 || (memory.comments && memory.comments.length > 0)) && (
-                        <div className="mt-3 bg-gray-50 rounded-sm p-2 text-xs">
-                             {memory.likes > 0 && (<div className="flex items-center gap-1 text-blue-900 font-bold border-b border-gray-200/50 pb-1 mb-1"><Heart size={12} fill="currentColor" /><span>{memory.likes} 人觉得很赞</span></div>)}
-                             {(memory.comments || []).map((c: any) => (<div key={c.id} className="leading-5"><span className="font-bold text-blue-900">{c.authorName || 'Ta'}:</span> <span className="text-gray-600 ml-1">{c.text}</span></div>))}
+                                <div className="mt-3 bg-gray-50 rounded-sm p-2 text-xs relative">
+                                    {/* 小三角 */}
+                                    <div className="absolute -top-1 left-2 w-2 h-2 bg-gray-50 rotate-45 transform" />
+                             {memory.likes > 0 && (
+                                        <div className="flex items-start gap-1 text-blue-900 font-bold border-b border-gray-200/50 pb-1 mb-1 leading-5">
+                                            <Heart size={12} fill="none" className="mt-1 shrink-0" />
+                                            <span className="break-words">
+                                                {/* 优先显示昵称列表，如果没有则回退到数字 */}
+                                                {memory.likeNames && memory.likeNames.length > 0 
+                                                    ? memory.likeNames.join(', ') 
+                                                    : `${memory.likes} 人`} 觉得很赞
+                                            </span>
+                                        </div>
+                                    )}
+                             {/* 评论列表 */}
+                                    {(memory.comments || []).map((c: any) => (
+                                        <div key={c.id} className="leading-5 text-gray-600">
+                                            <span className="font-bold text-blue-900">{c.authorName || 'Ta'}:</span> {c.text}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
-                    )}
-                </div>
+                    </div>
+                ))}
             </div>
-        ))}
-    </div>
-) : (
+        ) : (
               <div>
                   <div className="flex justify-between items-center mb-4 px-2">
                       <div onClick={() => setIsCreatingAlbum(true)} className="flex items-center gap-2 text-gray-500 cursor-pointer hover:text-rose-500"><FolderPlus size={20} /><span className="text-sm font-bold">新建相册</span></div>
@@ -1172,6 +1219,42 @@ const saveAlbumName = async () => {
           )}
       </div>
 
+
+      {/* [新增] 消息列表弹窗 */}
+      <AnimatePresence>
+          {showMessageList && (
+              <motion.div 
+                initial={{ opacity: 0, y: 100 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 100 }}
+                className="fixed inset-0 z-[200] bg-white flex flex-col"
+              >
+                  <div className="p-4 border-b flex items-center justify-between bg-white sticky top-0">
+                      <h3 className="font-bold text-lg">消息列表</h3>
+                      <button onClick={() => setShowMessageList(false)}><X size={24} /></button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                      {notifications.length === 0 && <p className="text-center text-gray-400 mt-10">暂无消息</p>}
+                      {notifications.map((note: any) => (
+                          <div key={note.id} onClick={() => handleNoteClick(note)} className={`flex gap-3 p-3 rounded-xl cursor-pointer ${note.isRead ? 'bg-white' : 'bg-rose-50'}`}>
+                              <img src={note.fromAvatar || DEFAULT_AVATAR} className="w-10 h-10 rounded-lg bg-gray-200 object-cover" />
+                              <div className="flex-1 border-b border-gray-100 pb-2">
+                                  <div className="flex justify-between">
+                                      <span className="font-bold text-blue-900 text-sm">{note.fromUser}</span>
+                                      <span className="text-xs text-gray-400">{formatDate(note.createdAt)}</span>
+                                  </div>
+                                  <div className="text-sm text-gray-700 mt-1">
+                                      {note.type === 'like' ? <span className="flex items-center gap-1"><Heart size={12} fill="red" className="text-red-500"/> 赞了你的朋友圈</span> : note.content}
+                                  </div>
+                              </div>
+                              {/* 如果能获取到缩略图更好，这里简化 */}
+                              <div className="w-10 h-10 bg-gray-100 rounded flex items-center justify-center text-xs text-gray-400">查看</div>
+                          </div>
+                      ))}
+                  </div>
+              </motion.div>
+          )}
+      </AnimatePresence>
+      
+      
       {showUploadModal && (
         <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl animate-in fade-in zoom-in">
@@ -1395,9 +1478,10 @@ const CalendarViewContent = ({ periods, conflicts, todos, addTodo, toggleTodo, o
 // --- Main App ---
 const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => void, onUpdateUser: (u:any)=>void }) => {
   // 添加这一行，作为版本标记
-  console.log("当前版本: v2.0 - 已修复Query参数");
+  console.log("当前版本: v1.0 - 完善朋友圈功能");
   
   const [activePage, setActivePage] = useState<Page>(Page.HOME);
+  const [notifications, setNotifications] = useState<any[]>([]); // [新增] 通知数据
   const [memories, setMemories] = useState<Memory[]>([]);
   const [albums, setAlbums] = useState<Album[]>([]);
   const [pinnedPhotos, setPinnedPhotos] = useState<PinnedPhoto[]>([]);
@@ -1496,44 +1580,55 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
     if (user.avatarUrl) setAvatarUrl(user.avatarUrl);
 
 // 定义加载数据的异步函数
+// 找到 loadData 函数，完全替换为：
     const loadData = async () => {
        const safeFind = (table: string) => {
            try { return getQuery(table); } catch(e) { return null; }
        };
-       // [新增] 忽略表不存在(101)错误的辅助函数
        const ignoreNotFound = (e: any) => { if(e.code !== 101) console.warn(e); };
 
-       // --- 1. 加载朋友圈 (Moments) ---
+       // 1. 加载朋友圈 (Moments)
        const momentsQuery = safeFind('Moments');
        if (momentsQuery) {
-           momentsQuery.descending('createdAt').find().then((res: any[]) => {
+           momentsQuery.descending('createdAt').limit(50).find().then((res: any[]) => {
                setMemories(res.map((item: any) => {
                    const m = item.toJSON();
                    const likedBy = Array.isArray(m.likedBy) ? m.likedBy : [];
                    const isLiked = likedBy.includes(user.objectId);
                    return {
                        ...m, 
-                       id: item.id, // [修改] 使用 item.id 修复唯一标识
+                       id: item.id,
                        date: formatDate(item.createdAt),
                        media: m.images || [], 
-                       comments: m.comments || [],
+                       comments: m.comments || [], 
                        likes: m.likes || 0,
                        isLiked: isLiked,
+                       likeNames: m.likeNames || [], // [新增] 读取点赞人昵称列表
                        creatorId: m.creatorId || m.writer_id,
                        creatorAvatar: m.creatorAvatar
                    };
                }));
-           }).catch(ignoreNotFound); // [修改] 使用 ignoreNotFound
+           }).catch(ignoreNotFound);
+       }
+
+       // [新增] 加载通知消息 (Notification)
+       const noteQuery = safeFind('Notification');
+       if (noteQuery) {
+           noteQuery.equalTo('toUser', user.objectId);
+           noteQuery.descending('createdAt');
+           noteQuery.limit(20);
+           noteQuery.find().then((res: any[]) => {
+                setNotifications(res.map(n => ({ ...n.toJSON(), id: n.id })));
+           }).catch(ignoreNotFound);
        }
 
       // --- 2. 加载相册 (Album) ---
        safeFind('Album')?.descending('createdAt').find().then((res: any) => {
             setAlbums(res.map((a: any) => {
                 const data = a.toJSON();
-                // [修改] 使用 a.id 修复“选中一个全被选中”的 bug
                 return { ...data, id: a.id, media: Array.isArray(data.media) ? data.media : [] };
             })); 
-       }).catch(ignoreNotFound); // [修改]
+       }).catch(ignoreNotFound);
       // --- 3. [修复] 加载情侣共享设置 (Bmob -> LeanCloud) ---
        if (user.coupleId) {
            // 3. 保存到 LeanCloud 共享表
@@ -1590,50 +1685,104 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
       }, [user]); // 依赖 user：当切换账号时会自动重新加载
 
           // [新增] 真实的云端点赞逻辑
-  const handleRealLike = async (id: string) => {
+const handleRealLike = async (id: string) => {
       const memory = memories.find(m => m.id === id);
       if (!memory) return;
       
+      const isLiked = memory.isLiked;
+      const nickname = user.nickname || user.username;
+      
       // 1. 乐观更新 UI
-      setMemories(memories.map(m => m.id === id ? { ...m, likes: m.isLiked ? m.likes - 1 : m.likes + 1, isLiked: !m.isLiked } : m));
+      // 1. 乐观更新 (本地立即显示)
+      setMemories(memories.map(m => {
+          if (m.id !== id) return m;
+          // 处理昵称列表
+          let newLikeNames = m.likeNames || [];
+          if (isLiked) {
+              newLikeNames = newLikeNames.filter((n: string) => n !== nickname);
+          } else {
+              if (!newLikeNames.includes(nickname)) newLikeNames = [...newLikeNames, nickname];
+          }
+          return { ...m, likes: isLiked ? m.likes - 1 : m.likes + 1, isLiked: !isLiked, likeNames: newLikeNames };
+      }));
 
-      // 2. 更新云端
+// 2. 云端更新
       try {
           const m = AV.Object.createWithoutData('Moments', id);
-          if (memory.isLiked) {
+          if (isLiked) {
               m.increment('likes', -1);
-              m.remove('likedBy', user.objectId); // 移除我的ID
+              m.remove('likedBy', user.objectId);
+              m.remove('likeNames', nickname); // [新增] 移除昵称
           } else {
               m.increment('likes', 1);
-              m.addUnique('likedBy', user.objectId); // 添加我的ID
+              m.addUnique('likedBy', user.objectId);
+              m.addUnique('likeNames', nickname); // [新增] 添加昵称
+              
+              // [新增] 发送通知 (如果不是给自己点赞)
+              if (memory.creatorId !== user.objectId) {
+                  const note = new AV.Object('Notification');
+                  note.set('type', 'like');
+                  note.set('fromUser', nickname);
+                  note.set('fromAvatar', user.avatarUrl);
+                  note.set('toUser', memory.creatorId);
+                  note.set('momentId', id);
+                  note.set('isRead', false);
+                  note.set('content', '觉得很赞');
+                  note.save(); // 异步保存，不卡界面
+              }
           }
           await m.save();
       } catch (e) { console.error("点赞失败", e); }
   };
 
   // [新增] 真实的云端评论逻辑
+// --- 修改 handleRealComment 函数 (增加通知) ---
   const handleRealComment = async (id: string, text: string) => {
+      const nickname = user.nickname || user.username;
       const newComment = { 
           id: Date.now().toString(), 
           text: text, 
           authorId: user.objectId, 
-          authorName: user.nickname || user.username, // [修复] 保存名字而不是 "me"
+          authorName: nickname,
           date: getBeijingDateString() 
       };
 
-      // 1. 乐观更新 UI
       setMemories(memories.map(m => m.id === id ? { ...m, comments: [...m.comments, newComment] } : m));
 
-      // 2. 更新云端
       try {
           const m = AV.Object.createWithoutData('Moments', id);
-          m.add('comments', newComment); // 添加到数组
+          m.add('comments', newComment);
           await m.save();
+
+          // [新增] 发送评论通知
+          const memory = memories.find(m => m.id === id);
+          if (memory && memory.creatorId !== user.objectId) {
+              const note = new AV.Object('Notification');
+              note.set('type', 'comment');
+              note.set('fromUser', nickname);
+              note.set('fromAvatar', user.avatarUrl);
+              note.set('toUser', memory.creatorId);
+              note.set('momentId', id);
+              note.set('isRead', false);
+              note.set('content', text);
+              note.save();
+          }
       } catch (e) { console.error("评论失败", e); }
   };
 
 
-    
+
+  // --- [新增] 标记通知已读函数 ---
+  const handleReadNotification = async (noteId: string) => {
+      // 本地更新
+      setNotifications(prev => prev.map(n => n.id === noteId ? { ...n, isRead: true } : n));
+      // 云端更新
+      try {
+          const note = AV.Object.createWithoutData('Notification', noteId);
+          note.set('isRead', true);
+          await note.save();
+      } catch(e) {}
+  };
     
 
   // ================= Bmob 云端数据加载逻辑 (结束) =================
@@ -1819,7 +1968,7 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                                                             }
                                                             if (target) target.value = ''; 
                                                         }}
-                                                           onTextPost={() => { setUploadType('text'); setUploadImages([]); setShowUploadModal(true); }} showUploadModal={showUploadModal} setShowUploadModal={setShowUploadModal} uploadImages={uploadImages} setUploadImages={setUploadImages} uploadCaption={uploadCaption} setUploadCaption={setUploadCaption} uploadType={uploadType} 
+                                                           onTextPost={() => { setUploadType('text'); setUploadImages([]); setShowUploadModal(true); }} showUploadModal={showUploadModal} setShowUploadModal={setShowUploadModal} uploadImages={uploadImages} setUploadImages={setUploadImages} uploadCaption={uploadCaption} setUploadCaption={setUploadCaption} uploadType={uploadType} onFileSelect={onFileSelect} onTextPost={onTextPost} 
                                                            confirmUpload={async () => { 
                                                               if((uploadType === 'media' && !uploadImages.length) || (uploadType === 'text' && !uploadCaption.trim())) return;
                                                               
@@ -1872,7 +2021,13 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                                                                   // 如果失败，最好弹窗告诉用户
                                                                   alert("云端保存失败: " + (e.error || e.message) + "\n请检查网络或刷新页面");
                                                               }
-                                                          }} coverUrl={momentsCover} onUpdateCover={(e: any) => updateCoupleSettings('cover', e)} momentsAvatar={momentsAvatar} onUpdateMomentsAvatar={(e: any) => updateCoupleSettings('avatar', e)}  onDeleteMemory={(id:string) => { if(confirm("删除?")) setMemories(memories.filter(m => m.id !== id)); }} momentsTitle={momentsTitle} setMomentsTitle={setMomentsTitle} avatarUrl={avatarUrl} setAvatarUrl={setAvatarUrl} setMomentsCover={setMomentsCover} />)}
+                                                          }} coverUrl={momentsCover} onUpdateCover={(e: any) => updateCoupleSettings('cover', e)} momentsAvatar={momentsAvatar} onUpdateMomentsAvatar={(e: any) => updateCoupleSettings('avatar', e)}  onDeleteMemory={async (id:string) => { 
+                if(!confirm("删除?")) return;
+                setMemories(memories.filter(m => m.id !== id)); // 本地删
+                try { await AV.Object.createWithoutData('Moments', id).destroy(); } catch(e) { console.error(e); } // 云端删
+            }} notifications={notifications} onReadNotification={handleReadNotification} momentsTitle={momentsTitle} setMomentsTitle={setMomentsTitle} 
+            avatarUrl={avatarUrl} setAvatarUrl={setAvatarUrl} setMomentsCover={setMomentsCover}
+            momentsAvatar={momentsAvatar} onUpdateMomentsAvatar={onUpdateMomentsAvatar} />)}
                        {activePage === Page.CYCLE && <CycleViewContent 
                            periods={periods} 
                            nextPeriod={calculateNextPeriod()} 
