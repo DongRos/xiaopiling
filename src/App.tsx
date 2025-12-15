@@ -1142,7 +1142,13 @@ const saveAlbumName = async () => {
                         </div>
                     )}
                               <div className="flex justify-between items-center mt-2 relative">
-                                  <div className="flex items-center gap-3"><span className="text-xs text-gray-400">{memory.date}</span><button onClick={() => onDeleteMemory(memory.id)} className="text-xs text-blue-900 hover:underline">删除</button></div>
+                                  <div className="flex items-center gap-3">
+        <span className="text-xs text-gray-400">{memory.date}</span>
+        {/* 只有是自己发布的，才显示删除按钮 */}
+        {memory.creatorId === user.objectId && (
+            <button onClick={() => onDeleteMemory(memory.id)} className="text-xs text-blue-900 hover:underline">删除</button>
+        )}
+    </div>
                          <div className="relative"><button onClick={(e) => { e.stopPropagation(); setActiveMenuId(activeMenuId === memory.id ? null : memory.id); }} className="bg-gray-50 p-1 rounded-sm text-blue-800 hover:bg-gray-100"><MoreHorizontal size={16} /></button><AnimatePresence>{activeMenuId === memory.id && (<motion.div initial={{ opacity: 0, scale: 0.9, x: 10 }} animate={{ opacity: 1, scale: 1, x: 0 }} exit={{ opacity: 0, scale: 0.9, x: 10 }} className="absolute right-8 top-0 bg-gray-800 text-white rounded-md flex items-center overflow-hidden shadow-xl z-10" onClick={(e) => e.stopPropagation()}><button onClick={() => { handleLike(memory.id); setActiveMenuId(null); }} className="flex items-center gap-1 px-4 py-2 hover:bg-gray-700 text-xs font-bold min-w-[80px] justify-center"><Heart size={14} fill={memory.isLiked ? "red" : "none"} color={memory.isLiked ? "red" : "white"} />{memory.isLiked ? '取消' : '赞'}</button><div className="w-[1px] h-4 bg-gray-600"></div><button onClick={() => { const input = prompt('请输入评论'); if(input) { handleComment(memory.id, input); setActiveMenuId(null); } }} className="flex items-center gap-1 px-4 py-2 hover:bg-gray-700 text-xs font-bold min-w-[80px] justify-center"><MessageCircle size={14} />评论</button></motion.div>)}</AnimatePresence></div>
                     </div>
                               {(memory.likes > 0 || (memory.comments && memory.comments.length > 0)) && (
@@ -1581,16 +1587,23 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
 
 // 定义加载数据的异步函数
 // 找到 loadData 函数，完全替换为：
+// 1. 定义加载数据的异步函数 (已修复 404 报错刷屏问题)
     const loadData = async () => {
-       const safeFind = (table: string) => {
-           try { return getQuery(table); } catch(e) { return null; }
+       // 封装一个静默查询函数，遇到表不存在(101)错误直接返回空数组，不报错
+       const silentFind = async (query: AV.Query) => {
+           try {
+               return await query.find();
+           } catch (e: any) {
+               // 101 = Class not found (表不存在)，这是正常的，忽略即可
+               if (e.code !== 101) console.warn("Load Error:", e);
+               return [];
+           }
        };
-       const ignoreNotFound = (e: any) => { if(e.code !== 101) console.warn(e); };
 
-       // 1. 加载朋友圈 (Moments)
-       const momentsQuery = safeFind('Moments');
+       // 1. 加载朋友圈
+       const momentsQuery = getQuery('Moments');
        if (momentsQuery) {
-           momentsQuery.descending('createdAt').limit(50).find().then((res: any[]) => {
+           silentFind(momentsQuery.descending('createdAt').limit(50)).then((res: any[]) => {
                setMemories(res.map((item: any) => {
                    const m = item.toJSON();
                    const likedBy = Array.isArray(m.likedBy) ? m.likedBy : [];
@@ -1603,76 +1616,63 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                        comments: m.comments || [], 
                        likes: m.likes || 0,
                        isLiked: isLiked,
-                       likeNames: m.likeNames || [], // [新增] 读取点赞人昵称列表
+                       likeNames: m.likeNames || [],
                        creatorId: m.creatorId || m.writer_id,
                        creatorAvatar: m.creatorAvatar
                    };
                }));
-           }).catch(ignoreNotFound);
+           });
        }
 
-       // [新增] 加载通知消息 (Notification)
-       const noteQuery = safeFind('Notification');
-       if (noteQuery) {
-           noteQuery.equalTo('toUser', user.objectId);
-           noteQuery.descending('createdAt');
-           noteQuery.limit(20);
-           noteQuery.find().then((res: any[]) => {
-                setNotifications(res.map(n => ({ ...n.toJSON(), id: n.id })));
-           }).catch(ignoreNotFound);
+       // 2. 加载通知消息 (Notification)
+       const noteQuery = new AV.Query('Notification'); // 注意这里不用 getQuery，因为 Notification 是定向发给个人的
+       noteQuery.equalTo('toUser', user.objectId); // 只查发给我的
+       noteQuery.descending('createdAt');
+       noteQuery.limit(20);
+       silentFind(noteQuery).then((res: any[]) => {
+            setNotifications(res.map(n => ({ ...n.toJSON(), id: n.id })));
+       });
+
+      // 3. 加载相册
+       const albumQuery = getQuery('Album');
+       if(albumQuery) {
+           silentFind(albumQuery.descending('createdAt')).then((res: any) => {
+                setAlbums(res.map((a: any) => {
+                    const data = a.toJSON();
+                    return { ...data, id: a.id, media: Array.isArray(data.media) ? data.media : [] };
+                })); 
+           });
        }
 
-      // --- 2. 加载相册 (Album) ---
-       safeFind('Album')?.descending('createdAt').find().then((res: any) => {
-            setAlbums(res.map((a: any) => {
-                const data = a.toJSON();
-                return { ...data, id: a.id, media: Array.isArray(data.media) ? data.media : [] };
-            })); 
-       }).catch(ignoreNotFound);
-      // --- 3. [修复] 加载情侣共享设置 (Bmob -> LeanCloud) ---
+      // 4. 加载其他数据 (全部使用 silentFind)
        if (user.coupleId) {
-           // 3. 保存到 LeanCloud 共享表
-          try {
-              const q = new AV.Query('CoupleSettings');
-              q.equalTo('coupleId', String(user.coupleId));
-              // [新增] 忽略表不存在的报错
-              let res: any[] = [];
-              try { res = await q.find(); } catch(err: any) { if(err.code !== 101) console.warn(err); }
-
+          const q = new AV.Query('CoupleSettings');
+          q.equalTo('coupleId', String(user.coupleId));
+          silentFind(q).then(res => {
               if (res.length > 0) {
                   const item = res[0];
-                  // [修复] 读取云端数据并更新本地状态
                   const cover = item.get('coverUrl');
                   const avatar = item.get('avatarUrl');
                   if (cover) setMomentsCover(cover);
                   if (avatar) setMomentsAvatar(avatar);
               }
-              // else 分支不需要，读取时如果没有数据就不管
-          } catch (e) {
-              console.error("同步共享设置失败:", e);
-          }
+          });
        }
 
-   // --- 4. 加载其他数据 (全部加上 ignoreNotFound 和 .id 修正) ---
-       safeFind('Message')?.descending('createdAt').find().then((res: any) => 
-           setMessages(res.map((m: any) => ({...m.toJSON(), id: m.id}))) 
-       ).catch(ignoreNotFound);
+       const msgQ = getQuery('Message');
+       if(msgQ) silentFind(msgQ.descending('createdAt')).then((res: any) => setMessages(res.map((m: any) => ({...m.toJSON(), id: m.id}))));
 
-       safeFind('PinnedPhoto')?.find().then((res:any) => 
-           setPinnedPhotos(res.map((p:any)=>({...p.toJSON(), id: p.id}))) 
-       ).catch(ignoreNotFound);
+       const pinQ = getQuery('PinnedPhoto');
+       if(pinQ) silentFind(pinQ).then((res:any) => setPinnedPhotos(res.map((p:any)=>({...p.toJSON(), id: p.id}))));
 
-       safeFind('Period')?.find().then((res:any) => 
-            setPeriods(res.map((p:any) => p.toJSON()))
-       ).catch(ignoreNotFound);
+       const periodQ = getQuery('Period');
+       if(periodQ) silentFind(periodQ).then((res:any) => setPeriods(res.map((p:any) => p.toJSON())));
 
-       safeFind('Conflict')?.descending('createdAt').find().then((res:any) => 
-           setConflicts(res.map((c:any)=>({...c.toJSON(), id: c.id}))) 
-       ).catch(ignoreNotFound);
+       const conflictQ = getQuery('Conflict');
+       if(conflictQ) silentFind(conflictQ.descending('createdAt')).then((res:any) => setConflicts(res.map((c:any)=>({...c.toJSON(), id: c.id}))));
 
-       safeFind('Todo')?.find().then((res:any) => 
-           setTodos(res.map((t:any)=>({...t.toJSON(), id: t.id}))) 
-       ).catch(ignoreNotFound);
+       const todoQ = getQuery('Todo');
+       if(todoQ) silentFind(todoQ).then((res:any) => setTodos(res.map((t:any)=>({...t.toJSON(), id: t.id}))));
     };
     // 1. 立即执行一次加载
     loadData();
@@ -1685,18 +1685,17 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
       }, [user]); // 依赖 user：当切换账号时会自动重新加载
 
           // [新增] 真实的云端点赞逻辑
-const handleRealLike = async (id: string) => {
+// [新增] 真实的云端点赞逻辑 (已修复通知权限)
+  const handleRealLike = async (id: string) => {
       const memory = memories.find(m => m.id === id);
       if (!memory) return;
       
       const isLiked = memory.isLiked;
       const nickname = user.nickname || user.username;
       
-      // 1. 乐观更新 UI
       // 1. 乐观更新 (本地立即显示)
       setMemories(memories.map(m => {
           if (m.id !== id) return m;
-          // 处理昵称列表
           let newLikeNames = m.likeNames || [];
           if (isLiked) {
               newLikeNames = newLikeNames.filter((n: string) => n !== nickname);
@@ -1706,20 +1705,20 @@ const handleRealLike = async (id: string) => {
           return { ...m, likes: isLiked ? m.likes - 1 : m.likes + 1, isLiked: !isLiked, likeNames: newLikeNames };
       }));
 
-// 2. 云端更新
+      // 2. 云端更新
       try {
           const m = AV.Object.createWithoutData('Moments', id);
           if (isLiked) {
               m.increment('likes', -1);
               m.remove('likedBy', user.objectId);
-              m.remove('likeNames', nickname); // [新增] 移除昵称
+              m.remove('likeNames', nickname); 
           } else {
               m.increment('likes', 1);
               m.addUnique('likedBy', user.objectId);
-              m.addUnique('likeNames', nickname); // [新增] 添加昵称
+              m.addUnique('likeNames', nickname); 
               
-              // [新增] 发送通知 (如果不是给自己点赞)
-              if (memory.creatorId !== user.objectId) {
+              // [关键修复] 发送通知 (如果不是给自己点赞)
+              if (memory.creatorId && memory.creatorId !== user.objectId) {
                   const note = new AV.Object('Notification');
                   note.set('type', 'like');
                   note.set('fromUser', nickname);
@@ -1728,7 +1727,18 @@ const handleRealLike = async (id: string) => {
                   note.set('momentId', id);
                   note.set('isRead', false);
                   note.set('content', '觉得很赞');
-                  note.save(); // 异步保存，不卡界面
+
+                  // --- 设置 ACL 权限 (关键) ---
+                  // 必须明确告诉 LeanCloud：这条消息“对方”也可以读、可以改(标记已读)
+                  const acl = new AV.ACL();
+                  acl.setReadAccess(user.objectId, true);  
+                  acl.setWriteAccess(user.objectId, true); 
+                  acl.setReadAccess(memory.creatorId, true);  
+                  acl.setWriteAccess(memory.creatorId, true); 
+                  note.setACL(acl);
+                  // -------------------------
+
+                  note.save(); 
               }
           }
           await m.save();
@@ -1737,6 +1747,7 @@ const handleRealLike = async (id: string) => {
 
   // [新增] 真实的云端评论逻辑
 // --- 修改 handleRealComment 函数 (增加通知) ---
+// [新增] 真实的云端评论逻辑 (已修复通知权限)
   const handleRealComment = async (id: string, text: string) => {
       const nickname = user.nickname || user.username;
       const newComment = { 
@@ -1754,9 +1765,9 @@ const handleRealLike = async (id: string) => {
           m.add('comments', newComment);
           await m.save();
 
-          // [新增] 发送评论通知
+          // [关键修复] 发送评论通知
           const memory = memories.find(m => m.id === id);
-          if (memory && memory.creatorId !== user.objectId) {
+          if (memory && memory.creatorId && memory.creatorId !== user.objectId) {
               const note = new AV.Object('Notification');
               note.set('type', 'comment');
               note.set('fromUser', nickname);
@@ -1765,6 +1776,16 @@ const handleRealLike = async (id: string) => {
               note.set('momentId', id);
               note.set('isRead', false);
               note.set('content', text);
+
+              // --- 设置 ACL 权限 (关键) ---
+              const acl = new AV.ACL();
+              acl.setReadAccess(user.objectId, true);
+              acl.setWriteAccess(user.objectId, true);
+              acl.setReadAccess(memory.creatorId, true); // 对方必须可读
+              acl.setWriteAccess(memory.creatorId, true); // 对方必须可写(改状态)
+              note.setACL(acl);
+              // -------------------------
+
               note.save();
           }
       } catch (e) { console.error("评论失败", e); }
