@@ -1510,7 +1510,7 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
       
 
       // --- 2. 加载相册 (Album) ---
-       safeFind('Album')?.order('-createdAt').find().then((res: any) => {
+       safeFind('Album')?.descending('createdAt').find().then((res: any) => { // [修改] order -> descending
             // 修改：先 .toJSON() 再合并 id，并强制初始化 media 数组
             setAlbums(res.map((a: any) => {
                 const data = a.toJSON();
@@ -1523,7 +1523,9 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
           try {
               const q = new AV.Query('CoupleSettings');
               q.equalTo('coupleId', String(user.coupleId));
-              const res = await q.find();
+              // [新增] 忽略表不存在的报错
+              let res: any[] = [];
+              try { res = await q.find(); } catch(err: any) { if(err.code !== 101) console.warn(err); }
 
               if (res.length > 0) {
                   const item = res[0];
@@ -1540,12 +1542,12 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
        }
 
        // --- 4. 加载其他数据 ---
-       safeFind('Message')?.order('-createdAt').find().then((res: any) => 
+       safeFind('Message')?.descending('createdAt').find().then((res: any) => // [修改] order -> descending
            // 修改：添加 .toJSON()
            setMessages(res.map((m: any) => ({...m.toJSON(), id: m.objectId}))) 
        ).catch(e => console.warn("加载Message失败", e));
 
-       safeFind('PinnedPhoto')?.find().then((res:any) => 
+       safeFind('PinnedPhoto')?.find().then((res:any) =>
            // 修改：添加 .toJSON()
            setPinnedPhotos(res.map((p:any)=>({...p.toJSON(), id: p.objectId}))) 
        ).catch(e => console.warn("加载PinnedPhoto失败", e));
@@ -1555,11 +1557,10 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
             setPeriods(res.map((p:any) => p.toJSON()))
        ).catch(e => console.warn("加载Period失败", e));
 
-       safeFind('Conflict')?.order('-createdAt').find().then((res:any) => 
+       safeFind('Conflict')?.descending('createdAt').find().then((res:any) => // [修改] order -> descending
            // 修改：添加 .toJSON()
            setConflicts(res.map((c:any)=>({...c.toJSON(), id: c.objectId}))) 
        ).catch(e => console.warn("加载Conflict失败", e));
-
        safeFind('Todo')?.find().then((res:any) => 
            // 修改：添加 .toJSON()
            setTodos(res.map((t:any)=>({...t.toJSON(), id: t.objectId}))) 
@@ -1645,7 +1646,14 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
           try {
               const q = new AV.Query('CoupleSettings');
               q.equalTo('coupleId', String(user.coupleId));
-              const res = await q.find();
+              
+              // [修改] 尝试查询，如果报错(表不存在)，则视为空数组，继续执行后面的创建逻辑
+              let res: any[] = [];
+              try {
+                  res = await q.find();
+              } catch (err: any) {
+                  if (err.code !== 101) throw err; // 如果不是101(Class缺失)错误，则抛出
+              }
 
               if (res.length > 0) {
                   const item = res[0];
