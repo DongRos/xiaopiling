@@ -195,9 +195,11 @@ const ImageViewer = ({ images, initialIndex, onClose, actions }: { images: strin
   );
 };
 
-const Navbar = ({ active, setPage }: { active: Page, setPage: (p: Page) => void }) => {
+// [修改] 增加 homeLabel 参数
+const Navbar = ({ active, setPage, homeLabel }: { active: Page, setPage: (p: Page) => void, homeLabel: string }) => {
   const navItems = [
-    { id: Page.HOME, icon: <Cat size={24} />, label: '小屁铃' },
+    // [修改] 使用传入的 homeLabel，如果没有则默认显示 '首页'
+    { id: Page.HOME, icon: <Cat size={24} />, label: homeLabel || '首页' },
     { id: Page.MEMORIES, icon: <Camera size={24} />, label: '点滴' },
     { id: Page.BOARD, icon: <MessageSquareHeart size={24} />, label: '留言板' },
     { id: Page.CYCLE, icon: <Heart size={24} />, label: '经期' },
@@ -322,8 +324,8 @@ const MiniCalendar = ({ periods, conflicts, todos }: any) => {
                              {/* 2. [新增] 预测经期 (蓝点) - 只有非实际经期才显示 */}
                              {d && isPredicted(d) && !periods.some((p: any) => { const s = parseLocalDate(p.startDate); const e = new Date(s); e.setDate(s.getDate()+p.duration); const c = new Date(today.getFullYear(), today.getMonth(), d); return c >= s && c < e; }) && d !== today.getDate() && <div className="w-1 h-1 rounded-full bg-blue-400" />}
 
-                             {/* 3. [新增] 待办事项 (黄点) - 仅显示未完成的 */}
-                             {d && todos && todos.some((t: any) => { const tDate = parseLocalDate(t.date); return tDate.getDate() === d && tDate.getMonth() === today.getMonth() && !t.completed; }) && d !== today.getDate() && <div className="w-1 h-1 rounded-full bg-yellow-400" />}
+                             {/* 3. [新增] 待办事项 (改为翠绿点) - 仅显示未完成的 */}
+                             {d && todos && todos.some((t: any) => { const tDate = parseLocalDate(t.date); return tDate.getDate() === d && tDate.getMonth() === today.getMonth() && !t.completed; }) && d !== today.getDate() && <div className="w-1 h-1 rounded-full bg-emerald-400" />}
                              
                              {/* 4. 吵架记录 (紫点) */}
                              {d && conflicts.some((c: any) => { const dt = parseLocalDate(c.date); return dt.getDate() === d && dt.getMonth() === today.getMonth(); }) && d !== today.getDate() && <div className="w-1 h-1 rounded-full bg-purple-500" />}
@@ -1765,7 +1767,7 @@ const CalendarViewContent = ({ periods, conflicts, todos, addTodo, toggleTodo, o
 // --- Main App ---
 const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => void, onUpdateUser: (u:any)=>void }) => {
   // 添加这一行，作为版本标记
-  console.log("当前版本: v3.0 - 完善留言板功能");
+  console.log("当前版本: v5.0 - 完善版");
   
   const [activePage, setActivePage] = useState<Page>(Page.HOME);
   const [notifications, setNotifications] = useState<any[]>([]); // [新增] 通知数据
@@ -1918,6 +1920,8 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                   if (item.get('avatarUrl')) setMomentsAvatar(item.get('avatarUrl'));
                   // [新增] 同步纪念日
                   if (item.get('anniversaryDate')) setAnniversaryDate(item.get('anniversaryDate'));
+                  // [新增] 同步首页标题
+                  if (item.get('appTitle')) setAppTitle(item.get('appTitle'));
               } 
           });
        }
@@ -2160,7 +2164,28 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
           alert("同步更新失败，请检查网络");
       }
   };
-      
+
+
+
+  // [新增] 保存首页标题到云端
+  const saveAppTitle = async (title: string) => {
+      if (!title.trim() || !user.coupleId) return;
+      try {
+           const q = new AV.Query('CoupleSettings');
+           q.equalTo('coupleId', String(user.coupleId));
+           const res = await q.find();
+           if (res.length > 0) {
+               res[0].set('appTitle', title);
+               await res[0].save();
+           } else {
+               const newSet = new AV.Object('CoupleSettings');
+               newSet.set('coupleId', String(user.coupleId));
+               newSet.set('appTitle', title);
+               await newSet.save();
+           }
+      } catch(e) { console.error("保存标题失败", e); }
+  };
+  
         
 // [修改] 拍照逻辑：支持云端保存
   const handleTakePhoto = async () => {
@@ -2302,7 +2327,17 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                   
                   <header className="absolute top-0 left-0 right-0 pt-[calc(1.5rem+env(safe-area-inset-top))] px-4 md:px-8 flex justify-between items-start z-[70] pointer-events-none">
                     <div className="pointer-events-auto">
-                      {isEditingTitle ? (<input value={appTitle} onChange={(e) => setAppTitle(e.target.value)} onBlur={() => setIsEditingTitle(false)} onKeyDown={(e) => { if(e.key === 'Enter') setIsEditingTitle(false); }} autoFocus className="text-4xl md:text-6xl font-cute text-rose-500 drop-shadow-sm -rotate-2 bg-transparent border-b-2 border-rose-300 outline-none w-48 md:w-80 text-center" />) : (
+                      {isEditingTitle ? (
+                          <input 
+                            value={appTitle} 
+                            onChange={(e) => setAppTitle(e.target.value)} 
+                            // [修改] 失去焦点或回车时，保存到云端
+                            onBlur={() => { setIsEditingTitle(false); saveAppTitle(appTitle); }} 
+                            onKeyDown={(e) => { if(e.key === 'Enter') { setIsEditingTitle(false); saveAppTitle(appTitle); }}} 
+                            autoFocus 
+                            className="text-4xl md:text-6xl font-cute text-rose-500 drop-shadow-sm -rotate-2 bg-transparent border-b-2 border-rose-300 outline-none w-48 md:w-80 text-center" 
+                          />
+                      ) : (
                              <h1 onClick={() => setIsEditingTitle(true)} className="text-4xl md:text-6xl font-cute text-rose-500 drop-shadow-sm -rotate-2 cursor-pointer select-none hover:scale-105 transition" title="点击修改">{appTitle}</h1>
                       )}
                       <p className="text-rose-400 text-xs md:text-sm mt-1 font-cute ml-1 md:ml-2 tracking-widest bg-white/50 backdrop-blur-sm inline-block px-2 rounded-lg">LOVE SPACE</p>
@@ -2616,7 +2651,7 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
             </motion.div>
          </AnimatePresence>
       </main>
-      <Navbar active={activePage} setPage={navigateTo} />
+      <Navbar active={activePage} setPage={navigateTo} homeLabel={appTitle} />
     </div>
   );
 };  
