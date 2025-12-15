@@ -1600,14 +1600,13 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
       }
       return q;
   };
-  useEffect(() => {
+useEffect(() => {
     // 设置头像 (从登录用户数据中获取)
     if (user.avatarUrl) setAvatarUrl(user.avatarUrl);
 
-// 定义加载数据的异步函数
-// 找到 loadData 函数，完全替换为：
-// 1. 定义加载数据的异步函数 (已修复 404 报错刷屏问题)
-    const loadData = async () => {
+    // 1. 定义加载数据的异步函数 (已修复 404 报错刷屏问题)
+    // [修改] 增加 isFullLoad 参数，默认为 true
+    const loadData = async (isFullLoad = true) => {
        // 封装一个静默查询函数，遇到表不存在(101)错误直接返回空数组，不报错
        const silentFind = async (query: AV.Query) => {
            try {
@@ -1618,6 +1617,8 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                return [];
            }
        };
+
+       // --- 第一部分：始终刷新的数据 (保证点滴页/消息实时更新) ---
 
        // 1. 加载朋友圈
        const momentsQuery = getQuery('Moments');
@@ -1652,56 +1653,60 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
             setNotifications(res.map(n => ({ ...n.toJSON(), id: n.id })));
        });
 
-      // 3. 加载相册
-       const albumQuery = getQuery('Album');
-       if(albumQuery) {
-           silentFind(albumQuery.descending('createdAt')).then((res: any) => {
-                setAlbums(res.map((a: any) => {
-                    const data = a.toJSON();
-                    return { ...data, id: a.id, media: Array.isArray(data.media) ? data.media : [] };
-                })); 
-           });
+       // --- 第二部分：仅在初始化时加载的数据 (防止轮询时重置首页/其他页状态) ---
+       if (isFullLoad) {
+           // 3. 加载相册
+           const albumQuery = getQuery('Album');
+           if(albumQuery) {
+               silentFind(albumQuery.descending('createdAt')).then((res: any) => {
+                    setAlbums(res.map((a: any) => {
+                        const data = a.toJSON();
+                        return { ...data, id: a.id, media: Array.isArray(data.media) ? data.media : [] };
+                    })); 
+               });
+           }
+
+           // 4. 加载其他数据 (CoupleSettings, Message, PinnedPhoto, Period, Conflict, Todo)
+           if (user.coupleId) {
+              const q = new AV.Query('CoupleSettings');
+              q.equalTo('coupleId', String(user.coupleId));
+              silentFind(q).then(res => {
+                  if (res.length > 0) {
+                      const item = res[0];
+                      const cover = item.get('coverUrl');
+                      const avatar = item.get('avatarUrl');
+                      if (cover) setMomentsCover(cover);
+                      if (avatar) setMomentsAvatar(avatar);
+                  }
+              });
+           }
+
+           const msgQ = getQuery('Message');
+           if(msgQ) silentFind(msgQ.descending('createdAt')).then((res: any) => setMessages(res.map((m: any) => ({...m.toJSON(), id: m.id}))));
+
+           const pinQ = getQuery('PinnedPhoto');
+           if(pinQ) silentFind(pinQ).then((res:any) => setPinnedPhotos(res.map((p:any)=>({...p.toJSON(), id: p.id}))));
+
+           const periodQ = getQuery('Period');
+           if(periodQ) silentFind(periodQ).then((res:any) => setPeriods(res.map((p:any) => p.toJSON())));
+
+           const conflictQ = getQuery('Conflict');
+           if(conflictQ) silentFind(conflictQ.descending('createdAt')).then((res:any) => setConflicts(res.map((c:any)=>({...c.toJSON(), id: c.id}))));
+
+           const todoQ = getQuery('Todo');
+           if(todoQ) silentFind(todoQ).then((res:any) => setTodos(res.map((t:any)=>({...t.toJSON(), id: t.id}))));
        }
-
-      // 4. 加载其他数据 (全部使用 silentFind)
-       if (user.coupleId) {
-          const q = new AV.Query('CoupleSettings');
-          q.equalTo('coupleId', String(user.coupleId));
-          silentFind(q).then(res => {
-              if (res.length > 0) {
-                  const item = res[0];
-                  const cover = item.get('coverUrl');
-                  const avatar = item.get('avatarUrl');
-                  if (cover) setMomentsCover(cover);
-                  if (avatar) setMomentsAvatar(avatar);
-              }
-          });
-       }
-
-       const msgQ = getQuery('Message');
-       if(msgQ) silentFind(msgQ.descending('createdAt')).then((res: any) => setMessages(res.map((m: any) => ({...m.toJSON(), id: m.id}))));
-
-       const pinQ = getQuery('PinnedPhoto');
-       if(pinQ) silentFind(pinQ).then((res:any) => setPinnedPhotos(res.map((p:any)=>({...p.toJSON(), id: p.id}))));
-
-       const periodQ = getQuery('Period');
-       if(periodQ) silentFind(periodQ).then((res:any) => setPeriods(res.map((p:any) => p.toJSON())));
-
-       const conflictQ = getQuery('Conflict');
-       if(conflictQ) silentFind(conflictQ.descending('createdAt')).then((res:any) => setConflicts(res.map((c:any)=>({...c.toJSON(), id: c.id}))));
-
-       const todoQ = getQuery('Todo');
-       if(todoQ) silentFind(todoQ).then((res:any) => setTodos(res.map((t:any)=>({...t.toJSON(), id: t.id}))));
     };
-    // 1. 立即执行一次加载
-    loadData();
     
-    // 2. 开启轮询：每5秒自动同步一次 (实现自动拉取最新数据)
-    const timer = setInterval(loadData, 5000);
+    // 1. 立即执行一次加载 (加载所有数据，isFullLoad = true)
+    loadData(true);
+    
+    // 2. 开启轮询 (只刷新点滴页数据，isFullLoad = false，防止重置首页状态)
+    const timer = setInterval(() => loadData(false), 5000);
 
     // 页面销毁时清除定时器
-        return () => clearInterval(timer);
-      }, [user]); // 依赖 user：当切换账号时会自动重新加载
+    return () => clearInterval(timer);
+  }, [user]); // 依赖 user：当切换账号时会自动重新加载
 
           // [新增] 真实的云端点赞逻辑
 // [新增] 真实的云端点赞逻辑 (已修复通知权限)
