@@ -1535,7 +1535,7 @@ return (
                 {activeTab === 'solo' ? (
                     // 独自记录输入区 (保持不变)
                     <div className="bg-white rounded-3xl p-6 shadow-lg border border-indigo-50 mb-8">
-                        <h3 className="text-center font-bold text-indigo-900 mb-4 font-cute">✏️ 独自笔录</h3>
+                        <h3 className="text-center font-bold text-indigo-900 mb-4 font-cute">✏️ 一个人写</h3>
                         <div className="space-y-4">
                             <input className="w-full bg-gray-50 rounded-xl p-3 text-sm outline-none" placeholder="争吵原因..." value={reason} onChange={e => setReason(e.target.value)} />
                             <div className="grid grid-cols-2 gap-3">
@@ -1543,7 +1543,7 @@ return (
                                 <textarea className="bg-rose-50/50 rounded-xl p-3 text-xs h-24 resize-none" placeholder="女方观点..." value={herPoint} onChange={e => setHerPoint(e.target.value)} />
                             </div>
                             <button onClick={handleSoloJudge} disabled={isJudging} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold shadow-md flex justify-center items-center gap-2">
-                                {isJudging ? <Loader2 className="animate-spin" /> : <Gavel size={20} />} 请求裁决
+                                {isJudging ? <Loader2 className="animate-spin" /> : <Gavel size={20} />} 请求喵喵法官裁决
                             </button>
                         </div>
                     </div>
@@ -1560,11 +1560,11 @@ return (
                         ) : (
                             <div>
                                 <h3 className="text-center font-bold text-rose-500 mb-4 font-cute">
-                                    {jointSession ? `💖 回复 ${jointSession.initiatorName} 的心里话` : '💌 发起一次爱的沟通'}
+                                    {jointSession ? `💖 回复 ${jointSession.initiatorName} 的心里话` : '双方裁决'}
                                 </h3>
                                 <div className="space-y-4">
-                                    <div><label className="text-xs font-bold text-gray-500 ml-1">你眼中的原因</label><input className="w-full bg-gray-50 rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-rose-200" placeholder="简单说说..." value={myReason} onChange={e => setMyReason(e.target.value)} /></div>
-                                    <div><label className="text-xs font-bold text-gray-500 ml-1">你的真实想法</label><textarea className="w-full bg-gray-50 rounded-xl p-3 text-sm h-24 resize-none focus:ring-2 focus:ring-rose-200" placeholder="其实我觉得..." value={myPoint} onChange={e => setMyPoint(e.target.value)} /></div>
+                                    <div><label className="text-xs font-bold text-gray-500 ml-1">争吵原因</label><input className="w-full bg-gray-50 rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-rose-200" placeholder="简单说说..." value={myReason} onChange={e => setMyReason(e.target.value)} /></div>
+                                    <div><label className="text-xs font-bold text-gray-500 ml-1">你的想法</label><textarea className="w-full bg-gray-50 rounded-xl p-3 text-sm h-24 resize-none focus:ring-2 focus:ring-rose-200" placeholder="其实我觉得..." value={myPoint} onChange={e => setMyPoint(e.target.value)} /></div>
                                     <button onClick={handleJointSubmit} disabled={isJointLoading} className="w-full bg-rose-500 text-white py-3 rounded-xl font-bold shadow-md flex justify-center items-center gap-2">{isJointLoading ? <Loader2 className="animate-spin" /> : <ShieldCheck size={20} />}{jointSession ? '提交并召唤喵喵法官' : '提交，等待对方'}</button>
                                 </div>
                             </div>
