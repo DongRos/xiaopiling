@@ -1059,17 +1059,6 @@ const saveAlbumName = async () => {
 
   return (
     <div className="h-full bg-white overflow-y-auto pb-[calc(6rem+env(safe-area-inset-bottom))] relative">
-      {/* [新增] 消息提示条 (仿微信，位于封面下方) */}
-        {activeTab === 'moments' && unreadNotes.length > 0 && (
-            <div className="flex justify-center -mt-8 relative z-40 mb-4 cursor-pointer" onClick={() => setShowMessageList(true)}>
-                <div className="bg-gray-800 text-white rounded-md px-4 py-2 flex items-center gap-2 shadow-lg text-sm font-bold animate-pulse">
-                    <div className="w-8 h-8 rounded bg-gray-600 overflow-hidden">
-                        <img src={latestNote.fromAvatar || DEFAULT_AVATAR} className="w-full h-full object-cover"/>
-                    </div>
-                    <span>{unreadNotes.length} 条新消息</span>
-                </div>
-            </div>
-        )}
         <div className="relative group cursor-pointer" style={{ height: '320px' }}>
              <div className="absolute inset-0 z-0" onClick={handleCoverClick}>
                  <img src={coverUrl} alt="Cover" className="w-full h-full object-cover" />
@@ -1117,6 +1106,18 @@ const saveAlbumName = async () => {
       <div className="px-4 pb-10 max-w-2xl mx-auto min-h-[50vh] bg-white">
           {activeTab === 'moments' ? (
     <div className="space-y-8">
+      {/* 🟢【新增】粘贴到这里，放在列表最上方，并去掉了原来的 -mt-8 样式 */}
+        {unreadNotes.length > 0 && (
+            <div className="flex justify-center mb-4 mt-2 cursor-pointer" onClick={() => setShowMessageList(true)}>
+                <div className="bg-gray-800 text-white rounded-md px-4 py-2 flex items-center gap-2 shadow-lg text-sm font-bold animate-pulse">
+                    <div className="w-8 h-8 rounded bg-gray-600 overflow-hidden">
+                        <img src={latestNote.fromAvatar || DEFAULT_AVATAR} className="w-full h-full object-cover"/>
+                    </div>
+                    <span>{unreadNotes.length} 条新消息</span>
+                </div>
+            </div>
+        )}
+        {/* 🟢【新增结束】 */}
         {/* ✅ 修复1：防止 memories 为空导致白屏 */}
         {(memories || []).map((memory: Memory) => (
         <div key={memory.id} id={`moment-${memory.id}`} className="flex gap-3 pb-6 border-b border-gray-50 last:border-0">
