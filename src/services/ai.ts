@@ -145,3 +145,59 @@ export const extractTodosFromText = async (text: string, currentDate: string): P
     return [];
   }
 };
+
+// [新增] 双人裁决 AI 逻辑
+export const judgeJointConflict = async (
+  p1_name: string, p1_reason: string, p1_point: string,
+  p2_name: string, p2_reason: string, p2_point: string
+): Promise<{ mergedReason: string } & JudgeResult> => {
+  
+  const prompt = `
+    你是一只“喵喵法官”。现在两位铲屎官(${p1_name} 和 ${p2_name})吵架了，他们各自提交了争吵原因和观点。
+    
+    【${p1_name}】说原因: ${p1_reason}
+    【${p1_name}】的观点: ${p1_point}
+    
+    【${p2_name}】说原因: ${p2_reason}
+    【${p2_name}】的观点: ${p2_point}
+
+    你的任务是：
+    1. 综合双方描述，生成一个【完全客观、中立、不带情绪】的“争吵原因总结”(mergedReason)。
+    2. 根据双方观点进行公正裁决。
+
+    请以JSON格式输出：
+    {
+      "mergedReason": "客观的争吵原因总结",
+      "hisFault": 整数 0-100 (男方/一方过错),
+      "herFault": 整数 0-100 (女方/另一方过错),
+      "analysis": "猫咪口吻的复盘分析...",
+      "advice": "和好建议...",
+      "prevention": "预防建议..."
+    }
+  `;
+
+  try {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: { responseMimeType: "application/json" }
+    });
+
+    const text = response.text;
+    if (!text) throw new Error("AI无响应");
+    const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    return JSON.parse(cleanText);
+  } catch (error) {
+    console.error("Joint Judge Error:", error);
+    return {
+      mergedReason: "双方各执一词，场面一度十分混乱",
+      hisFault: 50, herFault: 50,
+      analysis: "本喵CPU烧了，你们别吵了！",
+      advice: "互相抱抱。", prevention: "少说话多做事。"
+    };
+  }
+};
+
+
+
