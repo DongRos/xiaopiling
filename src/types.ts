@@ -75,18 +75,22 @@ export interface ConflictRecord {
   reason: string;
   hisPoint: string;
   herPoint: string;
-  // 新增 type 区分是单人记录还是双人裁决
+  // [新增] 保存双方名字，用于进度条展示
+  hisName?: string; 
+  herName?: string;
+  
   type?: 'solo' | 'joint'; 
   aiResponse?: {
     hisFault: number;
     herFault: number;
-    analysis: string;
-    advice: string;
-    prevention: string; 
+    analysis: string; // 对应 喵喵复盘
+    advice: string;   // 对应 喵喵和好方案
+    prevention: string; // 对应 喵喵预防计划
   };
   isPinned?: boolean;
   isFavorite?: boolean;
 }
+
 
 // 新增：双人裁决会话状态
 export interface JointSession {
