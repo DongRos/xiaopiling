@@ -1414,7 +1414,7 @@ const ConflictViewContent = ({ judgeConflict, conflicts, setConflicts }: any) =>
     );
 };
 
-const BoardViewContent = ({ messages, onPost, onPin, onFav, onDelete, onAddTodo, setMessages }: any) => {
+const BoardViewContent = ({ user, messages, onPost, onPin, onFav, onDelete, onAddTodo, setMessages }: any) => {
     const [input, setInput] = useState(''); const [isManageMode, setIsManageMode] = useState(false); const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
     useEffect(() => { if(!isManageMode) setSelectedItems(new Set()); }, [isManageMode]);
     const handleSend = async () => {
@@ -2187,6 +2187,7 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                        />}
                        {activePage === Page.CONFLICT && <ConflictViewContent judgeConflict={judgeConflict} conflicts={conflicts} setConflicts={setConflicts} />}
                        {activePage === Page.BOARD && (<BoardViewContent 
+                        user={user} // [新增] 传递 user 数据
                         messages={messages} 
                         onPost={async (c:string) => {
                             // 1. 构建新留言对象 (包含头像和昵称)
