@@ -13,7 +13,7 @@ import {
   MoreVertical, CheckCircle, Settings, Menu, User, RefreshCw,LogOut, Scan
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { judgeConflict, extractTodosFromText } from './services/ai';
+import { judgeConflict, extractTodosFromText,judgeJointConflict } from './services/ai';
 import { Memory, PinnedPhoto, PeriodEntry, TodoItem, ConflictRecord, Page, Message, Album, AlbumMedia } from './types';
 // @ts-ignore
 import pailideIcon from './pailide.png';
@@ -1402,14 +1402,234 @@ justify-between items-center p-3 bg-rose-50/50 rounded-xl group">
     </div>
   );
 };
-const ConflictViewContent = ({ judgeConflict, conflicts, setConflicts }: any) => {
-    const [reason, setReason] = useState(''); const [hisPoint, setHisPoint] = useState(''); const [herPoint, setHerPoint] = useState(''); const [isJudging, setIsJudging] = useState(false);
-    const handleJudge = async () => { if(!reason || !hisPoint || !herPoint) return alert("请填写完整信息喵！"); setIsJudging(true); const result = await judgeConflict(reason, hisPoint, herPoint); setConflicts([{ id: Date.now().toString(), date: getBeijingDateString(), reason, hisPoint, herPoint, aiResponse: result, isPinned: false, isFavorite: false }, ...conflicts]); setIsJudging(false); setReason(''); setHisPoint(''); setHerPoint(''); };
+const ConflictViewContent = ({ user, judgeConflict, conflicts, setConflicts }: any) => {
+    const [activeTab, setActiveTab] = useState<'solo' | 'joint'>('solo');
+    
+    // --- 独自记录 State ---
+    const [reason, setReason] = useState('');
+    const [hisPoint, setHisPoint] = useState('');
+    const [herPoint, setHerPoint] = useState('');
+    const [isJudging, setIsJudging] = useState(false);
+
+    // --- 双人裁决 State ---
+    const [jointSession, setJointSession] = useState<JointSession | null>(null);
+    const [myReason, setMyReason] = useState('');
+    const [myPoint, setMyPoint] = useState('');
+    const [isJointLoading, setIsJointLoading] = useState(false);
+
+    // 检查是否有进行中的双人会话
+    useEffect(() => {
+        if (activeTab === 'joint' && user.coupleId) {
+            checkJointSession();
+            const timer = setInterval(checkJointSession, 5000); // 轮询状态
+            return () => clearInterval(timer);
+        }
+    }, [activeTab, user]);
+
+    const checkJointSession = async () => {
+        const q = new AV.Query('JointSession');
+        q.equalTo('coupleId', user.coupleId);
+        q.notEqualTo('status', 'resolved'); // 只找未完成的
+        const res = await q.find();
+        if (res.length > 0) {
+            setJointSession({ ...res[0].toJSON(), id: res[0].id });
+        } else {
+            setJointSession(null);
+        }
+    };
+
+    // 独自裁决逻辑 (保持不变，但增加 type: 'solo' 并同步云端)
+    const handleSoloJudge = async () => {
+        if (!reason || !hisPoint || !herPoint) return alert("请填写完整信息喵！");
+        setIsJudging(true);
+        const result = await judgeConflict(reason, hisPoint, herPoint);
+        
+        const newRecord = {
+            date: getBeijingDateString(),
+            reason, hisPoint, herPoint,
+            aiResponse: result,
+            type: 'solo', // 标记
+            writer_id: user.objectId,
+            binding_id: user.coupleId
+        };
+        
+        // 云端保存
+        try {
+            const Obj = new AV.Object('Conflict');
+            Object.keys(newRecord).forEach(k => Obj.set(k, (newRecord as any)[k]));
+            const saved = await Obj.save();
+            setConflicts([{ ...newRecord, id: saved.id }, ...conflicts]);
+        } catch(e) { console.error(e); }
+        
+        setIsJudging(false); setReason(''); setHisPoint(''); setHerPoint('');
+    };
+
+    // 双人裁决逻辑
+    const handleJointSubmit = async () => {
+        if (!myReason || !myPoint) return alert("请填写完整哦");
+        if (!user.coupleId) return alert("请先绑定另一半");
+        
+        setIsJointLoading(true);
+        try {
+            if (!jointSession) {
+                // 1. 我是发起人
+                const session = new AV.Object('JointSession');
+                session.set('coupleId', user.coupleId);
+                session.set('status', 'waiting');
+                session.set('initiatorId', user.objectId);
+                session.set('initiatorName', user.nickname || '发起人');
+                session.set('initiatorReason', myReason);
+                session.set('initiatorPoint', myPoint);
+                await session.save();
+                await checkJointSession();
+            } else {
+                // 2. 我是响应人 (且我不是发起人)
+                if (jointSession.initiatorId === user.objectId) return alert("等待对方填写中...");
+                
+                // 执行裁决
+                const result = await judgeJointConflict(
+                    jointSession.initiatorName, jointSession.initiatorReason, jointSession.initiatorPoint,
+                    user.nickname || '响应人', myReason, myPoint
+                );
+
+                // 保存最终 Conflict 记录
+                const finalRecord = {
+                    date: getBeijingDateString(),
+                    reason: result.mergedReason, // AI 总结的客观原因
+                    hisPoint: jointSession.initiatorPoint, // 暂时对应
+                    herPoint: myPoint,
+                    aiResponse: result,
+                    type: 'joint',
+                    writer_id: user.objectId, // 记录人
+                    binding_id: user.coupleId
+                };
+
+                const conflictObj = new AV.Object('Conflict');
+                Object.keys(finalRecord).forEach(k => conflictObj.set(k, (finalRecord as any)[k]));
+                const savedConflict = await conflictObj.save();
+
+                // 更新会话状态为已解决
+                const sessionObj = AV.Object.createWithoutData('JointSession', jointSession.id);
+                sessionObj.set('status', 'resolved');
+                await sessionObj.save();
+
+                // 更新本地列表
+                setConflicts([{ ...finalRecord, id: savedConflict.id }, ...conflicts]);
+                setJointSession(null); 
+                setMyReason(''); setMyPoint('');
+                alert("裁决完成！已生成客观判决书。");
+            }
+        } catch (e) {
+            console.error(e);
+            alert("提交失败，请重试");
+        } finally {
+            setIsJointLoading(false);
+        }
+    };
+
     return (
-        <div className="p-4 pb-[calc(6rem+env(safe-area-inset-bottom))] space-y-6 bg-gray-50 h-full overflow-y-auto">
-             <div className="flex flex-col items-center justify-center py-6"><div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center text-4xl shadow-md mb-3">🐱</div><h2 className="font-bold text-3xl font-cute text-indigo-900 tracking-wide">喵喵法官</h2><p className="text-sm text-gray-400 font-medium">公正无私 · 在线断案</p></div>
-            <div className="bg-white rounded-3xl p-6 shadow-lg border border-indigo-50"><div className="space-y-5"><div><label className="text-sm font-bold text-gray-700 ml-1 block mb-2">争吵原因</label><input className="w-full bg-gray-50 rounded-xl p-4 text-sm focus:ring-2 focus:ring-indigo-200 outline-none transition" placeholder="简单描述一下因为什么吵架..." value={reason} onChange={e => setReason(e.target.value)} /></div><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label className="text-sm font-bold text-blue-600 ml-1 block mb-2">👦 男生观点</label><textarea className="w-full bg-blue-50/50 rounded-xl p-4 text-sm h-32 resize-none focus:ring-2 focus:ring-blue-100 outline-none transition" placeholder="我觉得..." value={hisPoint} onChange={e => setHisPoint(e.target.value)} /></div><div><label className="text-sm font-bold text-rose-500 ml-1 block mb-2">👧 女生观点</label><textarea className="w-full bg-rose-50/50 rounded-xl p-4 text-sm h-32 resize-none focus:ring-2 focus:ring-rose-100 outline-none transition" placeholder="明明是..." value={herPoint} onChange={e => setHerPoint(e.target.value)} /></div></div><button onClick={handleJudge} disabled={isJudging} className="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition flex justify-center items-center gap-2 text-lg active:scale-[0.98]">{isJudging ? <Loader2 className="animate-spin" /> : <Gavel size={24} />}{isJudging ? '喵喵正在思考中...' : '请求喵喵裁决'}</button></div></div>
-            <div className="space-y-6"><h3 className="text-center text-gray-400 text-sm font-bold tracking-widest uppercase mt-8 mb-4">- 历史判决书 -</h3>{conflicts.sort((a:any, b:any) => (a.isPinned && !b.isPinned) ? -1 : (!a.isPinned && b.isPinned) ? 1 : parseInt(b.id) - parseInt(a.id)).map((c: ConflictRecord) => (<div key={c.id} className={`bg-white rounded-3xl p-6 shadow-md border relative overflow-hidden transition-all ${c.isFavorite ? 'border-pink-300 ring-2 ring-pink-50' : 'border-gray-100'}`}>{c.isPinned && <div className="absolute top-0 right-0 p-3 text-indigo-500 transform rotate-12 bg-indigo-50 rounded-bl-xl"><Pin size={20} fill="currentColor" /></div>}<div className="flex justify-between items-center mb-4"><span className="text-xs font-bold bg-gray-100 text-gray-500 px-3 py-1 rounded-full">{c.date}</span></div><h4 className="font-bold text-gray-800 mb-6 font-cute text-xl text-center">{c.reason}</h4>{c.aiResponse && (<div className="space-y-5"><div className="space-y-2"><div className="flex justify-between text-xs font-bold px-1"><span className="text-blue-500">公猫过错 {c.aiResponse.hisFault}%</span><span className="text-rose-500">母猫过错 {c.aiResponse.herFault}%</span></div><div className="h-4 w-full bg-gray-100 rounded-full overflow-hidden flex shadow-inner"><div style={{ width: `${c.aiResponse.hisFault}%` }} className="bg-blue-500 h-full transition-all duration-1000 ease-out" /><div style={{ width: `${c.aiResponse.herFault}%` }} className="bg-rose-500 h-full transition-all duration-1000 ease-out" /></div></div><div className="space-y-3"><div className="bg-indigo-50/80 rounded-2xl p-4 text-sm text-indigo-900 leading-relaxed border border-indigo-100"><p className="font-cute text-base mb-1">🐱 喵喵复盘:</p><p className="opacity-90">{c.aiResponse.analysis}</p></div><div className="bg-green-50/80 rounded-2xl p-4 text-sm text-green-900 leading-relaxed border border-green-100"><p className="font-cute text-base mb-1">💡 和好建议:</p><p className="opacity-90">{c.aiResponse.advice}</p></div></div></div>)}<div className="flex justify-end gap-4 mt-6 border-t border-gray-50 pt-4"><button onClick={() => setConflicts(conflicts.map((x:any) => x.id === c.id ? { ...x, isFavorite: !x.isFavorite } : x))} className={`p-2 rounded-full hover:bg-pink-50 transition ${c.isFavorite ? 'text-pink-500' : 'text-gray-300'}`}><Heart size={20} fill={c.isFavorite ? "currentColor" : "none"} /></button><button onClick={() => setConflicts(conflicts.map((x:any) => x.id === c.id ? { ...x, isPinned: !x.isPinned } : x))} className={`p-2 rounded-full hover:bg-indigo-50 transition ${c.isPinned ? 'text-indigo-500' : 'text-gray-300'}`}><Pin size={20} fill={c.isPinned ? "currentColor" : "none"} /></button><button onClick={() => { if(confirm("确定删除?")) setConflicts(conflicts.filter((x:any) => x.id !== c.id)); }} className="p-2 rounded-full hover:bg-red-50 text-gray-300 hover:text-red-500 transition"><Trash2 size={20} /></button></div></div>))}</div>
+        <div className="flex flex-col h-full bg-gray-50">
+            {/* 顶部 Tab 切换 */}
+            <div className="flex bg-white shadow-sm pt-[env(safe-area-inset-top)]">
+                <button onClick={() => setActiveTab('solo')} className={`flex-1 py-4 font-bold text-sm ${activeTab === 'solo' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-400'}`}>独自记录</button>
+                <button onClick={() => setActiveTab('joint')} className={`flex-1 py-4 font-bold text-sm ${activeTab === 'joint' ? 'text-rose-500 border-b-2 border-rose-500' : 'text-gray-400'}`}>双方裁决</button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 pb-24">
+                {activeTab === 'solo' ? (
+                    // --- 独自记录 UI (保持原有风格，稍作简化) ---
+                    <div className="space-y-6">
+                         <div className="bg-white rounded-3xl p-6 shadow-lg border border-indigo-50">
+                            <h3 className="text-center font-bold text-indigo-900 mb-4 font-cute">✏️ 独自笔录</h3>
+                            <div className="space-y-4">
+                                <input className="w-full bg-gray-50 rounded-xl p-3 text-sm outline-none" placeholder="争吵原因..." value={reason} onChange={e => setReason(e.target.value)} />
+                                <div className="grid grid-cols-2 gap-3">
+                                    <textarea className="bg-blue-50/50 rounded-xl p-3 text-xs h-24 resize-none" placeholder="男方观点..." value={hisPoint} onChange={e => setHisPoint(e.target.value)} />
+                                    <textarea className="bg-rose-50/50 rounded-xl p-3 text-xs h-24 resize-none" placeholder="女方观点..." value={herPoint} onChange={e => setHerPoint(e.target.value)} />
+                                </div>
+                                <button onClick={handleSoloJudge} disabled={isJudging} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold shadow-md flex justify-center items-center gap-2">
+                                    {isJudging ? <Loader2 className="animate-spin" /> : <Gavel size={20} />} 请求裁决
+                                </button>
+                            </div>
+                         </div>
+                         {/* 历史记录复用下方代码 */}
+                    </div>
+                ) : (
+                    // --- 双方裁决 UI ---
+                    <div className="space-y-6">
+                        <div className="bg-white rounded-3xl p-6 shadow-lg border border-rose-50 relative overflow-hidden">
+                             <div className="absolute top-0 right-0 p-2 bg-rose-100 rounded-bl-xl text-rose-500 text-xs font-bold">✨ 公平模式</div>
+                             
+                             {/* 状态 1: 等待对方 */}
+                             {jointSession && jointSession.initiatorId === user.objectId && (
+                                 <div className="text-center py-8">
+                                     <div className="animate-pulse text-4xl mb-2">⏳</div>
+                                     <h3 className="font-bold text-gray-700">已提交，等待对方填写...</h3>
+                                     <p className="text-xs text-gray-400 mt-2">快去叫 Ta 也就是现在填！</p>
+                                 </div>
+                             )}
+
+                             {/* 状态 2: 填写表单 (我是响应者 或 还没开始) */}
+                             {(!jointSession || jointSession.initiatorId !== user.objectId) && (
+                                 <div>
+                                     <h3 className="text-center font-bold text-rose-500 mb-4 font-cute">
+                                         {jointSession ? `回复 ${jointSession.initiatorName} 的申诉` : '⚖️ 发起双方裁决'}
+                                     </h3>
+                                     <div className="space-y-4">
+                                         <div>
+                                             <label className="text-xs font-bold text-gray-500 ml-1">你认为的原因</label>
+                                             <input className="w-full bg-gray-50 rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-rose-200" placeholder="简单描述..." value={myReason} onChange={e => setMyReason(e.target.value)} />
+                                         </div>
+                                         <div>
+                                             <label className="text-xs font-bold text-gray-500 ml-1">你的核心观点</label>
+                                             <textarea className="w-full bg-gray-50 rounded-xl p-3 text-sm h-24 resize-none focus:ring-2 focus:ring-rose-200" placeholder="我觉得..." value={myPoint} onChange={e => setMyPoint(e.target.value)} />
+                                         </div>
+                                         <button onClick={handleJointSubmit} disabled={isJointLoading} className="w-full bg-rose-500 text-white py-3 rounded-xl font-bold shadow-md flex justify-center items-center gap-2">
+                                             {isJointLoading ? <Loader2 className="animate-spin" /> : <ShieldCheck size={20} />}
+                                             {jointSession ? '提交并生成最终裁决' : '提交，等待对方'}
+                                         </button>
+                                     </div>
+                                 </div>
+                             )}
+                        </div>
+                    </div>
+                )}
+
+                {/* 底部历史记录 (显示对应类型的记录) */}
+                <div className="mt-8 space-y-4">
+                    <h3 className="text-center text-gray-300 text-xs font-bold tracking-widest uppercase">- {activeTab === 'solo' ? '独自记录' : '双方裁决'}历史 -</h3>
+                    {conflicts.filter((c: any) => activeTab === 'solo' ? (c.type !== 'joint') : (c.type === 'joint')).map((c: ConflictRecord) => (
+                        <div key={c.id} className={`bg-white rounded-3xl p-5 shadow-sm border ${c.type==='joint' ? 'border-rose-100 ring-1 ring-rose-50' : 'border-gray-100'}`}>
+                            <div className="flex justify-between items-center mb-2">
+                                <span className="text-xs font-bold bg-gray-100 text-gray-500 px-2 py-0.5 rounded-md">{c.date}</span>
+                                {c.type === 'joint' && <span className="text-[10px] bg-rose-100 text-rose-500 px-2 py-0.5 rounded-full font-bold">双人AI客观版</span>}
+                                <button onClick={() => { if(confirm("删除此记录?")) {
+                                     // 简单删除逻辑
+                                     setConflicts(conflicts.filter((x:any)=>x.id!==c.id));
+                                     AV.Object.createWithoutData('Conflict', c.id).destroy();
+                                }}} className="text-gray-300"><Trash2 size={14}/></button>
+                            </div>
+                            <h4 className="font-bold text-gray-800 mb-3 text-center text-lg">{c.reason}</h4>
+                            
+                            {/* 裁决结果展示 (复用原有样式) */}
+                            {c.aiResponse && (
+                                <div className="space-y-3">
+                                    <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden flex">
+                                        <div style={{ width: `${c.aiResponse.hisFault}%` }} className="bg-blue-400 h-full" />
+                                        <div style={{ width: `${c.aiResponse.herFault}%` }} className="bg-rose-400 h-full" />
+                                    </div>
+                                    <div className="bg-gray-50 rounded-xl p-3 text-sm text-gray-600 leading-relaxed">
+                                        <span className="font-bold">🐱 喵喵复盘:</span> {c.aiResponse.analysis}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                    {conflicts.filter((c: any) => activeTab === 'solo' ? (c.type !== 'joint') : (c.type === 'joint')).length === 0 && (
+                        <p className="text-center text-gray-300 text-xs">暂无记录，要一直相爱哦</p>
+                    )}
+                </div>
+            </div>
         </div>
     );
 };
@@ -1667,9 +1887,9 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
            const pinQ = getQuery('PinnedPhoto');
            if(pinQ) silentFind(pinQ).then((res:any) => setPinnedPhotos(res.map((p:any)=>({...p.toJSON(), id: p.id}))));
 
-           const periodQ = getQuery('Period');
-           if(periodQ) silentFind(periodQ).then((res:any) => setPeriods(res.map((p:any) => p.toJSON())));
-
+          const periodQ = getQuery('Period');
+          if(periodQ) silentFind(periodQ).then((res:any) => setPeriods(res.map((p:any) => ({...p.toJSON(), id: p.id})))); // 确保 PeriodEntry 类型里加上 id?: string
+         
            const conflictQ = getQuery('Conflict');
            if(conflictQ) silentFind(conflictQ.descending('createdAt')).then((res:any) => setConflicts(res.map((c:any)=>({...c.toJSON(), id: c.id}))));
 
@@ -2175,8 +2395,41 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                        {activePage === Page.CYCLE && <CycleViewContent 
                            periods={periods} 
                            nextPeriod={calculateNextPeriod()} 
-                           addPeriod={(d:string) => setPeriods([...periods, { startDate: d, duration: 5 }].sort((a,b)=>parseLocalDate(a.startDate).getTime()-parseLocalDate(b.startDate).getTime()))} 
-                           deletePeriod={(i:number) => { if(confirm("删除?")) { const n = [...periods]; n.splice(i,1); setPeriods(n); }}} 
+                           addPeriod={async (d:string) => {
+                            // 1. 本地更新
+                            const newEntry = { startDate: d, duration: 5 };
+                            setPeriods([...periods, newEntry].sort((a,b)=>parseLocalDate(a.startDate).getTime()-parseLocalDate(b.startDate).getTime()));
+                            // 2. 云端保存
+                            try {
+                                const Obj = new AV.Object('Period');
+                                Obj.set('startDate', d);
+                                Obj.set('duration', 5);
+                                Obj.set('writer_id', user.objectId);
+                                if(user.coupleId) Obj.set('binding_id', user.coupleId);
+                                await Obj.save();
+                                loadData(false); // 刷新获取真实ID
+                            } catch(e) { console.error(e); }
+                        }}
+                                                   deletePeriod={async (i:number) => {
+                            const target = periods[i]; // 注意: 这里periods可能包含未拥有id的本地临时数据，最好重新拉取
+                            // 简化逻辑：我们假设 periods 数据是从 loadData 包含 objectId 的 (需要修改 loadData 确保 Period 包含 objectId)
+                            // 但上面的 types.ts PeriodEntry 没有 id。为了严谨，我们直接用云端同步逻辑
+                            if(!confirm("确定删除?")) return;
+                            
+                            // 重新设计: 因为原 periods 数组没有 id，我们查找云端匹配的记录删除
+                            // 或者我们直接修改 loadData 让 periods 带上 id
+                            // 为了不破坏太多结构，这里使用简单的查询删除
+                            const q = new AV.Query('Period');
+                            q.equalTo('startDate', target.startDate);
+                            if (user.coupleId) q.containedIn('writer_id', user.coupleId.split('_'));
+                            else q.equalTo('writer_id', user.objectId);
+                            
+                            const res = await q.find();
+                            if(res.length > 0) await res[0].destroy();
+                            
+                            // 本地删除
+                            const n = [...periods]; n.splice(i,1); setPeriods(n);
+                        }}
                            updatePeriod={(i:number, days:number) => {
                                 const n = [...periods];
                                 if(n[i]) {
@@ -2185,7 +2438,7 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                                 }
                            }}
                        />}
-                       {activePage === Page.CONFLICT && <ConflictViewContent judgeConflict={judgeConflict} conflicts={conflicts} setConflicts={setConflicts} />}
+                       {activePage === Page.CONFLICT && <ConflictViewContent user={user} judgeConflict={judgeConflict} conflicts={conflicts} setConflicts={setConflicts} />}
                        {activePage === Page.BOARD && (<BoardViewContent 
                         user={user} // [新增] 传递 user 数据
                         messages={messages} 
@@ -2243,7 +2496,50 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                            onAddTodo={(t:string, d:string) => setTodos([...todos, { id: Date.now().toString(), text: t, completed: false, assignee: 'both', date: d || getBeijingDateString() }])} 
                            setMessages={setMessages} 
                        />)}
-                       {activePage === Page.CALENDAR && (<CalendarViewContent periods={periods} conflicts={conflicts} todos={todos} addTodo={(t:string, d:string) => setTodos([...todos, { id: Date.now().toString(), text: t, completed: false, assignee: 'both', date: d }])} toggleTodo={(id:string) => setTodos(todos.map(t => t.id === id ? { ...t, completed: !t.completed } : t))} setTodos={setTodos} onDeleteTodo={(id:string) => { if(confirm("删除此待办？")) setTodos(todos.filter(t => t.id !== id)); }} onDeleteConflict={(id:string) => { if(confirm("删除此记录？")) setConflicts(conflicts.filter(c => c.id !== id)); }} />)}
+                       {activePage === Page.CALENDAR && (<CalendarViewContent periods={periods} conflicts={conflicts} todos={todos} addTodo={async (t:string, d:string) => {
+                            const tempId = Date.now().toString();
+                            const newItem = { id: tempId, text: t, completed: false, assignee: 'both', date: d || getBeijingDateString() };
+                            setTodos([...todos, newItem]); // 乐观更新
+                            
+                            try {
+                                const Obj = new AV.Object('Todo');
+                                Obj.set('text', t);
+                                Obj.set('date', newItem.date);
+                                Obj.set('completed', false);
+                                Obj.set('assignee', 'both');
+                                Obj.set('writer_id', user.objectId);
+                                if(user.coupleId) Obj.set('binding_id', user.coupleId);
+                                const saved = await Obj.save();
+                                // 替换 ID
+                                setTodos(prev => prev.map(item => item.id === tempId ? { ...item, id: saved.id } : item));
+                            } catch(e) { console.error(e); }
+                        }}
+                        
+                        toggleTodo={async (id:string) => {
+                            const target = todos.find(t => t.id === id);
+                            if (!target) return;
+                            const newVal = !target.completed;
+                            
+                            setTodos(todos.map(t => t.id === id ? { ...t, completed: newVal } : t));
+                            
+                            try {
+                                const obj = AV.Object.createWithoutData('Todo', id);
+                                obj.set('completed', newVal);
+                                await obj.save();
+                            } catch(e) { console.error(e); }
+                        }}
+                        
+                        onDeleteTodo={async (id:string) => {
+                            if(!confirm("删除此待办？")) return;
+                            setTodos(todos.filter(t => t.id !== id));
+                            try { await AV.Object.createWithoutData('Todo', id).destroy(); } catch(e) { console.error(e); }
+                        }}
+                        
+                        onDeleteConflict={async (id:string) => {
+                            if(!confirm("删除此记录？")) return;
+                            setConflicts(conflicts.filter(c => c.id !== id));
+                            try { await AV.Object.createWithoutData('Conflict', id).destroy(); } catch(e) { console.error(e); }
+                        }} />)}
                        {activePage === 'PROFILE' && <ProfilePage user={user} onLogout={onLogout} onUpdateUser={onUpdateUser} />}
                    </div>
                )}
