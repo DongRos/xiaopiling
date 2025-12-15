@@ -1189,10 +1189,15 @@ const saveAlbumName = async () => {
                                             }}
                                         >
                                             <span className="font-bold text-blue-900">{c.authorName || 'Ta'}:</span> {c.text}
-                                        </div>
-                                    ))}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+                ))}
             </div>
-        ) : (
+          ) : (
               <div>
                   <div className="flex justify-between items-center mb-4 px-2">
                       <div onClick={() => setIsCreatingAlbum(true)} className="flex items-center gap-2 text-gray-500 cursor-pointer hover:text-rose-500"><FolderPlus size={20} /><span className="text-sm font-bold">新建相册</span></div>
