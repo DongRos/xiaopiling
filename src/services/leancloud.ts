@@ -4,7 +4,7 @@ import AV from "leancloud-storage";
 // 请去 LeanCloud 国际版控制台 -> 设置 -> 应用凭证 复制过来
 const appId = "E6cMhcxUIcQAawpJQ5JDjU73-MdYXbMMI";
 const appKey = "DLXm3DXlx7Iqilkl7iISKALt";
-const serverURL = "https://e6cmhcxu.api.lncldglobal.com"; // 例如 https://xxx.api.lncldglobal.com
+const serverURL = "https://api.liuyadong.dpdns.org"; // 例如 https://xxx.api.lncldglobal.com
 
 AV.init({
   appId,
