@@ -1600,90 +1600,48 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
       }
       return q;
   };
-useEffect(() => {
-    // 设置头像 (从登录用户数据中获取)
-    if (user.avatarUrl) setAvatarUrl(user.avatarUrl);
-
-    // 1. 定义加载数据的异步函数 (已修复 404 报错刷屏问题)
-    // [修改] 增加 isFullLoad 参数，默认为 true
-    const loadData = async (isFullLoad = true) => {
-       // 封装一个静默查询函数，遇到表不存在(101)错误直接返回空数组，不报错
+// 1. [修改] 把 loadData 提出来放在这里，方便按钮调用
+  const loadData = async (isFullLoad = true) => {
        const silentFind = async (query: AV.Query) => {
-           try {
-               return await query.find();
-           } catch (e: any) {
-               // 101 = Class not found (表不存在)，这是正常的，忽略即可
-               if (e.code !== 101) console.warn("Load Error:", e);
-               return [];
-           }
+           try { return await query.find(); } catch (e: any) { if (e.code !== 101) console.warn("Load Error:", e); return []; }
        };
 
-       // --- 第一部分：始终刷新的数据 (保证点滴页/消息实时更新) ---
-
-       // 1. 加载朋友圈
+       // --- 始终刷新的数据 ---
        const momentsQuery = getQuery('Moments');
        if (momentsQuery) {
-           silentFind(momentsQuery.descending('createdAt').limit(50)).then((res: any[]) => {
+           silentFind(momentsQuery.descending('createdAt').limit(50).include('likes')).then((res: any[]) => {
                setMemories(res.map((item: any) => {
                    const m = item.toJSON();
                    const likedBy = Array.isArray(m.likedBy) ? m.likedBy : [];
                    const isLiked = likedBy.includes(user.objectId);
                    return {
-                       ...m, 
-                       id: item.id,
-                       date: formatDate(item.createdAt),
-                       media: m.images || [], 
-                       comments: m.comments || [], 
-                       likes: m.likes || 0,
-                       isLiked: isLiked,
-                       likeNames: m.likeNames || [],
-                       creatorId: m.creatorId || m.writer_id,
-                       creatorAvatar: m.creatorAvatar
+                       ...m, id: item.id, date: formatDate(item.createdAt), media: m.images || [], comments: m.comments || [], likes: m.likes || 0, isLiked: isLiked, likeNames: m.likeNames || [], creatorId: m.creatorId || m.writer_id, creatorAvatar: m.creatorAvatar
                    };
                }));
            });
        }
 
-       // 2. 加载通知消息 (Notification)
-       const noteQuery = new AV.Query('Notification'); // 注意这里不用 getQuery，因为 Notification 是定向发给个人的
-       noteQuery.equalTo('toUser', user.objectId); // 只查发给我的
+       const noteQuery = new AV.Query('Notification');
+       noteQuery.equalTo('toUser', user.objectId);
        noteQuery.descending('createdAt');
        noteQuery.limit(20);
-       silentFind(noteQuery).then((res: any[]) => {
-            setNotifications(res.map(n => ({ ...n.toJSON(), id: n.id })));
-       });
+       silentFind(noteQuery).then((res: any[]) => setNotifications(res.map(n => ({ ...n.toJSON(), id: n.id }))));
 
-       // --- 第二部分：仅在初始化时加载的数据 (防止轮询时重置首页/其他页状态) ---
+       // --- [关键] 手动刷新时才加载的数据 (包括首页照片) ---
        if (isFullLoad) {
-           // 3. 加载相册
            const albumQuery = getQuery('Album');
-           if(albumQuery) {
-               silentFind(albumQuery.descending('createdAt')).then((res: any) => {
-                    setAlbums(res.map((a: any) => {
-                        const data = a.toJSON();
-                        return { ...data, id: a.id, media: Array.isArray(data.media) ? data.media : [] };
-                    })); 
-               });
-           }
+           if(albumQuery) silentFind(albumQuery.descending('createdAt')).then((res: any) => setAlbums(res.map((a: any) => ({ ...a.toJSON(), id: a.id, media: a.media || [] }))));
 
-           // 4. 加载其他数据 (CoupleSettings, Message, PinnedPhoto, Period, Conflict, Todo)
            if (user.coupleId) {
               const q = new AV.Query('CoupleSettings');
               q.equalTo('coupleId', String(user.coupleId));
-              silentFind(q).then(res => {
-                  if (res.length > 0) {
-                      const item = res[0];
-                      const cover = item.get('coverUrl');
-                      const avatar = item.get('avatarUrl');
-                      if (cover) setMomentsCover(cover);
-                      if (avatar) setMomentsAvatar(avatar);
-                  }
-              });
+              silentFind(q).then(res => { if (res.length > 0) { const item = res[0]; if (item.get('coverUrl')) setMomentsCover(item.get('coverUrl')); if (item.get('avatarUrl')) setMomentsAvatar(item.get('avatarUrl')); } });
            }
 
            const msgQ = getQuery('Message');
            if(msgQ) silentFind(msgQ.descending('createdAt')).then((res: any) => setMessages(res.map((m: any) => ({...m.toJSON(), id: m.id}))));
 
+           // [重点] 刷新首页照片
            const pinQ = getQuery('PinnedPhoto');
            if(pinQ) silentFind(pinQ).then((res:any) => setPinnedPhotos(res.map((p:any)=>({...p.toJSON(), id: p.id}))));
 
@@ -1696,17 +1654,16 @@ useEffect(() => {
            const todoQ = getQuery('Todo');
            if(todoQ) silentFind(todoQ).then((res:any) => setTodos(res.map((t:any)=>({...t.toJSON(), id: t.id}))));
        }
-    };
-    
-    // 1. 立即执行一次加载 (加载所有数据，isFullLoad = true)
-    loadData(true);
-    
-    // 2. 开启轮询 (只刷新点滴页数据，isFullLoad = false，防止重置首页状态)
-    const timer = setInterval(() => loadData(false), 5000);
+  };
 
-    // 页面销毁时清除定时器
+  useEffect(() => {
+    if (user.avatarUrl) setAvatarUrl(user.avatarUrl);
+    
+    // 2. [修改] useEffect 只需要调用上面的 loadData
+    loadData(true);
+    const timer = setInterval(() => loadData(false), 5000); // 轮询时不刷新首页
     return () => clearInterval(timer);
-  }, [user]); // 依赖 user：当切换账号时会自动重新加载
+  }, [user]);
 
           // [新增] 真实的云端点赞逻辑
 // [新增] 真实的云端点赞逻辑 (已修复通知权限)
@@ -2073,6 +2030,23 @@ useEffect(() => {
                         <div className="pointer-events-auto bg-white/20 backdrop-blur-md rounded-2xl p-2 border border-white/30 shadow-lg">
                             <MiniCalendar periods={periods} conflicts={conflicts} />
                         </div>
+                  </div>
+
+                  {/* 🟢 3. [新增] 首页右下角常驻刷新按钮 (只刷新照片位置等信息) */}
+                  <div className="absolute bottom-24 right-6 z-[80]">
+                      <button 
+                          onClick={() => {
+                              const btn = document.getElementById('home-refresh-btn');
+                              if(btn) btn.classList.add('animate-spin'); // 添加旋转动画
+                              // 调用 loadData(true) 强制刷新所有数据(包含PinnedPhoto)
+                              loadData(true).then(() => {
+                                  if(btn) btn.classList.remove('animate-spin'); // 停止动画
+                              });
+                          }} 
+                          className="w-10 h-10 bg-white/80 backdrop-blur-sm rounded-xl shadow-lg border border-rose-100 text-rose-400 flex items-center justify-center hover:bg-white active:scale-90 transition"
+                      >
+                          <RefreshCw id="home-refresh-btn" size={20} />
+                      </button>
                   </div>
                   
                   <div className="absolute bottom-20 md:bottom-24 left-1/2 transform -translate-x-1/2 z-[70] flex justify-center pointer-events-none"><div className="pointer-events-auto"><PolaroidCamera onTakePhoto={handleTakePhoto} iconUrl={cameraIcon} onUploadIcon={(e:any) => { const f = e.target.files?.[0]; if(f) { const r = new FileReader(); r.onload = () => setCameraIcon(r.result as string); r.readAsDataURL(f); }}} onResetIcon={() => { setCameraIcon(DEFAULT_CAMERA_ICON); localStorage.removeItem('cameraIcon'); }} /></div></div>
