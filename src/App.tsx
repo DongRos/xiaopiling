@@ -1431,7 +1431,19 @@ const BoardViewContent = ({ messages, onPost, onPin, onFav, onDelete, onAddTodo,
     return (
         <div className="flex flex-col h-full bg-yellow-50/30">
             <div className="pt-[calc(1rem+env(safe-area-inset-top))] px-4 pb-2 bg-yellow-50/30 flex justify-between items-center relative"><div className="w-8"></div><h2 className="text-2xl font-bold font-cute text-yellow-600 text-center">留言板</h2><button onClick={() => setIsManageMode(!isManageMode)} className={`p-2 rounded-full hover:bg-yellow-100 ${isManageMode ? 'text-rose-500' : 'text-gray-400'}`}>{isManageMode ? '完成' : <Settings size={20} />}</button></div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-40"><div className="grid grid-cols-1 gap-4">{messages.sort((a:any,b:any)=>(a.isPinned && !b.isPinned)?-1:(!a.isPinned && b.isPinned)?1:parseInt(b.id)-parseInt(a.id)).map((msg: Message) => (<div key={msg.id} onClick={() => isManageMode && setSelectedItems(p => { const n = new Set(p); n.has(msg.id) ? n.delete(msg.id) : n.add(msg.id); return n; })} className={`p-6 rounded-2xl shadow-sm border text-base relative group transition-all ${msg.isFavorite ? 'bg-rose-50 border-rose-100' : 'bg-white border-yellow-100'} ${isManageMode && selectedItems.has(msg.id) ? 'ring-2 ring-rose-500 bg-rose-50' : ''}`}><p className="text-gray-700 font-cute mb-10 leading-relaxed whitespace-pre-wrap break-words text-lg">{msg.content}</p><div className="absolute bottom-4 left-0 right-0 px-6 flex justify-between items-center"><div className="text-xs text-gray-300 font-bold">{msg.date.slice(5)} {msg.time}</div><div className="flex gap-4"><button onClick={(e) => { e.stopPropagation(); extractTodosFromText(msg.content, getBeijingDateString()).then(t => { if(t.length) { t.forEach(i=>onAddTodo(i.text, i.date)); alert(`提取 ${t.length} 条待办`); } else alert('无待办'); }); }} className="transition text-yellow-500 hover:text-yellow-600"><Sparkles size={18} /></button><button onClick={() => onFav(msg.id)} className={`transition ${msg.isFavorite ? 'text-rose-500' : 'text-gray-300 hover:text-rose-500'}`}><Heart size={18} fill={msg.isFavorite ? "currentColor" : "none"} /></button><button onClick={() => onPin(msg.id)} className={`transition ${msg.isPinned ? 'text-blue-500' : 'text-gray-300 hover:text-blue-500'}`}><Pin size={18} fill={msg.isPinned ? "currentColor" : "none"} /></button><button onClick={() => onDelete(msg.id)} className="text-gray-300 hover:text-red-500 transition"><Trash2 size={18} /></button></div></div>{msg.isPinned && <div className="absolute top-0 right-0 p-3 text-blue-500 transform rotate-45"><Pin size={24} fill="currentColor" /></div>}{isManageMode && (<div className="absolute top-4 right-4 pointer-events-none">{selectedItems.has(msg.id) ? <CheckCircle className="text-rose-500 fill-white" /> : <div className="w-6 h-6 rounded-full border-2 border-gray-300 bg-white" />}</div>)}</div>))}</div></div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-40"><div className="grid grid-cols-1 gap-4">{messages.sort((a:any,b:any)=>(a.isPinned && !b.isPinned)?-1:(!a.isPinned && b.isPinned)?1:parseInt(b.id)-parseInt(a.id)).map((msg: Message) => (<div key={msg.id} onClick={() => isManageMode && setSelectedItems(p => { const n = new Set(p); n.has(msg.id) ? n.delete(msg.id) : n.add(msg.id); return n; })} className={`p-6 rounded-2xl shadow-sm border text-base relative group transition-all ${msg.isFavorite ? 'bg-rose-50 border-rose-100' : 'bg-white border-yellow-100'} ${isManageMode && selectedItems.has(msg.id) ? 'ring-2 ring-rose-500 bg-rose-50' : ''}`}>
+
+
+              {/* 🟢 [新增] 留言者信息头 */}
+            <div className="flex items-center gap-2 mb-3 border-b border-dashed border-gray-200 pb-2">
+                <div className="w-8 h-8 rounded-full bg-gray-100 overflow-hidden">
+                    {(msg as any).authorAvatar ? <img src={(msg as any).authorAvatar} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-xs">👤</div>}
+                </div>
+                <span className="text-sm font-bold text-gray-600 font-cute">{(msg as any).authorName || '神秘人'}</span>
+            </div>
+
+              
+              <p className="text-gray-700 font-cute mb-10 leading-relaxed whitespace-pre-wrap break-words text-lg">{msg.content}</p><div className="absolute bottom-4 left-0 right-0 px-6 flex justify-between items-center"><div className="text-xs text-gray-300 font-bold">{msg.date.slice(5)} {msg.time}</div><div className="flex gap-4"><button onClick={(e) => { e.stopPropagation(); extractTodosFromText(msg.content, getBeijingDateString()).then(t => { if(t.length) { t.forEach(i=>onAddTodo(i.text, i.date)); alert(`提取 ${t.length} 条待办`); } else alert('无待办'); }); }} className="transition text-yellow-500 hover:text-yellow-600"><Sparkles size={18} /></button><button onClick={() => onFav(msg.id)} className={`transition ${msg.isFavorite ? 'text-rose-500' : 'text-gray-300 hover:text-rose-500'}`}><Heart size={18} fill={msg.isFavorite ? "currentColor" : "none"} /></button><button onClick={() => onPin(msg.id)} className={`transition ${msg.isPinned ? 'text-blue-500' : 'text-gray-300 hover:text-blue-500'}`}><Pin size={18} fill={msg.isPinned ? "currentColor" : "none"} /></button><button onClick={() => onDelete(msg.id)} className="text-gray-300 hover:text-red-500 transition"><Trash2 size={18} /></button></div></div>{msg.isPinned && <div className="absolute top-0 right-0 p-3 text-blue-500 transform rotate-45"><Pin size={24} fill="currentColor" /></div>}{isManageMode && (<div className="absolute top-4 right-4 pointer-events-none">{selectedItems.has(msg.id) ? <CheckCircle className="text-rose-500 fill-white" /> : <div className="w-6 h-6 rounded-full border-2 border-gray-300 bg-white" />}</div>)}</div>))}</div></div>
             {isManageMode ? (<div className="fixed bottom-16 left-0 right-0 p-4 bg-white border-t border-gray-100 pb-safe safe-area-inset-bottom z-40 flex justify-around"><button onClick={() => batchAction('fav')} className="flex flex-col items-center text-gray-600 hover:text-rose-500"><Heart /> <span className="text-xs mt-1">收藏</span></button><button onClick={() => batchAction('pin')} className="flex flex-col items-center text-gray-600 hover:text-blue-500"><Pin /> <span className="text-xs mt-1">置顶</span></button><button onClick={() => batchAction('delete')} className="flex flex-col items-center text-gray-600 hover:text-red-500"><Trash2 /> <span className="text-xs mt-1">删除</span></button></div>) : (<div className="fixed bottom-16 left-0 right-0 p-4 bg-white border-t border-gray-100 pb-safe safe-area-inset-bottom z-40"><div className="relative max-w-2xl mx-auto"><textarea className="w-full bg-gray-50 rounded-2xl pl-4 pr-12 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-rose-100 resize-none h-14" placeholder="写给对方的留言..." value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }}} /><button onClick={handleSend} disabled={!input.trim()} className="absolute right-2 top-1/2 transform -translate-y-1/2 p-2 bg-rose-500 text-white rounded-xl shadow-md disabled:bg-gray-300 transition hover:scale-105 active:scale-95"><Send size={18} /></button></div></div>)}
         </div>
     );
@@ -1626,7 +1638,8 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
        noteQuery.descending('createdAt');
        noteQuery.limit(20);
        silentFind(noteQuery).then((res: any[]) => setNotifications(res.map(n => ({ ...n.toJSON(), id: n.id }))));
-
+       const msgQ = getQuery('Message');
+           if(msgQ) silentFind(msgQ.descending('createdAt')).then((res: any) => setMessages(res.map((m: any) => ({...m.toJSON(), id: m.id}))));
        // --- [关键] 手动刷新时才加载的数据 (包括首页照片) ---
        if (isFullLoad) {
            const albumQuery = getQuery('Album');
@@ -1637,9 +1650,6 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
               q.equalTo('coupleId', String(user.coupleId));
               silentFind(q).then(res => { if (res.length > 0) { const item = res[0]; if (item.get('coverUrl')) setMomentsCover(item.get('coverUrl')); if (item.get('avatarUrl')) setMomentsAvatar(item.get('avatarUrl')); } });
            }
-
-           const msgQ = getQuery('Message');
-           if(msgQ) silentFind(msgQ.descending('createdAt')).then((res: any) => setMessages(res.map((m: any) => ({...m.toJSON(), id: m.id}))));
 
            // [重点] 刷新首页照片
            const pinQ = getQuery('PinnedPhoto');
@@ -2164,7 +2174,33 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                            }}
                        />}
                        {activePage === Page.CONFLICT && <ConflictViewContent judgeConflict={judgeConflict} conflicts={conflicts} setConflicts={setConflicts} />}
-                       {activePage === Page.BOARD && (<BoardViewContent messages={messages} onPost={(c:string) => setMessages([{ id: Date.now().toString(), content: c, date: getBeijingDateString(), time: new Date().toTimeString().slice(0,5), isPinned: false, isFavorite: false }, ...messages])} onPin={(id:string) => setMessages(messages.map(m => m.id === id ? { ...m, isPinned: !m.isPinned } : m))} onFav={(id:string) => setMessages(messages.map(m => m.id === id ? { ...m, isFavorite: !m.isFavorite } : m))} onDelete={(id:string) => { if(confirm("删除?")) setMessages(messages.filter(m => m.id !== id)); }} onAddTodo={(t:string, d:string) => setTodos([...todos, { id: Date.now().toString(), text: t, completed: false, assignee: 'both', date: d || getBeijingDateString() }])} setMessages={setMessages} />)}
+                       {activePage === Page.BOARD && (<BoardViewContent 
+                        messages={messages} 
+                        onPost={async (c:string) => {
+                            // 1. 构建新留言对象 (包含头像和昵称)
+                            const newMsg = { 
+                                content: c, 
+                                date: getBeijingDateString(), 
+                                time: new Date().toTimeString().slice(0,5), 
+                                isPinned: false, 
+                                isFavorite: false,
+                                writer_id: user.objectId,
+                                authorName: user.nickname || user.username, // [新增] 保存昵称
+                                authorAvatar: user.avatarUrl                // [新增] 保存头像
+                            };
+                            
+                            // 2. 本地乐观更新
+                            setMessages([{ ...newMsg, id: Date.now().toString() } as any, ...messages]);
+                    
+                            // 3. 云端保存
+                            try {
+                                const m = new AV.Object('Message');
+                                Object.keys(newMsg).forEach(k => m.set(k, (newMsg as any)[k]));
+                                if(user.coupleId) m.set('binding_id', user.coupleId);
+                                await m.save();
+                            } catch(e) { console.error("留言保存失败", e); }
+                        }}
+                        onPin={(id:string) => setMessages(messages.map(m => m.id === id ? { ...m, isPinned: !m.isPinned } : m))} onFav={(id:string) => setMessages(messages.map(m => m.id === id ? { ...m, isFavorite: !m.isFavorite } : m))} onDelete={(id:string) => { if(confirm("删除?")) setMessages(messages.filter(m => m.id !== id)); }} onAddTodo={(t:string, d:string) => setTodos([...todos, { id: Date.now().toString(), text: t, completed: false, assignee: 'both', date: d || getBeijingDateString() }])} setMessages={setMessages} />)}
                        {activePage === Page.CALENDAR && (<CalendarViewContent periods={periods} conflicts={conflicts} todos={todos} addTodo={(t:string, d:string) => setTodos([...todos, { id: Date.now().toString(), text: t, completed: false, assignee: 'both', date: d }])} toggleTodo={(id:string) => setTodos(todos.map(t => t.id === id ? { ...t, completed: !t.completed } : t))} setTodos={setTodos} onDeleteTodo={(id:string) => { if(confirm("删除此待办？")) setTodos(todos.filter(t => t.id !== id)); }} onDeleteConflict={(id:string) => { if(confirm("删除此记录？")) setConflicts(conflicts.filter(c => c.id !== id)); }} />)}
                        {activePage === 'PROFILE' && <ProfilePage user={user} onLogout={onLogout} onUpdateUser={onUpdateUser} />}
                    </div>
