@@ -286,9 +286,27 @@ const DraggablePhoto = ({ pin, onUpdate, onDelete, onBringToFront, isFresh = fal
   );
 };
 
-const MiniCalendar = ({ periods, conflicts }: any) => {
+// [修改] 增加 todos 参数接收
+const MiniCalendar = ({ periods, conflicts, todos }: any) => {
     const today = new Date();
     const days = Array(getFirstDayOfMonth(today.getFullYear(), today.getMonth())).fill(null).concat([...Array(getDaysInMonth(today.getFullYear(), today.getMonth())).keys()].map(i => i + 1));
+
+    // [新增] 预测经期辅助函数
+    const isPredicted = (d: number) => {
+        if (!periods || periods.length === 0) return false;
+        // 简单的预测逻辑：上次经期 + 28天
+        // 注意：这里假设 periods 数组最后一个是最新的
+        const lastPeriod = periods[periods.length - 1];
+        const lastStart = parseLocalDate(lastPeriod.startDate);
+        const predictedStart = new Date(lastStart);
+        predictedStart.setDate(lastStart.getDate() + 28);
+        const predictedEnd = new Date(predictedStart);
+        predictedEnd.setDate(predictedStart.getDate() + 5);
+        
+        const current = new Date(today.getFullYear(), today.getMonth(), d);
+        return current >= predictedStart && current < predictedEnd;
+    };
+
     return (
         <div className="bg-white/80 backdrop-blur-sm p-4 rounded-2xl shadow-sm border border-rose-100 w-full">
             <h4 className="text-xs font-bold text-gray-500 mb-3 font-cute flex items-center gap-2"><CalendarIcon size={14} className="text-rose-400" /> {today.getFullYear()}年{today.getMonth() + 1}月</h4>
@@ -298,7 +316,16 @@ const MiniCalendar = ({ periods, conflicts }: any) => {
                     <div key={i} className={`aspect-square rounded-full flex flex-col items-center justify-center text-[10px] font-medium transition-all ${d === today.getDate() ? 'bg-rose-500 text-white shadow-md scale-110' : 'text-gray-600 hover:bg-rose-50'}`}>
                         {d}
                         <div className="flex gap-0.5">
+                             {/* 1. 实际经期 (红点) */}
                              {d && periods.some((p: any) => { const s = parseLocalDate(p.startDate); const e = new Date(s); e.setDate(s.getDate()+p.duration); const c = new Date(today.getFullYear(), today.getMonth(), d); return c >= s && c < e; }) && d !== today.getDate() && <div className="w-1 h-1 rounded-full bg-red-500" />}
+                             
+                             {/* 2. [新增] 预测经期 (蓝点) - 只有非实际经期才显示 */}
+                             {d && isPredicted(d) && !periods.some((p: any) => { const s = parseLocalDate(p.startDate); const e = new Date(s); e.setDate(s.getDate()+p.duration); const c = new Date(today.getFullYear(), today.getMonth(), d); return c >= s && c < e; }) && d !== today.getDate() && <div className="w-1 h-1 rounded-full bg-blue-400" />}
+
+                             {/* 3. [新增] 待办事项 (黄点) - 仅显示未完成的 */}
+                             {d && todos && todos.some((t: any) => { const tDate = parseLocalDate(t.date); return tDate.getDate() === d && tDate.getMonth() === today.getMonth() && !t.completed; }) && d !== today.getDate() && <div className="w-1 h-1 rounded-full bg-yellow-400" />}
+                             
+                             {/* 4. 吵架记录 (紫点) */}
                              {d && conflicts.some((c: any) => { const dt = parseLocalDate(c.date); return dt.getDate() === d && dt.getMonth() === today.getMonth(); }) && d !== today.getDate() && <div className="w-1 h-1 rounded-full bg-purple-500" />}
                         </div>
                     </div>
@@ -2309,11 +2336,11 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                         {pinnedPhotos.length > 0 && (<button onClick={handleClearBoard} className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border-2 border-rose-100 p-2 text-gray-400 hover:text-rose-500 min-h-[50px] min-w-[50px] flex flex-col items-center justify-center"><Trash2 size={20} /><span className="text-[9px] font-bold mt-1 font-cute">清空</span></button>)}
                     </div>
                   </header>
-                  <div className="absolute top-40 left-8 w-64 z-[60] flex flex-col gap-6 pointer-events-none hidden md:flex"><div className="pointer-events-auto transform transition hover:scale-105 origin-top-left"><MiniCalendar periods={periods} conflicts={conflicts} /></div><div className="bg-white/80 backdrop-blur-sm rounded-2xl p-4 shadow-lg border border-rose-50 pointer-events-auto transform transition hover:scale-105 origin-top-left"><h3 className="text-sm font-bold text-gray-600 mb-2 flex items-center gap-2 font-cute"><CheckSquare size={16} className="text-rose-400"/> 备忘录</h3><div className="space-y-2 max-h-40 overflow-y-auto pr-1">{todos.filter(t => !t.completed).length === 0 && <p className="text-xs text-gray-400 italic">暂无待办</p>}{todos.filter(t => !t.completed).slice(0, 5).map(todo => (<div key={todo.id} onClick={() => setTodos(todos.map(t => t.id === todo.id ? { ...t, completed: !t.completed } : t))} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer group p-1 hover:bg-rose-50 rounded"><div className="w-3.5 h-3.5 rounded border border-rose-300 flex items-center justify-center bg-white group-hover:border-rose-400 shrink-0">{todo.completed && <div className="w-2 h-2 bg-rose-400 rounded-full" />}</div><span className={`font-cute truncate ${todo.completed ? 'line-through text-gray-400' : ''}`}>{todo.text}</span></div>))}</div></div></div>
+                  <div className="absolute top-40 left-8 w-64 z-[60] flex flex-col gap-6 pointer-events-none hidden md:flex"><div className="pointer-events-auto transform transition hover:scale-105 origin-top-left"><MiniCalendar periods={periods} conflicts={conflicts} todos={todos} /></div><div className="bg-white/80 backdrop-blur-sm rounded-2xl p-4 shadow-lg border border-rose-50 pointer-events-auto transform transition hover:scale-105 origin-top-left"><h3 className="text-sm font-bold text-gray-600 mb-2 flex items-center gap-2 font-cute"><CheckSquare size={16} className="text-rose-400"/> 备忘录</h3><div className="space-y-2 max-h-40 overflow-y-auto pr-1">{todos.filter(t => !t.completed).length === 0 && <p className="text-xs text-gray-400 italic">暂无待办</p>}{todos.filter(t => !t.completed).slice(0, 5).map(todo => (<div key={todo.id} onClick={() => setTodos(todos.map(t => t.id === todo.id ? { ...t, completed: !t.completed } : t))} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer group p-1 hover:bg-rose-50 rounded"><div className="w-3.5 h-3.5 rounded border border-rose-300 flex items-center justify-center bg-white group-hover:border-rose-400 shrink-0">{todo.completed && <div className="w-2 h-2 bg-rose-400 rounded-full" />}</div><span className={`font-cute truncate ${todo.completed ? 'line-through text-gray-400' : ''}`}>{todo.text}</span></div>))}</div></div></div>
                   
                   <div className="absolute top-28 left-4 z-[50] md:hidden pointer-events-none origin-top-left transform scale-[0.75]">
                         <div className="pointer-events-auto bg-white/20 backdrop-blur-md rounded-2xl p-2 border border-white/30 shadow-lg">
-                            <MiniCalendar periods={periods} conflicts={conflicts} />
+                            <MiniCalendar periods={periods} conflicts={conflicts} todos={todos} />
                         </div>
                   </div>
 
