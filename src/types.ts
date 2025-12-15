@@ -75,6 +75,8 @@ export interface ConflictRecord {
   reason: string;
   hisPoint: string;
   herPoint: string;
+  // 新增 type 区分是单人记录还是双人裁决
+  type?: 'solo' | 'joint'; 
   aiResponse?: {
     hisFault: number;
     herFault: number;
@@ -84,6 +86,22 @@ export interface ConflictRecord {
   };
   isPinned?: boolean;
   isFavorite?: boolean;
+}
+
+// 新增：双人裁决会话状态
+export interface JointSession {
+  id: string;
+  coupleId: string;
+  status: 'waiting' | 'processing' | 'resolved';
+  initiatorId: string;
+  initiatorName: string;
+  initiatorReason: string;
+  initiatorPoint: string;
+  responderId?: string;
+  responderName?: string;
+  responderReason?: string;
+  responderPoint?: string;
+  createdAt: string;
 }
 
 export interface Message {
