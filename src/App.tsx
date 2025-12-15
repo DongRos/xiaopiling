@@ -1172,12 +1172,12 @@ const saveAlbumName = async () => {
                                     {(memory.comments || []).map((c: any) => (
                                         <div 
                                             key={c.id} 
-                                            className="leading-5 text-gray-600 active:bg-gray-100 p-0.5 rounded cursor-pointer" // [修改] 增加点击反馈样式
+                                            className="leading-5 text-gray-600 active:bg-gray-100 p-0.5 rounded cursor-pointer"
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                // 单击回复
                                                 const input = prompt(`回复 ${c.authorName}:`);
-                                                if (input) handleComment(memory.id, `回复 ${c.authorName}: ${input}`);
+                                                // [修改] 这里增加了第三个参数 c.authorId，告诉函数我们要回复谁
+                                                if (input) handleComment(memory.id, `回复 ${c.authorName}: ${input}`, c.authorId);
                                             }}
                                             onContextMenu={(e) => {
                                                 // 长按(手机) 或 右键(电脑)
@@ -1764,10 +1764,9 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
       } catch (e) { console.error("点赞失败", e); }
   };
 
-  // [新增] 真实的云端评论逻辑
-// --- 修改 handleRealComment 函数 (增加通知) ---
 // [新增] 真实的云端评论逻辑 (已修复通知权限)
-  const handleRealComment = async (id: string, text: string) => {
+  // [修改] 增加 targetUserId 参数，用于回复评论时通知对方
+  const handleRealComment = async (id: string, text: string, targetUserId?: string) => {
       const nickname = user.nickname || user.username;
       const newComment = { 
           id: Date.now().toString(), 
@@ -1786,12 +1785,23 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
 
           // [关键修复] 发送评论通知
           const memory = memories.find(m => m.id === id);
-          if (memory && memory.creatorId && memory.creatorId !== user.objectId) {
+          
+          // [逻辑升级] 优先通知被回复的人 (targetUserId)，如果没有则通知朋友圈作者 (creatorId)
+          // 排除掉“自己通知自己”的情况
+          let notifyId = null;
+          
+          if (targetUserId && targetUserId !== user.objectId) {
+              notifyId = targetUserId; // 优先通知被回复的人
+          } else if (memory && memory.creatorId && memory.creatorId !== user.objectId) {
+              notifyId = memory.creatorId; // 否则通知朋友圈主人
+          }
+
+          if (notifyId) {
               const note = new AV.Object('Notification');
               note.set('type', 'comment');
               note.set('fromUser', nickname);
               note.set('fromAvatar', user.avatarUrl);
-              note.set('toUser', memory.creatorId);
+              note.set('toUser', notifyId); // 使用计算出的通知对象
               note.set('momentId', id);
               note.set('isRead', false);
               note.set('content', text);
@@ -1800,8 +1810,8 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
               const acl = new AV.ACL();
               acl.setReadAccess(user.objectId, true);
               acl.setWriteAccess(user.objectId, true);
-              acl.setReadAccess(memory.creatorId, true); // 对方必须可读
-              acl.setWriteAccess(memory.creatorId, true); // 对方必须可写(改状态)
+              acl.setReadAccess(notifyId, true); // 对方必须可读
+              acl.setWriteAccess(notifyId, true); // 对方必须可写(改状态)
               note.setACL(acl);
               // -------------------------
 
@@ -1809,7 +1819,6 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
           }
       } catch (e) { console.error("评论失败", e); }
   };
-
 
 
   // [新增] 删除评论函数
