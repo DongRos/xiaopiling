@@ -1878,7 +1878,7 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
     </div>
   );
 };  
-
+}
 
 
 
