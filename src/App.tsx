@@ -1140,7 +1140,34 @@ const saveAlbumName = async () => {
                           </div>
                       ))}
                   </div>
-                  {isManageMode && (<div className="fixed bottom-20 left-0 right-0 p-4 bg-white border-t border-gray-100 flex justify-center gap-4 z-40"><button onClick={() => { if(window.confirm(`确定删除?`)) { setAlbums((prev: Album[]) => prev.filter(a => !selectedItems.has(a.id))); setIsManageMode(false); }}} disabled={selectedItems.size === 0} className="bg-red-500 text-white px-6 py-2 rounded-full font-bold shadow-md disabled:bg-gray-300">删除选中 ({selectedItems.size})</button></div>)}
+                  {isManageMode && (
+                      <div className="fixed bottom-20 left-0 right-0 p-4 bg-white border-t border-gray-100 flex justify-center gap-4 z-40">
+                          <button 
+                              onClick={async () => { 
+                                  if(window.confirm(`确定要删除选中的 ${selectedItems.size} 个相册吗？`)) { 
+                                      // 1. 本地立即删除
+                                      setAlbums((prev: Album[]) => prev.filter(a => !selectedItems.has(a.id))); 
+                                      setIsManageMode(false);
+                                      
+                                      // 2. [新增] 云端同步删除
+                                      try {
+                                          const promises = Array.from(selectedItems).map(id => 
+                                              AV.Object.createWithoutData('Album', id).destroy()
+                                          );
+                                          await Promise.all(promises);
+                                      } catch(e) {
+                                          console.error("删除失败", e);
+                                          alert("云端同步删除失败，请检查网络");
+                                      }
+                                  }
+                              }} 
+                              disabled={selectedItems.size === 0} 
+                              className="bg-red-500 text-white px-6 py-2 rounded-full font-bold shadow-md disabled:bg-gray-300"
+                          >
+                              删除选中 ({selectedItems.size})
+                          </button>
+                      </div>
+                  )}
               </div>
           )}
       </div>
@@ -1468,11 +1495,13 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
     // 设置头像 (从登录用户数据中获取)
     if (user.avatarUrl) setAvatarUrl(user.avatarUrl);
 
-    // 定义加载数据的异步函数
+// 定义加载数据的异步函数
     const loadData = async () => {
        const safeFind = (table: string) => {
            try { return getQuery(table); } catch(e) { return null; }
        };
+       // [新增] 忽略表不存在(101)错误的辅助函数
+       const ignoreNotFound = (e: any) => { if(e.code !== 101) console.warn(e); };
 
        // --- 1. 加载朋友圈 (Moments) ---
        const momentsQuery = safeFind('Moments');
@@ -1480,43 +1509,31 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
            momentsQuery.descending('createdAt').find().then((res: any[]) => {
                setMemories(res.map((item: any) => {
                    const m = item.toJSON();
-                   // [修复] 解析 likedBy 数组来判断当前用户是否点赞
-                   const likedBy = Array.isArray(m.likedBy) ? m.likedBy : []; // 强制确保是数组
+                   const likedBy = Array.isArray(m.likedBy) ? m.likedBy : [];
                    const isLiked = likedBy.includes(user.objectId);
-                   
                    return {
                        ...m, 
-                       id: item.id,
+                       id: item.id, // [修改] 使用 item.id 修复唯一标识
                        date: formatDate(item.createdAt),
                        media: m.images || [], 
-                       comments: m.comments || [], // 评论数据共享
-                       likes: m.likes || 0,        // 点赞数共享
-                       isLiked: isLiked,           // 状态根据数据判断
+                       comments: m.comments || [],
+                       likes: m.likes || 0,
+                       isLiked: isLiked,
                        creatorId: m.creatorId || m.writer_id,
-                       creatorAvatar: m.creatorAvatar // [修复] 读取保存的头像
+                       creatorAvatar: m.creatorAvatar
                    };
                }));
-           }).catch((e: any) => console.warn("加载Moments失败", e));
+           }).catch(ignoreNotFound); // [修改] 使用 ignoreNotFound
        }
 
-
-
-
-
-
-
-
-
-      
-
       // --- 2. 加载相册 (Album) ---
-       safeFind('Album')?.descending('createdAt').find().then((res: any) => { // [修改] order -> descending
-            // 修改：先 .toJSON() 再合并 id，并强制初始化 media 数组
+       safeFind('Album')?.descending('createdAt').find().then((res: any) => {
             setAlbums(res.map((a: any) => {
                 const data = a.toJSON();
-                return { ...data, id: a.objectId, media: Array.isArray(data.media) ? data.media : [] };
+                // [修改] 使用 a.id 修复“选中一个全被选中”的 bug
+                return { ...data, id: a.id, media: Array.isArray(data.media) ? data.media : [] };
             })); 
-       }).catch(e => console.warn("加载Album失败", e));
+       }).catch(ignoreNotFound); // [修改]
       // --- 3. [修复] 加载情侣共享设置 (Bmob -> LeanCloud) ---
        if (user.coupleId) {
            // 3. 保存到 LeanCloud 共享表
@@ -1541,30 +1558,26 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
           }
        }
 
-       // --- 4. 加载其他数据 ---
-       safeFind('Message')?.descending('createdAt').find().then((res: any) => // [修改] order -> descending
-           // 修改：添加 .toJSON()
-           setMessages(res.map((m: any) => ({...m.toJSON(), id: m.objectId}))) 
-       ).catch(e => console.warn("加载Message失败", e));
+   // --- 4. 加载其他数据 (全部加上 ignoreNotFound 和 .id 修正) ---
+       safeFind('Message')?.descending('createdAt').find().then((res: any) => 
+           setMessages(res.map((m: any) => ({...m.toJSON(), id: m.id}))) 
+       ).catch(ignoreNotFound);
 
-       safeFind('PinnedPhoto')?.find().then((res:any) =>
-           // 修改：添加 .toJSON()
-           setPinnedPhotos(res.map((p:any)=>({...p.toJSON(), id: p.objectId}))) 
-       ).catch(e => console.warn("加载PinnedPhoto失败", e));
+       safeFind('PinnedPhoto')?.find().then((res:any) => 
+           setPinnedPhotos(res.map((p:any)=>({...p.toJSON(), id: p.id}))) 
+       ).catch(ignoreNotFound);
 
        safeFind('Period')?.find().then((res:any) => 
-            // 修改：Period 也要转 JSON
             setPeriods(res.map((p:any) => p.toJSON()))
-       ).catch(e => console.warn("加载Period失败", e));
+       ).catch(ignoreNotFound);
 
-       safeFind('Conflict')?.descending('createdAt').find().then((res:any) => // [修改] order -> descending
-           // 修改：添加 .toJSON()
-           setConflicts(res.map((c:any)=>({...c.toJSON(), id: c.objectId}))) 
-       ).catch(e => console.warn("加载Conflict失败", e));
+       safeFind('Conflict')?.descending('createdAt').find().then((res:any) => 
+           setConflicts(res.map((c:any)=>({...c.toJSON(), id: c.id}))) 
+       ).catch(ignoreNotFound);
+
        safeFind('Todo')?.find().then((res:any) => 
-           // 修改：添加 .toJSON()
-           setTodos(res.map((t:any)=>({...t.toJSON(), id: t.objectId}))) 
-       ).catch(e => console.warn("加载Todo失败", e));
+           setTodos(res.map((t:any)=>({...t.toJSON(), id: t.id}))) 
+       ).catch(ignoreNotFound);
     };
     // 1. 立即执行一次加载
     loadData();
