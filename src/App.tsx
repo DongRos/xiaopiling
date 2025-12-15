@@ -1916,7 +1916,9 @@ useEffect(() => {
   };
       
         
-  const handleTakePhoto = () => {
+// [修改] 拍照逻辑：支持云端保存
+  const handleTakePhoto = async () => {
+    // 1. 收集所有可用照片素材
     const allImages = [
         ...memories.filter(m => m.type === 'media').flatMap(m => m.media.map(url => ({ 
             url, 
@@ -1936,8 +1938,8 @@ useEffect(() => {
 
     if (!allImages.length) return alert("相册里还没有照片哦！");
     
+    // 2. 筛选未使用的照片
     let available = allImages.filter(img => !usedPhotoIds.includes(img.url));
-    
     if (available.length === 0) {
         if (pinnedPhotos.length === 0) {
             setUsedPhotoIds([]);
@@ -1949,8 +1951,9 @@ useEffect(() => {
 
     const randomImg = available[Math.floor(Math.random() * available.length)];
     setUsedPhotoIds(prev => [...prev, randomImg.url]);
-    setPinnedPhotos(prev => [...prev, { 
-        id: Date.now().toString(), 
+
+    // 3. 构建新照片对象
+    const newPin = { 
         memoryId: randomImg.id, 
         source: randomImg.source as any, 
         mediaUrl: randomImg.url, 
@@ -1959,11 +1962,47 @@ useEffect(() => {
         y: (Math.random()*40)-20, 
         rotation: (Math.random()*10)-5, 
         scale: 1,
-        date: randomImg.date 
-    }]);
+        date: randomImg.date,
+        writer_id: user.objectId // [关键] 标记所有者
+    };
+
+    // 4. [关键] 乐观更新 (先显示，不等服务器)
+    const tempId = Date.now().toString();
+    setPinnedPhotos(prev => [...prev, { ...newPin, id: tempId }]);
+
+    // 5. [关键] 同步保存到云端
+    try {
+        const Obj = new AV.Object('PinnedPhoto');
+        Object.keys(newPin).forEach(k => Obj.set(k, (newPin as any)[k]));
+        // 如果有对象ID绑定，也可加上
+        if (user.coupleId) Obj.set('binding_id', user.coupleId);
+        
+        const saved = await Obj.save();
+        // 保存成功后，把本地的临时ID替换成云端的真实ID (确保后续能更新/删除)
+        setPinnedPhotos(prev => prev.map(p => p.id === tempId ? { ...p, id: saved.id } : p));
+    } catch(e) {
+        console.error("保存照片失败", e);
+    }
   };
 
-  const handleClearBoard = () => { setPinnedPhotos([]); setUsedPhotoIds([]); };
+  
+  // [修改] 清空逻辑：同步删除云端数据
+  const handleClearBoard = async () => { 
+      if(!confirm("确定清空桌面上所有照片吗？")) return;
+      
+      // 1. 本地清空
+      const idsToDelete = pinnedPhotos.map(p => p.id);
+      setPinnedPhotos([]); 
+      setUsedPhotoIds([]); 
+
+      // 2. 云端批量删除
+      try {
+          const objects = idsToDelete.map(id => AV.Object.createWithoutData('PinnedPhoto', id));
+          await AV.Object.destroyAll(objects);
+      } catch(e) {
+          console.error("清空失败", e);
+      }
+  };
   
   const handleBringToFront = (id: string) => {
       setPinnedPhotos(prev => {
@@ -1985,7 +2024,35 @@ useEffect(() => {
                 <div className="relative w-full h-full bg-rose-50 overflow-hidden">
                   <div className="absolute inset-0 z-0 pointer-events-none opacity-40" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23fbbf24' fill-opacity='0.2'%3E%3Cpath d='M20 20c-2 0-3-2-3-3s2-3 3-3 3 2 3 3-2 3-3 3zm10 0c-2 0-3-2-3-3s2-3 3-3 3 2 3 3-2 3-3 3zm-5 5c-3 0-5-2-5-4s2-3 5-3 5 2 5 3-2 4-5 4zM70 70l-5-5 5-5 5 5-5 5zm20-20c2 0 3 2 3 3s-2 3-3 3-3-2-3-3 2-3 3-3zm-10 0c2 0 3 2 3 3s-2 3-3 3-3-2-3-3 2-3 3-3zm5 5c3 0 5 2 5 4s-2 3-5 3-5-2-5-3 2-4 5-4z'/%3E%3C/g%3E%3C/svg%3E")`, backgroundSize: '100px 100px' }} />
                   
-                  <div className="absolute inset-0 z-10 overflow-hidden">{pinnedPhotos.map((pin, i) => (<DraggablePhoto key={pin.id} pin={pin} onUpdate={(id:any, data:any) => setPinnedPhotos(prev => prev.map(p => p.id === id ? {...p, ...data} : p))} onDelete={(id:any) => setPinnedPhotos(prev => prev.filter(p => p.id !== id))} onBringToFront={handleBringToFront} isFresh={i === pinnedPhotos.length - 1 && Date.now() - parseInt(pin.id) < 2000} date={pin.date} />))}</div>
+                  <div className="absolute inset-0 z-10 overflow-hidden">{pinnedPhotos.map((pin, i) => (<DraggablePhoto 
+    key={pin.id} 
+    pin={pin} 
+    onUpdate={async (id:any, data:any) => {
+        // 1. 本地更新
+        setPinnedPhotos(prev => prev.map(p => p.id === id ? {...p, ...data} : p));
+        
+        // 2. [关键] 云端同步 (仅当ID是真实云端ID时)
+        if (id && id.length > 10) { 
+            try {
+                const p = AV.Object.createWithoutData('PinnedPhoto', id);
+                // 遍历 data 中的属性并设置
+                Object.keys(data).forEach(key => p.set(key, data[key]));
+                await p.save(); 
+            } catch(e) { console.error("更新位置失败", e); }
+        }
+    }} 
+    onDelete={async (id:any) => {
+        // 1. 本地删除
+        setPinnedPhotos(prev => prev.filter(p => p.id !== id));
+        // 2. [关键] 云端删除
+        if (id && id.length > 10) {
+            try { await AV.Object.createWithoutData('PinnedPhoto', id).destroy(); } catch(e) {}
+        }
+    }} 
+    onBringToFront={handleBringToFront} 
+    isFresh={i === pinnedPhotos.length - 1 && Date.now() - parseInt(pin.id) < 2000} 
+    date={pin.date} 
+/>))}</div>
                   
                   <header className="absolute top-0 left-0 right-0 pt-[calc(1.5rem+env(safe-area-inset-top))] px-4 md:px-8 flex justify-between items-start z-[70] pointer-events-none">
                     <div className="pointer-events-auto">
