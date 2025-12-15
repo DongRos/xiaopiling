@@ -789,6 +789,7 @@ const MemoriesViewContent = ({
   momentsTitle, setMomentsTitle, avatarUrl, setAvatarUrl, setMomentsCover,
   momentsAvatar, onUpdateMomentsAvatar, // <--- 新增这两个参数
   notifications, onReadNotification // [新增]
+  ,handleDeleteComment// [新增] 接收参数
 }: any) => {
   const [activeTab, setActiveTab] = useState<'moments' | 'albums'>('moments');
   const [showMessageList, setShowMessageList] = useState(false); // [新增] 控制消息列表显示
@@ -1169,15 +1170,27 @@ const saveAlbumName = async () => {
                                     )}
                              {/* 评论列表 */}
                                     {(memory.comments || []).map((c: any) => (
-                                        <div key={c.id} className="leading-5 text-gray-600">
+                                        <div 
+                                            key={c.id} 
+                                            className="leading-5 text-gray-600 active:bg-gray-100 p-0.5 rounded cursor-pointer" // [修改] 增加点击反馈样式
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                // 单击回复
+                                                const input = prompt(`回复 ${c.authorName}:`);
+                                                if (input) handleComment(memory.id, `回复 ${c.authorName}: ${input}`);
+                                            }}
+                                            onContextMenu={(e) => {
+                                                // 长按(手机) 或 右键(电脑)
+                                                e.preventDefault(); 
+                                                e.stopPropagation();
+                                                if (c.authorId === user.objectId) {
+                                                    handleDeleteComment(memory.id, c.id);
+                                                }
+                                            }}
+                                        >
                                             <span className="font-bold text-blue-900">{c.authorName || 'Ta'}:</span> {c.text}
                                         </div>
                                     ))}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                ))}
             </div>
         ) : (
               <div>
@@ -1794,6 +1807,33 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
 
 
 
+  // [新增] 删除评论函数
+  const handleDeleteComment = async (memoryId: string, commentId: string) => {
+      const memory = memories.find(m => m.id === memoryId);
+      if (!memory) return;
+      const comment = memory.comments.find((c: any) => c.id === commentId);
+      if (!comment) return;
+
+      if (!confirm("确定删除这条评论吗？")) return;
+
+      // 1. 本地乐观删除
+      const newComments = memory.comments.filter((c: any) => c.id !== commentId);
+      setMemories(memories.map(m => m.id === memoryId ? { ...m, comments: newComments } : m));
+
+      // 2. 云端同步删除
+      try {
+          const m = AV.Object.createWithoutData('Moments', memoryId);
+          m.remove('comments', comment); // 只有对象完全匹配才能删除，因本地comments直接来自云端，一般可匹配
+          await m.save();
+      } catch (e) {
+          console.error("删除评论失败", e);
+          alert("删除失败，请刷新重试");
+      }
+  };
+
+
+  
+
   // --- [新增] 标记通知已读函数 ---
   const handleReadNotification = async (noteId: string) => {
       // 本地更新
@@ -1958,6 +1998,7 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                        {activePage === Page.MEMORIES && (<MemoriesViewContent user={user} memories={memories} albums={albums} setAlbums={setAlbums} 
                            handleLike={handleRealLike} 
                            handleComment={handleRealComment}
+                           handleDeleteComment={handleDeleteComment} // [新增] 传递删除函数
                                                            onFileSelect={async (e: any) => {
                                                             const target = e.target;
                                                             const files = Array.from(target.files || []) as File[];
