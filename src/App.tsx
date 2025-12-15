@@ -1449,8 +1449,9 @@ const handleSoloJudge = async () => {
             reason, hisPoint, herPoint,
             aiResponse: result,
             type: 'solo', 
-            hisName: '男方', // [新增]
-            herName: '女方', // [新增]
+            // [修改] 使用当前用户昵称，而不是写死的 '男方'/'女方'
+            hisName: user.nickname || '我', 
+            herName: '对方',
             writer_id: user.objectId,
             binding_id: user.coupleId
         };
@@ -1867,7 +1868,20 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
        noteQuery.limit(20);
        silentFind(noteQuery).then((res: any[]) => setNotifications(res.map(n => ({ ...n.toJSON(), id: n.id }))));
        const msgQ = getQuery('Message');
-           if(msgQ) silentFind(msgQ.descending('createdAt')).then((res: any) => setMessages(res.map((m: any) => ({...m.toJSON(), id: m.id}))));
+       if(msgQ) silentFind(msgQ.descending('createdAt')).then((res: any) => setMessages(res.map((m: any) => ({...m.toJSON(), id: m.id}))));
+
+       const periodQ = getQuery('Period');
+       if(periodQ) silentFind(periodQ).then((res:any) => setPeriods(res.map((p:any) => ({...p.toJSON(), id: p.id})))); // 确保 PeriodEntry 类型里加上 id?: string
+         
+       const conflictQ = getQuery('Conflict');
+       if(conflictQ) silentFind(conflictQ.descending('createdAt')).then((res:any) => setConflicts(res.map((c:any)=>({...c.toJSON(), id: c.id}))));
+
+       const todoQ = getQuery('Todo');
+       if(todoQ) silentFind(todoQ).then((res:any) => setTodos(res.map((t:any)=>({...t.toJSON(), id: t.id}))));
+
+    
+
+    
        // --- [关键] 手动刷新时才加载的数据 (包括首页照片) ---
        if (isFullLoad) {
            const albumQuery = getQuery('Album');
