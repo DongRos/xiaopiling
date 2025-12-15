@@ -1120,7 +1120,7 @@ const saveAlbumName = async () => {
         {/* ✅ 修复1：防止 memories 为空导致白屏 */}
         {(memories || []).map((memory: Memory) => (
         <div key={memory.id} id={`moment-${memory.id}`} className="flex gap-3 pb-6 border-b border-gray-50 last:border-0">
-            <div key={memory.id} className="flex gap-3 pb-6 border-b border-gray-50 last:border-0">
+            
                 <div className="w-10 h-10 rounded-lg bg-rose-100 overflow-hidden shrink-0 cursor-pointer" onClick={() => handleListAvatarClick(memory.creatorAvatar)}>
                     {memory.creatorAvatar ? <img src={memory.creatorAvatar} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-xl">👤</div>}
                 </div>
@@ -1968,7 +1968,7 @@ const handleRealLike = async (id: string) => {
                                                             }
                                                             if (target) target.value = ''; 
                                                         }}
-                                                           onTextPost={() => { setUploadType('text'); setUploadImages([]); setShowUploadModal(true); }} showUploadModal={showUploadModal} setShowUploadModal={setShowUploadModal} uploadImages={uploadImages} setUploadImages={setUploadImages} uploadCaption={uploadCaption} setUploadCaption={setUploadCaption} uploadType={uploadType} onFileSelect={onFileSelect} onTextPost={onTextPost} 
+                                                           onTextPost={() => { setUploadType('text'); setUploadImages([]); setShowUploadModal(true); }} showUploadModal={showUploadModal} setShowUploadModal={setShowUploadModal} uploadImages={uploadImages} setUploadImages={setUploadImages} uploadCaption={uploadCaption} setUploadCaption={setUploadCaption} uploadType={uploadType}  
                                                            confirmUpload={async () => { 
                                                               if((uploadType === 'media' && !uploadImages.length) || (uploadType === 'text' && !uploadCaption.trim())) return;
                                                               
