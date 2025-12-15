@@ -1590,7 +1590,7 @@ return (
                         ) : (
                             <div>
                                 <h3 className="text-center font-bold text-rose-500 mb-4 font-cute">
-                                    {jointSession ? `💖 回复 ${jointSession.initiatorName} 的心里话` : '双方裁决'}
+                                    {jointSession ? `回复 ${jointSession.initiatorName}` : '双方裁决'}
                                 </h3>
                                 <div className="space-y-4">
                                     <div><label className="text-xs font-bold text-gray-500 ml-1">争吵原因</label><input className="w-full bg-gray-50 rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-rose-200" placeholder="简单说说..." value={myReason} onChange={e => setMyReason(e.target.value)} /></div>
