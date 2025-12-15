@@ -2026,8 +2026,7 @@ const handleRealLike = async (id: string) => {
                 setMemories(memories.filter(m => m.id !== id)); // 本地删
                 try { await AV.Object.createWithoutData('Moments', id).destroy(); } catch(e) { console.error(e); } // 云端删
             }} notifications={notifications} onReadNotification={handleReadNotification} momentsTitle={momentsTitle} setMomentsTitle={setMomentsTitle} 
-            avatarUrl={avatarUrl} setAvatarUrl={setAvatarUrl} setMomentsCover={setMomentsCover}
-            momentsAvatar={momentsAvatar} onUpdateMomentsAvatar={onUpdateMomentsAvatar} />)}
+            avatarUrl={avatarUrl} setAvatarUrl={setAvatarUrl} setMomentsCover={setMomentsCover}/>)}
                        {activePage === Page.CYCLE && <CycleViewContent 
                            periods={periods} 
                            nextPeriod={calculateNextPeriod()} 
