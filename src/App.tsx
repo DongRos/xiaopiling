@@ -1944,12 +1944,14 @@ return (
 
 const BoardViewContent = ({ user, messages, onPost, onPin, onFav, onDelete, onAddTodo, setMessages }: any) => {
     const [input, setInput] = useState(''); const [isManageMode, setIsManageMode] = useState(false); const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [showInputModal, setShowInputModal] = useState(false); // [新增] 控制弹窗显示
     useEffect(() => { if(!isManageMode) setSelectedItems(new Set()); }, [isManageMode]);
     const handleSend = async () => {
         if(!input.trim()) return;
         onPost(input);
         if(input.match(/今天|明天|要做|提醒/)) { const todos = await extractTodosFromText(input, getBeijingDateString()); if(todos.length) { todos.forEach(t => onAddTodo(t.text, t.date)); alert(`已添加 ${todos.length} 个待办！`); } }
         setInput('');
+      setShowInputModal(false); // [新增] 发送后关闭弹窗
     };
     const batchAction = async (action: 'pin' | 'fav' | 'delete') => {
         if (selectedItems.size === 0) return;
@@ -2059,7 +2061,32 @@ const BoardViewContent = ({ user, messages, onPost, onPin, onFav, onDelete, onAd
                     )}
                 </div>
             </div>  {msg.isPinned && <div className="absolute top-0 right-0 p-3 text-blue-500 transform rotate-45"><Pin size={24} fill="currentColor" /></div>}{isManageMode && (<div className="absolute top-4 right-4 pointer-events-none">{selectedItems.has(msg.id) ? <CheckCircle className="text-rose-500 fill-white" /> : <div className="w-6 h-6 rounded-full border-2 border-gray-300 bg-white" />}</div>)}</div>))}</div></div>
-            {isManageMode ? (<div className="fixed bottom-16 left-0 right-0 p-4 bg-white border-t border-gray-100 pb-safe safe-area-inset-bottom z-40 flex justify-around"><button onClick={() => batchAction('fav')} className="flex flex-col items-center text-gray-600 hover:text-rose-500"><Heart /> <span className="text-xs mt-1">收藏</span></button><button onClick={() => batchAction('pin')} className="flex flex-col items-center text-gray-600 hover:text-blue-500"><Pin /> <span className="text-xs mt-1">置顶</span></button><button onClick={() => batchAction('delete')} className="flex flex-col items-center text-gray-600 hover:text-red-500"><Trash2 /> <span className="text-xs mt-1">删除</span></button></div>) : (<div className="fixed bottom-16 left-0 right-0 p-4 bg-white border-t border-gray-100 pb-safe safe-area-inset-bottom z-40"><div className="relative max-w-2xl mx-auto"><textarea className="w-full bg-gray-50 rounded-2xl pl-4 pr-12 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-rose-100 resize-none h-14" placeholder="写给对方的留言..." value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }}} /><button onClick={handleSend} disabled={!input.trim()} className="absolute right-2 top-1/2 transform -translate-y-1/2 p-2 bg-rose-500 text-white rounded-xl shadow-md disabled:bg-gray-300 transition hover:scale-105 active:scale-95"><Send size={18} /></button></div></div>)}
+            {/* [修改] 底部区域：管理工具条 或 悬浮写信按钮 */}
+            {isManageMode ? (
+                <div className="fixed bottom-16 left-0 right-0 p-4 bg-white border-t border-gray-100 pb-safe safe-area-inset-bottom z-40 flex justify-around">
+                    <button onClick={() => batchAction('fav')} className="flex flex-col items-center text-gray-600 hover:text-rose-500"><Heart /> <span className="text-xs mt-1">收藏</span></button>
+                    <button onClick={() => batchAction('pin')} className="flex flex-col items-center text-gray-600 hover:text-blue-500"><Pin /> <span className="text-xs mt-1">置顶</span></button>
+                    <button onClick={() => batchAction('delete')} className="flex flex-col items-center text-gray-600 hover:text-red-500"><Trash2 /> <span className="text-xs mt-1">删除</span></button>
+                </div>
+            ) : (
+                <button 
+                    onClick={() => setShowInputModal(true)} 
+                    className="fixed bottom-24 right-4 z-40 bg-rose-500 text-white p-4 rounded-full shadow-lg hover:bg-rose-600 active:scale-90 transition-all"
+                >
+                    <Edit2 size={24} />
+                </button>
+            )}
+
+            {/* [新增] 留言输入弹窗 */}
+            {showInputModal && (
+                <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl animate-in fade-in zoom-in">
+                        <div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold text-gray-800 font-cute">写留言</h3><button onClick={() => setShowInputModal(false)}><X className="text-gray-400" /></button></div>
+                        <textarea value={input} onChange={(e) => setInput(e.target.value)} placeholder="写给对方的留言..." className="w-full bg-gray-50 rounded-xl p-3 h-32 mb-4 outline-none resize-none focus:ring-2 focus:ring-rose-100" />
+                        <button onClick={handleSend} className="w-full bg-rose-500 text-white py-3 rounded-xl font-bold hover:bg-rose-600 transition">发布</button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
