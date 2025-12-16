@@ -969,13 +969,23 @@ const MemoriesViewContent = ({
                // 2. 计算新状态
                // 确保 selectedAlbum.media 存在
                const currentMedia = selectedAlbum.media || [];
-               const updatedMedia = [...newMediaItems, ...currentMedia];
                
+               // [修复] 核心：在合并数据前，强制清洗所有对象，只保留纯净的 JSON 数据
+               // 这一步防止了因为对象中包含 SDK 内部字段导致的保存失败
+               const cleanMedia = [...newMediaItems, ...currentMedia].map(m => ({
+                   id: m.id,
+                   url: m.url,
+                   date: m.date,
+                   type: m.type || 'image',
+                   caption: m.caption || ''
+               }));
+
                // 3. [关键] 先更新云端，确保数据落地
                const albumObj = AV.Object.createWithoutData('Album', selectedAlbum.id);
-               albumObj.set('media', updatedMedia);
+               albumObj.set('media', cleanMedia); // 使用清洗后的数据保存
                
                // 如果当前没封面，用第一张新图做封面
+
                let newCoverUrl = selectedAlbum.coverUrl;
                if (!newCoverUrl && newMediaItems.length > 0) {
                    newCoverUrl = newMediaItems[0].url;
@@ -986,7 +996,8 @@ const MemoriesViewContent = ({
                console.log("云端相册保存成功");
 
                // 4. 云端保存成功后，再更新本地状态
-               const updatedAlbum = { ...selectedAlbum, media: updatedMedia, coverUrl: newCoverUrl };
+               // [修改] 这里使用 cleanMedia 更新本地
+               const updatedAlbum = { ...selectedAlbum, media: cleanMedia, coverUrl: newCoverUrl };
                setAlbums((prev: Album[]) => prev.map(a => a.id === selectedAlbum.id ? updatedAlbum : a));
                setSelectedAlbum(updatedAlbum);
                
@@ -2027,23 +2038,30 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
   };
 // 1. [修改] 把 loadData 提出来放在这里，方便按钮调用
   const loadData = async (isFullLoad = true) => {
-       const silentFind = async (query: AV.Query) => {
-           try { return await query.find(); } catch (e: any) { if (e.code !== 101) console.warn("Load Error:", e); return []; }
+       // [修复] 修改辅助函数：失败时返回 null，而不是空数组，防止网络错误导致数据清空
+       const safeFind = async (query: AV.Query) => {
+           try { return await query.find(); } 
+           catch (e: any) { 
+               if (e.code !== 101) console.warn("Load Error (keeping local data):", e); 
+               return null; // 返回 null 表示本次查询失败
+           }
        };
 
-       // --- 始终刷新的数据 ---
+      // --- 始终刷新的数据 ---
        const momentsQuery = getQuery('Moments');
        if (momentsQuery) {
-           silentFind(momentsQuery.descending('createdAt').limit(50).include('likes')).then((res: any[]) => {
-               setMemories(res.map((item: any) => {
-                   const m = item.toJSON();
-                   const likedBy = Array.isArray(m.likedBy) ? m.likedBy : [];
-                   const isLiked = likedBy.includes(user.objectId);
-                   return {
-                       // [修改] 使用 formatDateTime 替代 formatDate
-                       ...m, id: item.id, date: formatDateTime(item.createdAt), media: m.images || [], comments: m.comments || [], likes: m.likes || 0, isLiked: isLiked, likeNames: m.likeNames || [], creatorId: m.creatorId || m.writer_id, creatorAvatar: m.creatorAvatar
-                   };
-               }));
+           // [修复] 增加非空判断 if (res)
+           safeFind(momentsQuery.descending('createdAt').limit(50).include('likes')).then((res: any[]) => {
+               if (res) { // 只有成功才更新
+                   setMemories(res.map((item: any) => {
+                       const m = item.toJSON();
+                       const likedBy = Array.isArray(m.likedBy) ? m.likedBy : [];
+                       const isLiked = likedBy.includes(user.objectId);
+                       return {
+                           ...m, id: item.id, date: formatDateTime(item.createdAt), media: m.images || [], comments: m.comments || [], likes: m.likes || 0, isLiked: isLiked, likeNames: m.likeNames || [], creatorId: m.creatorId || m.writer_id, creatorAvatar: m.creatorAvatar
+                       };
+                   }));
+               }
            });
        }
 
@@ -2051,25 +2069,37 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
        noteQuery.equalTo('toUser', user.objectId);
        noteQuery.descending('createdAt');
        noteQuery.limit(20);
-       silentFind(noteQuery).then((res: any[]) => setNotifications(res.map(n => ({ ...n.toJSON(), id: n.id }))));
+       // [修复] 增加 if (res) 判断
+       safeFind(noteQuery).then((res: any[]) => {
+           if (res) setNotifications(res.map(n => ({ ...n.toJSON(), id: n.id })));
+       });
+
        const msgQ = getQuery('Message');
-       if(msgQ) silentFind(msgQ.descending('createdAt')).then((res: any) => setMessages(res.map((m: any) => ({...m.toJSON(), id: m.id}))));
+       if(msgQ) safeFind(msgQ.descending('createdAt')).then((res: any) => {
+           if (res) setMessages(res.map((m: any) => ({...m.toJSON(), id: m.id})));
+       });
 
        const periodQ = getQuery('Period');
-       if(periodQ) silentFind(periodQ).then((res:any) => setPeriods(res.map((p:any) => ({...p.toJSON(), id: p.id})))); // 确保 PeriodEntry 类型里加上 id?: string
+       if(periodQ) safeFind(periodQ).then((res:any) => {
+           if (res) setPeriods(res.map((p:any) => ({...p.toJSON(), id: p.id})));
+       });
          
        const conflictQ = getQuery('Conflict');
-       if(conflictQ) silentFind(conflictQ.descending('createdAt')).then((res:any) => setConflicts(res.map((c:any)=>({...c.toJSON(), id: c.id}))));
+       if(conflictQ) safeFind(conflictQ.descending('createdAt')).then((res:any) => {
+           if (res) setConflicts(res.map((c:any)=>({...c.toJSON(), id: c.id})));
+       });
 
        const todoQ = getQuery('Todo');
-       if(todoQ) silentFind(todoQ).then((res:any) => setTodos(res.map((t:any)=>({...t.toJSON(), id: t.id}))));
+       if(todoQ) safeFind(todoQ).then((res:any) => {
+           if (res) setTodos(res.map((t:any)=>({...t.toJSON(), id: t.id})));
+       });
 
        // [修改] 共享设置也移出来刷新，并添加纪念日同步
        if (user.coupleId) {
           const q = new AV.Query('CoupleSettings');
           q.equalTo('coupleId', String(user.coupleId));
-          silentFind(q).then(res => { 
-              if (res.length > 0) { 
+          safeFind(q).then(res => { 
+              if (res && res.length > 0) { // [修复] 增加 res 存在判断
                   const item = res[0]; 
                   if (item.get('coverUrl')) setMomentsCover(item.get('coverUrl')); 
                   if (item.get('avatarUrl')) setMomentsAvatar(item.get('avatarUrl'));
@@ -2084,25 +2114,35 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
        }
 
     
+
        // --- [关键] 手动刷新时才加载的数据 (包括首页照片) ---
        if (isFullLoad) {
            const albumQuery = getQuery('Album');
-           if(albumQuery) silentFind(albumQuery.descending('createdAt')).then((res: any) => setAlbums(res.map((a: any) => ({ ...a.toJSON(), id: a.id, media: a.media || [] }))));
-
-           
+           // [修复] 增加 if (res) 判断，防止相册被清空
+           if(albumQuery) safeFind(albumQuery.descending('createdAt')).then((res: any) => {
+               if (res) setAlbums(res.map((a: any) => ({ ...a.toJSON(), id: a.id, media: a.media || [] })));
+           });
 
            // [重点] 刷新首页照片
            const pinQ = getQuery('PinnedPhoto');
-           if(pinQ) silentFind(pinQ).then((res:any) => setPinnedPhotos(res.map((p:any)=>({...p.toJSON(), id: p.id}))));
+           if(pinQ) safeFind(pinQ).then((res:any) => {
+               if (res) setPinnedPhotos(res.map((p:any)=>({...p.toJSON(), id: p.id})));
+           });
 
           const periodQ = getQuery('Period');
-          if(periodQ) silentFind(periodQ).then((res:any) => setPeriods(res.map((p:any) => ({...p.toJSON(), id: p.id})))); // 确保 PeriodEntry 类型里加上 id?: string
+          if(periodQ) safeFind(periodQ).then((res:any) => {
+              if (res) setPeriods(res.map((p:any) => ({...p.toJSON(), id: p.id})));
+          });
          
            const conflictQ = getQuery('Conflict');
-           if(conflictQ) silentFind(conflictQ.descending('createdAt')).then((res:any) => setConflicts(res.map((c:any)=>({...c.toJSON(), id: c.id}))));
+           if(conflictQ) safeFind(conflictQ.descending('createdAt')).then((res:any) => {
+               if (res) setConflicts(res.map((c:any)=>({...c.toJSON(), id: c.id})));
+           });
 
            const todoQ = getQuery('Todo');
-           if(todoQ) silentFind(todoQ).then((res:any) => setTodos(res.map((t:any)=>({...t.toJSON(), id: t.id}))));
+           if(todoQ) safeFind(todoQ).then((res:any) => {
+               if (res) setTodos(res.map((t:any)=>({...t.toJSON(), id: t.id})));
+           });
        }
   };
 
