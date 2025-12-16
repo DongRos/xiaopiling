@@ -512,6 +512,33 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
       if (user.display_code) setMyCode(user.display_code); 
   }, [user]);
 
+
+  // [新增] 修复倒计时不显示的问题
+  useEffect(() => {
+      if (!user.codeExpiresAt) {
+          setTimeLeft('');
+          return;
+      }
+
+      const updateTimer = () => {
+          const now = Date.now();
+          const diff = user.codeExpiresAt - now;
+          if (diff <= 0) {
+              setTimeLeft('已过期');
+          } else {
+              const m = Math.floor(diff / 60000);
+              const s = Math.floor((diff % 60000) / 1000);
+              setTimeLeft(`${m}:${s < 10 ? '0' + s : s}`);
+          }
+      };
+
+      updateTimer(); // 立即执行一次
+      const timer = setInterval(updateTimer, 1000); // 每秒更新
+      return () => clearInterval(timer); // 清理定时器
+  }, [user.codeExpiresAt]);
+
+
+  
 // ✅ 核心：统一刷新/检查状态函数 (常驻按钮调用这个)
   const handleRefresh = async (showToast = false) => {
       setLoading(true);
