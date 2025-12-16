@@ -23,7 +23,14 @@ android {
         }
     }
 }
-
+        // [新增] 自定义 APK 输出名称
+    applicationVariants.all { variant ->
+        variant.outputs.all {
+            // 将输出文件名改为 xiaopiling.apk (如果是 debug 版则是 xiaopiling-debug.apk)
+            // 你也可以直接写死 outputFileName = "xiaopiling.apk"
+            outputFileName = "xiaopiling.apk" 
+        }
+    }
 repositories {
     flatDir{
         dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
