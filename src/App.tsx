@@ -1170,7 +1170,7 @@ const saveAlbumName = async () => {
                             <span className="text-2xl font-black text-rose-500 font-cute">{Math.round((uploadStatus.current / (uploadStatus.total || 1)) * 100)}%</span>
                         </div>
                     </div>
-                    <h3 className="text-lg font-bold text-gray-700 mb-2 font-cute animate-pulse">正在上传美好回忆...</h3>
+                    <h3 className="text-lg font-bold text-gray-700 mb-2 font-cute animate-pulse">正在上传...</h3>
                     <div className="flex items-center gap-2 mt-2">
                         <span className="text-xs font-bold text-gray-400 bg-gray-100 px-3 py-1 rounded-full">第 {uploadStatus.current} 张 / 共 {uploadStatus.total} 张</span>
                     </div>
