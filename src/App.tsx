@@ -832,6 +832,7 @@ const MemoriesViewContent = ({
   ,handleDeleteComment,
   onRefresh, // [新增] 接收刷新函数
   onUpdateMomentsTitle, // [新增] 接收保存标题的函数
+  uploadStatus, setUploadStatus, // [新增] 接收进度状态
 }: any) => {
   const [activeTab, setActiveTab] = useState<'moments' | 'albums'>('moments');
   const [isRefreshing, setIsRefreshing] = useState(false); // [新增] 控制刷新按钮旋转动画
@@ -942,9 +943,11 @@ const MemoriesViewContent = ({
       const files = Array.from(e.target.files); 
       
       try {
-          // 提示用户正在处理
           const confirmMsg = confirm(`准备上传 ${files.length} 张照片，是否继续？\n上传过程中请勿刷新页面。`);
           if (!confirmMsg) return;
+
+          // [新增] 初始化进度
+          setUploadStatus({ current: 0, total: files.length, isUploading: true });
 
           const newMediaItems: AlbumMedia[] = [];
           
@@ -962,8 +965,14 @@ const MemoriesViewContent = ({
                    }
                } catch (err) {
                    console.error("单张图片上传失败跳过", err);
+               } finally {
+                   // [新增] 更新进度
+                   setUploadStatus((prev: any) => ({ ...prev, current: prev.current + 1 }));
                }
           }
+          
+          // [新增] 只有在这里不急着关闭，等下面保存完，或者直接关闭也行。
+          // 这里我们为了用户体验，先不关闭，等UI更新完毕
 
           if (newMediaItems.length > 0) {
                // 2. 计算新状态
@@ -1009,6 +1018,8 @@ const MemoriesViewContent = ({
           console.error("上传相册流程失败", e); 
           alert("保存到云端失败: " + (e.message || "未知错误")); 
       } finally {
+          // [新增] 关闭进度条
+          setUploadStatus({ current: 0, total: 0, isUploading: false });
           // 清空 input 防止重复选择不触发 onChange
           e.target.value = '';
       }
@@ -1424,9 +1435,42 @@ const saveAlbumName = async () => {
          {/* 复用 lucide-react 的 RefreshCw 图标，点击时旋转 */}
          <RefreshCw size={24} className={isRefreshing ? "animate-spin" : ""} />
       </button>
+      {/* [新增] 精美上传进度条弹窗 */}
+      {uploadStatus && uploadStatus.isUploading && (
+        <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center touch-none">
+            <div className="bg-white rounded-3xl p-8 w-72 shadow-2xl flex flex-col items-center animate-in zoom-in-95 duration-300">
+                <div className="relative w-24 h-24 mb-6">
+                    {/* 背景圆环 */}
+                    <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
+                        <path className="text-gray-100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" />
+                        {/* 进度圆环 */}
+                        <path 
+                            className="text-rose-500 transition-all duration-300 ease-out" 
+                            strokeDasharray={`${(uploadStatus.current / (uploadStatus.total || 1)) * 100}, 100`} 
+                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" 
+                            fill="none" 
+                            stroke="currentColor" 
+                            strokeWidth="3" 
+                            strokeLinecap="round" 
+                        />
+                    </svg>
+                    {/* 中间百分比 */}
+                    <div className="absolute inset-0 flex items-center justify-center flex-col">
+                        <span className="text-2xl font-black text-rose-500 font-cute">
+                            {Math.round((uploadStatus.current / (uploadStatus.total || 1)) * 100)}%
+                        </span>
+                    </div>
+                </div>
+                <h3 className="text-lg font-bold text-gray-700 mb-2 font-cute animate-pulse">正在上传美好回忆...</h3>
+                <div className="flex items-center gap-2 mt-2">
+                    <span className="text-xs font-bold text-gray-400 bg-gray-100 px-3 py-1 rounded-full">
+                        第 {uploadStatus.current} 张 / 共 {uploadStatus.total} 张
+                    </span>
+                </div>
+            </div>
+        </div>
+      )}
 
-
-      
     </div>
   );
 };
@@ -1935,6 +1979,7 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
   console.log("当前版本: v5.0 - 完善版");
   
   const [activePage, setActivePage] = useState<Page>(Page.HOME);
+  const [uploadStatus, setUploadStatus] = useState({ current: 0, total: 0, isUploading: false });  // [新增] 上传进度状态
   const [notifications, setNotifications] = useState<any[]>([]); // [新增] 通知数据
   const [memories, setMemories] = useState<Memory[]>([]);
   const [albums, setAlbums] = useState<Album[]>([]);
@@ -2620,8 +2665,11 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                {activePage !== Page.HOME && (
                    <div className="h-full relative">
                        {/* [修改] 传递新的 handleRealLike 和 handleRealComment */}
-                       {activePage === Page.MEMORIES && (<MemoriesViewContent user={user} memories={memories} albums={albums} setAlbums={setAlbums} 
-                           handleLike={handleRealLike} 
+                       {activePage === Page.MEMORIES && (<MemoriesViewContent 
+                           uploadStatus={uploadStatus}        // [新增]
+                           setUploadStatus={setUploadStatus}  // [新增]
+                           user={user} memories={memories} albums={albums} setAlbums={setAlbums} 
+                           handleLike={handleRealLike}
                            handleComment={handleRealComment}
                            handleDeleteComment={handleDeleteComment} // [新增] 传递删除函数
                            onRefresh={() => loadData(true)} // [新增] 传递刷新函数，true 代表全量刷新(包含相册等)
@@ -2631,27 +2679,31 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                                                             
                                                             if (files.length > 0) {
                                                                 setUploadType('media');
-                                                                setShowUploadModal(true); // 立即弹窗
-                                                        
-                                                                // ... (LeanCloud 版本逻辑)
+                                                                setShowUploadModal(true); 
+                                                                
+                                                                // [新增] 初始化进度条
+                                                                setUploadStatus({ current: 0, total: files.length, isUploading: true });
+
                                                                   for (const file of files) {
                                                                       const localUrl = URL.createObjectURL(file);
                                                                       setUploadImages((prev: string[]) => [...prev, localUrl]);
                                                           
-                                                                      // [修改] 调用 uploadFile 并处理失败情况
                                                                       uploadFile(file).then(serverUrl => {
                                                                           if (serverUrl) {
-                                                                              setUploadImages((prev: string[]) => 
-                                                                                  prev.map(url => url === localUrl ? serverUrl : url)
-                                                                              );
+                                                                              setUploadImages((prev: string[]) => prev.map(url => url === localUrl ? serverUrl : url));
                                                                           } else {
-                                                                              // [修复] 失败时移除占位符，防止卡死
                                                                               alert('上传失败，已从列表中移除');
                                                                               setUploadImages((prev: string[]) => prev.filter(url => url !== localUrl));
                                                                           }
                                                                       }).catch(err => {
                                                                           console.error("上传异常", err);
                                                                           setUploadImages((prev: string[]) => prev.filter(url => url !== localUrl));
+                                                                      }).finally(() => {
+                                                                          // [新增] 更新进度
+                                                                          setUploadStatus(prev => {
+                                                                              const next = prev.current + 1;
+                                                                              return { ...prev, current: next, isUploading: next < prev.total };
+                                                                          });
                                                                       });
                                                                   }
                                                             }
