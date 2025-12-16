@@ -1144,7 +1144,7 @@ const saveAlbumName = async () => {
                       <h2 onClick={() => { setTempAlbumName(selectedAlbum.name); setIsEditingAlbumTitle(true); }} className="text-xl font-bold font-cute cursor-pointer hover:bg-gray-50 px-2 py-1 rounded transition" title="点击重命名">{selectedAlbum.name}</h2>
                   )}
               </div>
-              <div className="flex gap-2">{isManageMode ? <><button onClick={batchDeletePhotos} className="text-red-500 font-bold text-sm px-3 py-1 bg-red-50 rounded-full">删除({selectedItems.size})</button><button onClick={() => setIsManageMode(false)} className="text-gray-500 font-bold text-sm px-3 py-1">取消</button></> : <><button onClick={() => setIsManageMode(true)} className="p-2 hover:bg-gray-100 rounded-full text-gray-600"><Settings size={20} /></button><label className="p-2 bg-rose-50 text-rose-500 rounded-full cursor-pointer"><Plus size={24} /><input type="file" multiple accept="image/*" className="hidden" onChange={handleAlbumUpload} /></label></>}</div>
+              <div className="flex gap-2">{isManageMode ? <><button onClick={() => setSelectedItems(new Set(selectedAlbum.media.map(m => m.id)))} className="text-blue-500 font-bold text-sm px-3 py-1 bg-blue-50 rounded-full">全选</button><button onClick={batchDeletePhotos} className="text-red-500 font-bold text-sm px-3 py-1 bg-red-50 rounded-full">删除({selectedItems.size})</button><button onClick={() => setIsManageMode(false)} className="text-gray-500 font-bold text-sm px-3 py-1">取消</button></> : <><button onClick={() => setIsManageMode(true)} className="p-2 hover:bg-gray-100 rounded-full text-gray-600"><Settings size={20} /></button><label className="p-2 bg-rose-50 text-rose-500 rounded-full cursor-pointer"><Plus size={24} /><input type="file" multiple accept="image/*" className="hidden" onChange={handleAlbumUpload} /></label></>}</div>
           </div>
           {/* 修复：增加 (selectedAlbum.media || []) 保护 */}
           <div className="p-4 grid grid-cols-3 md:grid-cols-5 gap-2 overflow-y-auto">{(selectedAlbum.media || []).map((item, idx) => (<div key={idx} className="aspect-square rounded-xl overflow-hidden bg-gray-100 relative group cursor-pointer" onClick={() => isManageMode ? setSelectedItems(prev => { const n = new Set(prev); n.has(item.id) ? n.delete(item.id) : n.add(item.id); return n; }) : handleViewImage(item.url, 'album', (selectedAlbum.media || []).map(m => m.url))}><img src={item.url} className={`w-full h-full object-cover transition ${isManageMode && selectedItems.has(item.id) ? 'opacity-50 scale-90' : ''}`} loading="lazy" />{isManageMode && (<div className="absolute top-2 right-2">{selectedItems.has(item.id) ? <CheckCircle className="text-rose-500 fill-white" /> : <div className="w-5 h-5 rounded-full border-2 border-white/80" />}</div>)}</div>))}</div>
@@ -1330,7 +1330,11 @@ const saveAlbumName = async () => {
           ) : (
               <div>
                   <div className="flex justify-between items-center mb-4 px-2">
-                      <div onClick={() => setIsCreatingAlbum(true)} className="flex items-center gap-2 text-gray-500 cursor-pointer hover:text-rose-500"><FolderPlus size={20} /><span className="text-sm font-bold">新建相册</span></div>
+                      {isManageMode ? (
+                          <button onClick={() => setSelectedItems(new Set(albums.map(a => a.id)))} className="text-sm font-bold text-blue-500 bg-blue-50 px-3 py-1 rounded-full">全选</button>
+                      ) : (
+                          <div onClick={() => setIsCreatingAlbum(true)} className="flex items-center gap-2 text-gray-500 cursor-pointer hover:text-rose-500"><FolderPlus size={20} /><span className="text-sm font-bold">新建相册</span></div>
+                      )}
                       <button onClick={() => setIsManageMode(!isManageMode)} className={`text-sm font-bold ${isManageMode ? 'text-rose-500' : 'text-gray-400'}`}>{isManageMode ? '完成' : '管理'}</button>
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
