@@ -259,7 +259,7 @@ const PolaroidCamera = ({ onTakePhoto, iconUrl, onUploadIcon, onResetIcon }: any
 const DraggablePhoto = ({ pin, onUpdate, onDelete, onBringToFront, isFresh = false, date }: any) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
-  const displayCaption = pin.customCaption || '美好回忆';
+  const displayCaption = pin.customCaption || '回忆';
   
   // 核心修复：处理置顶
   const handleInteractStart = () => {
@@ -1486,7 +1486,7 @@ const saveAlbumName = async () => {
                         </span>
                     </div>
                 </div>
-                <h3 className="text-lg font-bold text-gray-700 mb-2 font-cute animate-pulse">正在上传美好回忆...</h3>
+                <h3 className="text-lg font-bold text-gray-700 mb-2 font-cute animate-pulse">正在上传...</h3>
                 <div className="flex items-center gap-2 mt-2">
                     <span className="text-xs font-bold text-gray-400 bg-gray-100 px-3 py-1 rounded-full">
                         第 {uploadStatus.current} 张 / 共 {uploadStatus.total} 张
