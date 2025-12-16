@@ -18,11 +18,76 @@ import { Memory, PinnedPhoto, PeriodEntry, TodoItem, ConflictRecord, Page, Messa
 // @ts-ignore
 import pailideIcon from './pailide.png';
 
-// 恢复为标准上传模式 (不压缩)
-const safeUpload = async (file: File) => {
-  // [修改] 直接使用 LeanCloud 的 uploadFile，并移除 Bmob.debug
-  return await uploadFile(file);
+// // 恢复为标准上传模式 (不压缩)
+// const safeUpload = async (file: File) => {
+//   // [修改] 直接使用 LeanCloud 的 uploadFile，并移除 Bmob.debug
+//   return await uploadFile(file);
+// };
+
+
+
+// [新增] 图片压缩辅助函数
+const compressImage = (file: File, quality = 0.6, maxWidth = 1920): Promise<File> => {
+    return new Promise((resolve) => {
+        // 如果不是图片，直接返回原文件
+        if (!file.type.startsWith('image/')) {
+            resolve(file);
+            return;
+        }
+        
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target?.result as string;
+            img.onload = () => {
+                let width = img.width;
+                let height = img.height;
+                
+                // 限制最大宽度，保持比例
+                if (width > maxWidth) {
+                    height = (maxWidth / width) * height;
+                    width = maxWidth;
+                }
+                
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx?.drawImage(img, 0, 0, width, height);
+                
+                canvas.toBlob((blob) => {
+                    if (blob) {
+                        // 创建新文件，文件名保持不变
+                        const newFile = new File([blob], file.name, {
+                            type: 'image/jpeg', // 统一转为 jpeg 以获得更好压缩率
+                            lastModified: Date.now(),
+                        });
+                        console.log(`压缩前: ${(file.size / 1024).toFixed(2)}KB, 压缩后: ${(newFile.size / 1024).toFixed(2)}KB`);
+                        resolve(newFile);
+                    } else {
+                        resolve(file); // 压缩失败返回原图
+                    }
+                }, 'image/jpeg', quality); // quality 0-1 之间，越小压缩越厉害
+            };
+        };
+    });
 };
+
+// [修改] 上传前先压缩
+const safeUpload = async (file: File) => {
+  try {
+      // 压缩图片：质量 0.6，最大宽度 1280px (手机看足够了)
+      const compressedFile = await compressImage(file, 0.6, 1280);
+      return await uploadFile(compressedFile);
+  } catch (e) {
+      console.error("压缩失败，使用原图上传", e);
+      return await uploadFile(file);
+  }
+};
+
+
+
 
 // [新增] LeanCloud 时间格式化辅助函数
 const formatDate = (date: any) => {
