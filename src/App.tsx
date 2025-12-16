@@ -818,9 +818,11 @@ const MemoriesViewContent = ({
   momentsTitle, setMomentsTitle, avatarUrl, setAvatarUrl, setMomentsCover,
   momentsAvatar, onUpdateMomentsAvatar, // <--- 新增这两个参数
   notifications, onReadNotification // [新增]
-  ,handleDeleteComment// [新增] 接收参数
+  ,handleDeleteComment,
+  onRefresh // [新增] 接收刷新函数
 }: any) => {
   const [activeTab, setActiveTab] = useState<'moments' | 'albums'>('moments');
+  const [isRefreshing, setIsRefreshing] = useState(false); // [新增] 控制刷新按钮旋转动画
   const [showMessageList, setShowMessageList] = useState(false); // [新增] 控制消息列表显示
   const [viewingImage, setViewingImage] = useState<{ list: string[], index: number } | null>(null);
   const [viewerActions, setViewerActions] = useState<{ label: string, onClick: () => void, primary?: boolean }[]>([]);
@@ -1338,6 +1340,26 @@ const saveAlbumName = async () => {
         />
       )}
       <input id="shared-avatar-upload" type="file" className="hidden" onChange={onUpdateMomentsAvatar} accept="image/*" />
+
+      {/* [新增] 常驻刷新按钮：浅色方形圆角，位于右下角 */}
+      <button 
+        onClick={async () => {
+            if (isRefreshing) return;
+            setIsRefreshing(true);
+            try {
+                if(onRefresh) await onRefresh(); // 调用父组件传入的刷新函数
+            } finally {
+                setIsRefreshing(false);
+            }
+        }}
+        className="fixed bottom-24 right-4 z-[90] bg-white/90 backdrop-blur-md p-3 rounded-2xl shadow-[0_4px_12px_rgba(0,0,0,0.1)] border border-rose-100 text-rose-400 active:scale-90 transition-all hover:bg-rose-50"
+      >
+         {/* 复用 lucide-react 的 RefreshCw 图标，点击时旋转 */}
+         <RefreshCw size={24} className={isRefreshing ? "animate-spin" : ""} />
+      </button>
+
+
+      
     </div>
   );
 };
@@ -1955,8 +1977,8 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
     
     // 2. [修改] useEffect 只需要调用上面的 loadData
     loadData(true);
-    const timer = setInterval(() => loadData(false), 5000); // 轮询时不刷新首页
-    return () => clearInterval(timer);
+    // const timer = setInterval(() => loadData(false), 5000); // 轮询时不刷新首页
+    // return () => clearInterval(timer);
   }, [user]);
 
           // [新增] 真实的云端点赞逻辑
@@ -2407,6 +2429,7 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                            handleLike={handleRealLike} 
                            handleComment={handleRealComment}
                            handleDeleteComment={handleDeleteComment} // [新增] 传递删除函数
+                           onRefresh={() => loadData(true)} // [新增] 传递刷新函数，true 代表全量刷新(包含相册等)
                                                            onFileSelect={async (e: any) => {
                                                             const target = e.target;
                                                             const files = Array.from(target.files || []) as File[];
