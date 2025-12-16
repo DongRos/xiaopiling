@@ -26,7 +26,7 @@ import pailideIcon from './pailide.png';
 
 
 
-// [新增] 图片压缩辅助函数
+// [新增/修改] 图片压缩辅助函数 (带详细日志)
 const compressImage = (file: File, quality = 0.6, maxWidth = 1920): Promise<File> => {
     return new Promise((resolve) => {
         // 如果不是图片，直接返回原文件
@@ -58,19 +58,26 @@ const compressImage = (file: File, quality = 0.6, maxWidth = 1920): Promise<File
                 
                 canvas.toBlob((blob) => {
                     if (blob) {
-                        // 创建新文件，文件名保持不变
                         const newFile = new File([blob], file.name, {
-                            type: 'image/jpeg', // 统一转为 jpeg 以获得更好压缩率
+                            type: 'image/jpeg',
                             lastModified: Date.now(),
                         });
-                        console.log(`压缩前: ${(file.size / 1024).toFixed(2)}KB, 压缩后: ${(newFile.size / 1024).toFixed(2)}KB`);
+
+                        // ✅ 重点：在这里添加控制台日志
+                        console.group(`📸 图片压缩日志: ${file.name}`);
+                        console.log(`原始大小: ${(file.size / 1024).toFixed(2)} KB`);
+                        console.log(`压缩后大小: ${(newFile.size / 1024).toFixed(2)} KB`);
+                        console.log(`压缩比例: -${((1 - newFile.size / file.size) * 100).toFixed(1)}%`);
+                        console.groupEnd();
+
                         resolve(newFile);
                     } else {
                         resolve(file); // 压缩失败返回原图
                     }
-                }, 'image/jpeg', quality); // quality 0-1 之间，越小压缩越厉害
+                }, 'image/jpeg', quality);
             };
         };
+        reader.onerror = () => resolve(file);
     });
 };
 
