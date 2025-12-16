@@ -654,6 +654,7 @@ const ProfilePage = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: ()
 
 
   // 输入口令绑定（账号2操作 - 发送申请）
+// 输入口令绑定（账号2操作 - 发送申请）
 const handleBindByCode = async () => {
       if (!bindCode || bindCode.length !== 6) return alert("请输入6位数字");
       setLoading(true);
@@ -664,6 +665,12 @@ const handleBindByCode = async () => {
           if (!results.length) { setLoading(false); return alert("口令无效"); }
 
           const entry = results[0];
+
+          // [新增] 禁止绑定自己：检查口令发起人是否为当前用户
+          if (entry.get('hostId') === user.objectId) {
+              setLoading(false); return alert("不能绑定自己生成的口令哦，请让另一半输入！");
+          }
+
           // [新增] 检查有效期
           if (entry.get('validUntil') && Date.now() > entry.get('validUntil')) {
              setLoading(false); return alert("口令已过期，请对方重新生成");
@@ -674,7 +681,6 @@ const handleBindByCode = async () => {
           alert("✅ 申请已发送！\n请通知对方在 App 中【刷新页面】并点击同意。");
       } catch (e: any) { alert("错误: " + e.message); } finally { setLoading(false); }
   };
-  
   
 const generateCode = async () => {
       setLoading(true);
@@ -792,11 +798,33 @@ const handleNicknameChange = async () => {
       if(n) { const me = AV.User.current(); me.set('nickname', n); await me.save(); onUpdateUser({...user, nickname: n}); }
   };
   
-  // 新增：账号修改逻辑 (去除 Bmob)
+// 新增：账号修改逻辑 (去除 Bmob)
 const handleUsernameChange = async () => {
       const n = prompt("新账号", user.username);
       if(n) { const me = AV.User.current(); me.setUsername(n); await me.save(); alert("请重新登录"); onLogout(); }
   };
+
+  // [新增] 修改密码逻辑
+  const handlePasswordChange = async () => {
+      const oldP = prompt("请输入原密码");
+      if(!oldP) return;
+      const newP = prompt("请输入新密码");
+      if(!newP) return;
+      
+      setLoading(true);
+      try {
+          const me = AV.User.current();
+          // 使用 LeanCloud 提供的 updatePassword 方法
+          await me.updatePassword(oldP, newP);
+          alert("密码修改成功，请重新登录");
+          onLogout();
+      } catch(e: any) {
+          alert("修改失败: " + (e.message || "原密码错误"));
+      } finally {
+          setLoading(false);
+      }
+  };
+
   const handleLogoutClick = () => { if(confirm("退出登录？")) onLogout(); };
 
 return (
@@ -814,6 +842,7 @@ return (
           </div>
           <div className="text-2xl font-bold text-gray-800 cursor-pointer" onClick={handleNicknameChange}>{user.nickname || "点击设置昵称"}</div>
           <div className="text-sm text-gray-400 mt-1 cursor-pointer" onClick={handleUsernameChange}>账号: {user.username}</div>
+          <div className="text-xs text-rose-400 mt-2 cursor-pointer underline decoration-dashed" onClick={handlePasswordChange}>修改密码</div>
 
           {/* 常驻刷新按钮 */}
           <div className="flex justify-center mt-4">
