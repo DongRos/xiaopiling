@@ -2342,6 +2342,8 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
   return (
     <div className="font-sans text-gray-800 bg-cream min-h-[100dvh]">
       <main className="w-full h-[100dvh] bg-white relative overflow-hidden">
+        {/* [新增] 状态栏半透明灰色底色条，z-index 设为 80 确保盖在普通内容之上，但在弹窗之下 */}
+         <div className="absolute top-0 left-0 right-0 z-[80] pointer-events-none bg-black/20 md:hidden" style={{ height: 'max(env(safe-area-inset-top), 25px)' }} />
          <AnimatePresence mode="wait">
             <motion.div key={activePage} className="w-full h-full" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
                {activePage === Page.HOME && (
