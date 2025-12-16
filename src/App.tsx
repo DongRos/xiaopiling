@@ -1156,6 +1156,27 @@ const saveAlbumName = async () => {
                 actions={viewerActions} 
             />
           )}
+
+          {/* [修复] 添加进度条显示到相册详情页 */}
+          {uploadStatus && uploadStatus.isUploading && (
+            <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center touch-none">
+                <div className="bg-white rounded-3xl p-8 w-72 shadow-2xl flex flex-col items-center animate-in zoom-in-95 duration-300">
+                    <div className="relative w-24 h-24 mb-6">
+                        <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
+                            <path className="text-gray-100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" />
+                            <path className="text-rose-500 transition-all duration-300 ease-out" strokeDasharray={`${(uploadStatus.current / (uploadStatus.total || 1)) * 100}, 100`} d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                        </svg>
+                        <div className="absolute inset-0 flex items-center justify-center flex-col">
+                            <span className="text-2xl font-black text-rose-500 font-cute">{Math.round((uploadStatus.current / (uploadStatus.total || 1)) * 100)}%</span>
+                        </div>
+                    </div>
+                    <h3 className="text-lg font-bold text-gray-700 mb-2 font-cute animate-pulse">正在上传美好回忆...</h3>
+                    <div className="flex items-center gap-2 mt-2">
+                        <span className="text-xs font-bold text-gray-400 bg-gray-100 px-3 py-1 rounded-full">第 {uploadStatus.current} 张 / 共 {uploadStatus.total} 张</span>
+                    </div>
+                </div>
+            </div>
+          )}
       </div>
   );
 
