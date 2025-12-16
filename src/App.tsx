@@ -943,14 +943,19 @@ const MemoriesViewContent = ({
           }
 
           if (newMediaItems.length > 0) {
-               // 2. 更新云端相册数据
-               const albumObj = AV.Object.createWithoutData('Album', selectedAlbum.id);
-               albumObj.add('media', newMediaItems); // 使用 add 原子操作追加图片
-               await albumObj.save();
-
-               // 3. 更新本地视图 (合并新旧图片)
+               // [修复] 先计算完整的媒体列表（新照片在最前）
                const updatedMedia = [...newMediaItems, ...selectedAlbum.media];
                const updatedAlbum = { ...selectedAlbum, media: updatedMedia, coverUrl: !selectedAlbum.coverUrl ? newMediaItems[0].url : selectedAlbum.coverUrl };
+
+               // 2. 更新云端相册数据
+               const albumObj = AV.Object.createWithoutData('Album', selectedAlbum.id);
+               // [修复] 使用 set 直接覆盖 media 字段，确保数据结构扁平且顺序正确（新图在前）
+               albumObj.set('media', updatedMedia);
+               // 如果封面被更新了，同步保存封面字段
+               if (updatedAlbum.coverUrl !== selectedAlbum.coverUrl) {
+                   albumObj.set('coverUrl', updatedAlbum.coverUrl);
+               }
+               await albumObj.save();
                
                // 如果是第一张图，顺便更新云端封面
                if (!selectedAlbum.coverUrl) {
@@ -1714,7 +1719,12 @@ const BoardViewContent = ({ user, messages, onPost, onPin, onFav, onDelete, onAd
     return (
         <div className="flex flex-col h-full bg-yellow-50/30">
             <div className="pt-[calc(1rem+env(safe-area-inset-top))] px-4 pb-2 bg-yellow-50/30 flex justify-between items-center relative"><div className="w-8"></div><h2 className="text-2xl font-bold font-cute text-yellow-600 text-center">留言板</h2><button onClick={() => setIsManageMode(!isManageMode)} className={`p-2 rounded-full hover:bg-yellow-100 ${isManageMode ? 'text-rose-500' : 'text-gray-400'}`}>{isManageMode ? '完成' : <Settings size={20} />}</button></div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-40"><div className="grid grid-cols-1 gap-4">{messages.sort((a:any,b:any)=>(a.isPinned && !b.isPinned)?-1:(!a.isPinned && b.isPinned)?1:parseInt(b.id)-parseInt(a.id)).map((msg: Message) => (<div key={msg.id} onClick={() => isManageMode && setSelectedItems(p => { const n = new Set(p); n.has(msg.id) ? n.delete(msg.id) : n.add(msg.id); return n; })} className={`p-6 rounded-2xl shadow-sm border text-base relative group transition-all ${msg.isFavorite ? 'bg-rose-50 border-rose-100' : 'bg-white border-yellow-100'} ${isManageMode && selectedItems.has(msg.id) ? 'ring-2 ring-rose-500 bg-rose-50' : ''}`}>
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-40"><div className="grid grid-cols-1 gap-4">{messages.sort((a:any,b:any) => {
+                // [修复] 留言排序：置顶优先，其余按 日期+时间 倒序排列 (解决云端ID无法排序问题)
+                if (a.isPinned && !b.isPinned) return -1;
+                if (!a.isPinned && b.isPinned) return 1;
+                return (b.date + b.time).localeCompare(a.date + a.time);
+            }).map((msg: Message) => (<div key={msg.id} onClick={() => isManageMode && setSelectedItems(p => { const n = new Set(p); n.has(msg.id) ? n.delete(msg.id) : n.add(msg.id); return n; })} className={`p-6 rounded-2xl shadow-sm border text-base relative group transition-all ${msg.isFavorite ? 'bg-rose-50 border-rose-100' : 'bg-white border-yellow-100'} ${isManageMode && selectedItems.has(msg.id) ? 'ring-2 ring-rose-500 bg-rose-50' : ''}`}>
 
 
               {/* 🟢 [新增] 留言者信息头 */}
