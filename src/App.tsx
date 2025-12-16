@@ -209,7 +209,8 @@ const Navbar = ({ active, setPage, homeLabel }: { active: Page, setPage: (p: Pag
   ];
   return (
     <nav 
-      className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t border-rose-100 shadow-[0_-5px_15px_rgba(255,241,242,0.8)] z-[100] pb-4 md:pb-0">
+      // [修改] 将 bg-white/95 改为 bg-white/70，让背景半透明，从而透出 backdrop-blur-xl 的模糊效果
+      className="fixed bottom-0 left-0 right-0 bg-white/70 backdrop-blur-xl border-t border-rose-100 shadow-[0_-5px_15px_rgba(255,241,242,0.8)] z-[100] pb-4 md:pb-0">
       {/* 建议给内部容器也增加一点高度缓冲，或者保持原样 */}
       <div className="flex justify-around items-center h-16 max-w-2xl mx-auto px-1">
         {navItems.map((item) => (
