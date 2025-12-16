@@ -906,13 +906,7 @@ const MemoriesViewContent = ({
 
   const createAlbum = async () => {
     if(!newAlbumName.trim()) return;
-    const tempId = Date.now().toString();
-    // 1. 本地乐观更新
-    const newAlbum = { id: tempId, name: newAlbumName, coverUrl: '', createdAt: getBeijingDateString(), media: [], writer_id: user.objectId };
-    setAlbums((prev: Album[]) => [newAlbum, ...prev]);
-    setNewAlbumName(''); setIsCreatingAlbum(false);
-
-    // 2. [修复] 同步到云端
+    // [修复] 移除乐观更新，改为等待云端创建完成再更新本地，确保ID真实有效，防止上传失败
     try {
         const AlbumObj = new AV.Object('Album');
         AlbumObj.set('name', newAlbumName);
@@ -920,10 +914,26 @@ const MemoriesViewContent = ({
         AlbumObj.set('media', []);
         AlbumObj.set('writer_id', user.objectId);
         if (user.coupleId) AlbumObj.set('binding_id', user.coupleId);
+        
         const saved = await AlbumObj.save();
-        // 更新本地 ID 为云端真实 ID
-        setAlbums((prev: Album[]) => prev.map(a => a.id === tempId ? { ...a, id: saved.id } : a));
-    } catch(e) { console.error("创建相册失败", e); }
+        
+        // 使用真实云端ID创建本地对象
+        const newAlbum = { 
+            id: saved.id, 
+            name: newAlbumName, 
+            coverUrl: '', 
+            createdAt: getBeijingDateString(), 
+            media: [], 
+            writer_id: user.objectId 
+        };
+        
+        setAlbums((prev: Album[]) => [newAlbum, ...prev]);
+        setNewAlbumName(''); 
+        setIsCreatingAlbum(false);
+    } catch(e) { 
+        console.error("创建相册失败", e); 
+        alert("创建失败，请重试");
+    }
   };
 
   
@@ -1718,7 +1728,18 @@ const BoardViewContent = ({ user, messages, onPost, onPin, onFav, onDelete, onAd
     };
     return (
         <div className="flex flex-col h-full bg-yellow-50/30">
-            <div className="pt-[calc(1rem+env(safe-area-inset-top))] px-4 pb-2 bg-yellow-50/30 flex justify-between items-center relative"><div className="w-8"></div><h2 className="text-2xl font-bold font-cute text-yellow-600 text-center">留言板</h2><button onClick={() => setIsManageMode(!isManageMode)} className={`p-2 rounded-full hover:bg-yellow-100 ${isManageMode ? 'text-rose-500' : 'text-gray-400'}`}>{isManageMode ? '完成' : <Settings size={20} />}</button></div>
+            <div className="pt-[calc(1rem+env(safe-area-inset-top))] px-4 pb-2 bg-yellow-50/30 flex justify-between items-center relative">
+                {/* [新增] 管理模式下的全选按钮，替代原本的空 div */}
+                <div className="w-8 flex items-center">
+                    {isManageMode ? (
+                        <button onClick={() => setSelectedItems(new Set(messages.map(m => m.id)))} className="text-xs font-bold text-gray-500 whitespace-nowrap px-2 py-1 bg-white rounded-lg shadow-sm active:scale-95">全选</button>
+                    ) : (
+                        <div></div>
+                    )}
+                </div>
+                <h2 className="text-2xl font-bold font-cute text-yellow-600 text-center">留言板</h2>
+                <button onClick={() => setIsManageMode(!isManageMode)} className={`p-2 rounded-full hover:bg-yellow-100 ${isManageMode ? 'text-rose-500' : 'text-gray-400'}`}>{isManageMode ? '完成' : <Settings size={20} />}</button>
+            </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-40"><div className="grid grid-cols-1 gap-4">{messages.sort((a:any,b:any) => {
                 // [修复] 留言排序：置顶优先，其余按 日期+时间 倒序排列 (解决云端ID无法排序问题)
                 if (a.isPinned && !b.isPinned) return -1;
@@ -2626,7 +2647,7 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                         user={user} // [新增] 传递 user 数据
                         messages={messages} 
                         onPost={async (c:string) => {
-                            // 1. 构建新留言对象 (包含头像和昵称)
+                            // 1. 构建新留言对象
                             const newMsg = { 
                                 content: c, 
                                 date: getBeijingDateString(), 
@@ -2634,19 +2655,25 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                                 isPinned: false, 
                                 isFavorite: false,
                                 writer_id: user.objectId,
-                                authorName: user.nickname || user.username, // [新增] 保存昵称
-                                authorAvatar: user.avatarUrl                // [新增] 保存头像
+                                authorName: user.nickname || user.username,
+                                authorAvatar: user.avatarUrl
                             };
                             
+                            // [修复] 记录临时ID
+                            const tempId = Date.now().toString();
+                            
                             // 2. 本地乐观更新
-                            setMessages([{ ...newMsg, id: Date.now().toString() } as any, ...messages]);
+                            setMessages([{ ...newMsg, id: tempId } as any, ...messages]);
                     
                             // 3. 云端保存
                             try {
                                 const m = new AV.Object('Message');
                                 Object.keys(newMsg).forEach(k => m.set(k, (newMsg as any)[k]));
                                 if(user.coupleId) m.set('binding_id', user.coupleId);
-                                await m.save();
+                                
+                                const saved = await m.save();
+                                // [修复] 保存成功后，将本地消息的临时ID替换为云端真实ID，确保删除操作有效
+                                setMessages((prev) => prev.map(msg => msg.id === tempId ? { ...msg, id: saved.id } : msg));
                             } catch(e) { console.error("留言保存失败", e); }
                         }}
                         // 🟢 [修改] 置顶：同步到云端
