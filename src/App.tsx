@@ -30,7 +30,17 @@ const formatDate = (date: any) => {
     if (date instanceof Date) return date.toISOString().slice(0, 10);
     return String(date).slice(0, 10);
 };
-
+// [新增] 精确到分钟的时间格式化函数
+const formatDateTime = (date: any) => {
+    if (!date) return getBeijingDateString();
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hour = String(d.getHours()).padStart(2, '0');
+    const minute = String(d.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hour}:${minute}`;
+};
 
 
 // --- Helper Functions ---
@@ -1919,7 +1929,8 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                    const likedBy = Array.isArray(m.likedBy) ? m.likedBy : [];
                    const isLiked = likedBy.includes(user.objectId);
                    return {
-                       ...m, id: item.id, date: formatDate(item.createdAt), media: m.images || [], comments: m.comments || [], likes: m.likes || 0, isLiked: isLiked, likeNames: m.likeNames || [], creatorId: m.creatorId || m.writer_id, creatorAvatar: m.creatorAvatar
+                       // [修改] 使用 formatDateTime 替代 formatDate
+                       ...m, id: item.id, date: formatDateTime(item.createdAt), media: m.images || [], comments: m.comments || [], likes: m.likes || 0, isLiked: isLiked, likeNames: m.likeNames || [], creatorId: m.creatorId || m.writer_id, creatorAvatar: m.creatorAvatar
                    };
                }));
            });
@@ -2507,7 +2518,8 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                                                               const newMemory = {
                                                                    media: uploadImages,
                                                                    caption: uploadCaption,
-                                                                   date: getBeijingDateString(),
+                                                                   // [修改] 使用 formatDateTime(new Date()) 获取当前精确时间
+                                                                   date: formatDateTime(new Date()),
                                                                    type: uploadType,
                                                                    likes: 0,
                                                                    isLiked: false,
