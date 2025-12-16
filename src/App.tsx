@@ -819,7 +819,8 @@ const MemoriesViewContent = ({
   momentsAvatar, onUpdateMomentsAvatar, // <--- 新增这两个参数
   notifications, onReadNotification // [新增]
   ,handleDeleteComment,
-  onRefresh // [新增] 接收刷新函数
+  onRefresh, // [新增] 接收刷新函数
+  onUpdateMomentsTitle, // [新增] 接收保存标题的函数
 }: any) => {
   const [activeTab, setActiveTab] = useState<'moments' | 'albums'>('moments');
   const [isRefreshing, setIsRefreshing] = useState(false); // [新增] 控制刷新按钮旋转动画
@@ -1102,7 +1103,15 @@ const saveAlbumName = async () => {
             <div className="absolute -bottom-8 right-4 flex items-end gap-3 z-20">
                  <div className="pointer-events-auto" onClick={(e) => e.stopPropagation()}>
                     {isEditingMomentsTitle ? (
-                         <input value={momentsTitle} onChange={(e) => setMomentsTitle(e.target.value)} onBlur={() => setIsEditingMomentsTitle(false)} onKeyDown={(e) => { if(e.key === 'Enter') setIsEditingMomentsTitle(false); }} autoFocus className="text-white font-bold text-lg drop-shadow-md pb-10 font-cute bg-transparent outline-none border-b border-white w-40 text-right" />
+                         <input 
+                            value={momentsTitle} 
+                            onChange={(e) => setMomentsTitle(e.target.value)} 
+                            // [修改] 失去焦点或回车时，调用 onUpdateMomentsTitle 保存到云端
+                            onBlur={() => { setIsEditingMomentsTitle(false); if(onUpdateMomentsTitle) onUpdateMomentsTitle(momentsTitle); }} 
+                            onKeyDown={(e) => { if(e.key === 'Enter') { setIsEditingMomentsTitle(false); if(onUpdateMomentsTitle) onUpdateMomentsTitle(momentsTitle); }}} 
+                            autoFocus 
+                            className="text-white font-bold text-lg drop-shadow-md pb-10 font-cute bg-transparent outline-none border-b border-white w-40 text-right" 
+                         />
                     ) : (
                          <div onClick={() => setIsEditingMomentsTitle(true)} className="text-white font-bold text-lg drop-shadow-md pb-10 font-cute cursor-pointer select-none" title="点击修改标题">{momentsTitle}</div>
                     )}
@@ -1945,6 +1954,8 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                   if (item.get('anniversaryDate')) setAnniversaryDate(item.get('anniversaryDate'));
                   // [新增] 同步首页标题
                   if (item.get('appTitle')) setAppTitle(item.get('appTitle'));
+                // [新增] 同步点滴页标题
+                  if (item.get('momentsTitle')) setMomentsTitle(item.get('momentsTitle'));
               } 
           });
        }
@@ -2208,7 +2219,25 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
            }
       } catch(e) { console.error("保存标题失败", e); }
   };
-  
+
+  // [新增] 保存点滴页标题到云端
+  const saveMomentsTitle = async (title: string) => {
+      if (!title.trim() || !user.coupleId) return;
+      try {
+           const q = new AV.Query('CoupleSettings');
+           q.equalTo('coupleId', String(user.coupleId));
+           const res = await q.find();
+           if (res.length > 0) {
+               res[0].set('momentsTitle', title);
+               await res[0].save();
+           } else {
+               const newSet = new AV.Object('CoupleSettings');
+               newSet.set('coupleId', String(user.coupleId));
+               newSet.set('momentsTitle', title);
+               await newSet.save();
+           }
+      } catch(e) { console.error("保存点滴标题失败", e); }
+  };
         
 // [修改] 拍照逻辑：支持云端保存
   const handleTakePhoto = async () => {
@@ -2519,7 +2548,7 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                 if(!confirm("删除?")) return;
                 setMemories(memories.filter(m => m.id !== id)); // 本地删
                 try { await AV.Object.createWithoutData('Moments', id).destroy(); } catch(e) { console.error(e); } // 云端删
-            }} notifications={notifications} onReadNotification={handleReadNotification} momentsTitle={momentsTitle} setMomentsTitle={setMomentsTitle} 
+            }} notifications={notifications} onReadNotification={handleReadNotification} momentsTitle={momentsTitle} setMomentsTitle={setMomentsTitle} onUpdateMomentsTitle={saveMomentsTitle} // [新增] 传递函数
             avatarUrl={avatarUrl} setAvatarUrl={setAvatarUrl} setMomentsCover={setMomentsCover}/>)}
                        {activePage === Page.CYCLE && <CycleViewContent 
                            periods={periods} 
