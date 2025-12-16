@@ -737,9 +737,9 @@ const generateCode = async () => {
     if (!file) return;
 
     setLoading(true);
-    try {
-      // 1. [修改] 使用 LeanCloud 上传
-      const url = await uploadFile(file);
+   try {
+      // 1. [修改] 改为 safeUpload 以启用压缩
+      const url = await safeUpload(file);
       if(!url) throw new Error("上传失败");
       
       // 2. [修改] 更新当前用户
@@ -1026,9 +1026,10 @@ const MemoriesViewContent = ({
           // 1. 循环上传文件
           for (const file of files) {
                try {
-                   const url = await uploadFile(file);
+                   // [修改] 改为使用 safeUpload，这样才会触发压缩和日志
+                   const url = await safeUpload(file); 
                    if (url) {
-                       newMediaItems.push({ 
+                       newMediaItems.push({
                            id: Date.now().toString() + Math.random().toString(36).substr(2, 9), 
                            url: url, 
                            date: getBeijingDateString(), 
@@ -2784,10 +2785,11 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                                                                   for (const file of files) {
                                                                       const localUrl = URL.createObjectURL(file);
                                                                       setUploadImages((prev: string[]) => [...prev, localUrl]);
-                                                          
-                                                                      uploadFile(file).then(serverUrl => {
-                                                                          if (serverUrl) {
-                                                                              setUploadImages((prev: string[]) => prev.map(url => url === localUrl ? serverUrl : url));
+                          
+                                                                        // [修改] 改为使用 safeUpload
+                                                                        safeUpload(file).then(serverUrl => {
+                                                                            if (serverUrl) {
+                                                                                setUploadImages((prev: string[]) => prev.map(url => url === localUrl ? serverUrl : url));
                                                                           } else {
                                                                               alert('上传失败，已从列表中移除');
                                                                               setUploadImages((prev: string[]) => prev.filter(url => url !== localUrl));
