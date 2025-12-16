@@ -719,7 +719,7 @@ return (
           <div className="mt-6 pt-6 border-t border-gray-100">
               {user.coupleId ? (
                   <div className="animate-in fade-in zoom-in duration-500">
-                      <div className="inline-block bg-rose-50 text-rose-500 px-4 py-1 rounded-full text-xs font-bold mb-4">❤️ 恋爱中</div>
+                      <div className="inline-block bg-rose-50 text-rose-500 px-4 py-1 rounded-full text-xs font-bold mb-4">恋爱中</div>
                       
                       {/* 另一半信息 */}
                       <div className="flex items-center justify-center gap-4">
@@ -731,7 +731,7 @@ return (
                       {/* 解绑申请卡片 */}
                       {disconnectRequest && (
                           <div className="mb-6 p-4 bg-gray-50 rounded-2xl border-2 border-gray-200 animate-pulse text-left mt-4">
-                              <h3 className="text-gray-700 font-bold mb-2">💔 对方申请解除关系</h3>
+                              <h3 className="text-gray-700 font-bold mb-2">对方申请解除关系</h3>
                               <p className="text-xs text-gray-500 mb-3">如果同意，双方将恢复单身状态。</p>
                               <div className="flex gap-2">
                                   <button onClick={handleAgreeDisconnect} className="flex-1 bg-red-500 text-white py-2 rounded-xl font-bold shadow-md">同意解绑</button>
@@ -740,11 +740,11 @@ return (
                           </div>
                       )}
                       
-                      <button onClick={handleRequestUnbind} className="mt-6 text-xs text-gray-400 underline hover:text-red-500">申请解除关系</button>
+                      <button onClick={handleRequestUnbind} className="mt-6 text-xs text-gray-400 underline hover:text-red-500">申请解除</button>
                   </div>
               ) : (
                   <div>
-                      <div className="inline-block bg-gray-100 text-gray-400 px-4 py-1 rounded-full text-xs font-bold mb-6">🐶 单身状态</div>
+                      <div className="inline-block bg-gray-100 text-gray-400 px-4 py-1 rounded-full text-xs font-bold mb-6">单身🐶</div>
                       
                       {incomingRequest && (
                         <div className="mb-6 p-4 bg-rose-50 rounded-2xl border-2 border-rose-200 animate-pulse">
@@ -2651,7 +2651,29 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
                                try { await AV.Object.createWithoutData('Message', id).destroy(); } catch(e) { console.error(e); }
                            }}
 
-                           onAddTodo={(t:string, d:string) => setTodos([...todos, { id: Date.now().toString(), text: t, completed: false, assignee: 'both', date: d || getBeijingDateString() }])} 
+                           // [修改] 增加云端保存逻辑，确保日历能同步
+                           onAddTodo={async (t:string, d:string) => {
+                               const tempId = Date.now().toString();
+                               const newItem = { id: tempId, text: t, completed: false, assignee: 'both', date: d || getBeijingDateString() };
+                               
+                               // 1. 本地乐观更新
+                               setTodos(prev => [...prev, newItem]); 
+
+                               // 2. 云端保存
+                               try {
+                                   const Obj = new AV.Object('Todo');
+                                   Obj.set('text', t);
+                                   Obj.set('date', newItem.date);
+                                   Obj.set('completed', false);
+                                   Obj.set('assignee', 'both');
+                                   Obj.set('writer_id', user.objectId);
+                                   if(user.coupleId) Obj.set('binding_id', user.coupleId);
+                                   
+                                   const saved = await Obj.save();
+                                   // 3. 将本地临时ID替换为云端真实ID
+                                   setTodos(prev => prev.map(item => item.id === tempId ? { ...item, id: saved.id } : item));
+                               } catch(e) { console.error("AI提取待办保存失败", e); }
+                           }}
                            setMessages={setMessages} 
                        />)}
                        {activePage === Page.CALENDAR && (<CalendarViewContent periods={periods} conflicts={conflicts} todos={todos} addTodo={async (t:string, d:string) => {
