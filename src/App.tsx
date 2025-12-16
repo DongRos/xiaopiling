@@ -941,46 +941,67 @@ const MemoriesViewContent = ({
       if (!selectedAlbum || !e.target.files) return;
       const files = Array.from(e.target.files); 
       
-      // [修复] 循环上传并保存
       try {
+          // 提示用户正在处理
+          const confirmMsg = confirm(`准备上传 ${files.length} 张照片，是否继续？\n上传过程中请勿刷新页面。`);
+          if (!confirmMsg) return;
+
           const newMediaItems: AlbumMedia[] = [];
+          
+          // 1. 循环上传文件
           for (const file of files) {
-               // 1. 上传文件
-               const url = await uploadFile(file);
-               if (url) {
-                   newMediaItems.push({ id: Date.now().toString() + Math.random(), url: url, date: getBeijingDateString(), type: 'image' });
+               try {
+                   const url = await uploadFile(file);
+                   if (url) {
+                       newMediaItems.push({ 
+                           id: Date.now().toString() + Math.random().toString(36).substr(2, 9), 
+                           url: url, 
+                           date: getBeijingDateString(), 
+                           type: 'image' 
+                       });
+                   }
+               } catch (err) {
+                   console.error("单张图片上传失败跳过", err);
                }
           }
 
           if (newMediaItems.length > 0) {
-               // [修复] 先计算完整的媒体列表（新照片在最前）
-               const updatedMedia = [...newMediaItems, ...selectedAlbum.media];
-               const updatedAlbum = { ...selectedAlbum, media: updatedMedia, coverUrl: !selectedAlbum.coverUrl ? newMediaItems[0].url : selectedAlbum.coverUrl };
-
-               // 2. 更新云端相册数据
-               const albumObj = AV.Object.createWithoutData('Album', selectedAlbum.id);
-               // [修复] 使用 set 直接覆盖 media 字段，确保数据结构扁平且顺序正确（新图在前）
-               albumObj.set('media', updatedMedia);
-               // 如果封面被更新了，同步保存封面字段
-               if (updatedAlbum.coverUrl !== selectedAlbum.coverUrl) {
-                   albumObj.set('coverUrl', updatedAlbum.coverUrl);
-               }
-               await albumObj.save();
+               // 2. 计算新状态
+               // 确保 selectedAlbum.media 存在
+               const currentMedia = selectedAlbum.media || [];
+               const updatedMedia = [...newMediaItems, ...currentMedia];
                
-               // 如果是第一张图，顺便更新云端封面
-               if (!selectedAlbum.coverUrl) {
-                   const coverObj = AV.Object.createWithoutData('Album', selectedAlbum.id);
-                   coverObj.set('coverUrl', newMediaItems[0].url);
-                   coverObj.save();
+               // 3. [关键] 先更新云端，确保数据落地
+               const albumObj = AV.Object.createWithoutData('Album', selectedAlbum.id);
+               albumObj.set('media', updatedMedia);
+               
+               // 如果当前没封面，用第一张新图做封面
+               let newCoverUrl = selectedAlbum.coverUrl;
+               if (!newCoverUrl && newMediaItems.length > 0) {
+                   newCoverUrl = newMediaItems[0].url;
+                   albumObj.set('coverUrl', newCoverUrl);
                }
 
+               await albumObj.save(); // 等待保存成功
+               console.log("云端相册保存成功");
+
+               // 4. 云端保存成功后，再更新本地状态
+               const updatedAlbum = { ...selectedAlbum, media: updatedMedia, coverUrl: newCoverUrl };
                setAlbums((prev: Album[]) => prev.map(a => a.id === selectedAlbum.id ? updatedAlbum : a));
                setSelectedAlbum(updatedAlbum);
-               alert(`成功上传 ${newMediaItems.length} 张照片`);
+               
+               alert(`成功上传 ${newMediaItems.length} 张照片！`);
+          } else {
+              alert("没有照片上传成功，请检查网络");
           }
-      } catch (e) { console.error("上传相册失败", e); alert("上传失败，请重试"); }
+      } catch (e: any) { 
+          console.error("上传相册流程失败", e); 
+          alert("保存到云端失败: " + (e.message || "未知错误")); 
+      } finally {
+          // 清空 input 防止重复选择不触发 onChange
+          e.target.value = '';
+      }
   };
-
   
   const batchDeletePhotos = async () => {
       if(!selectedAlbum || !window.confirm(`确定要删除选中的 ${selectedItems.size} 张照片吗？`)) return;
@@ -1721,10 +1742,69 @@ const BoardViewContent = ({ user, messages, onPost, onPin, onFav, onDelete, onAd
         if(input.match(/今天|明天|要做|提醒/)) { const todos = await extractTodosFromText(input, getBeijingDateString()); if(todos.length) { todos.forEach(t => onAddTodo(t.text, t.date)); alert(`已添加 ${todos.length} 个待办！`); } }
         setInput('');
     };
-    const batchAction = (action: 'pin' | 'fav' | 'delete') => {
-        if(action === 'delete' && !confirm(`确定删除 ${selectedItems.size} 条?`)) return;
-        setMessages((prev: Message[]) => action === 'delete' ? prev.filter(m => !selectedItems.has(m.id)) : prev.map(m => selectedItems.has(m.id) ? { ...m, isPinned: action==='pin'?!m.isPinned:m.isPinned, isFavorite: action==='fav'?!m.isFavorite:m.isFavorite } : m));
-        if(action === 'delete') setIsManageMode(false);
+    const batchAction = async (action: 'pin' | 'fav' | 'delete') => {
+        if (selectedItems.size === 0) return;
+        if (action === 'delete' && !confirm(`确定删除选中的 ${selectedItems.size} 条留言吗？`)) return;
+
+        // 1. 本地立即更新 UI (乐观更新)
+        setMessages((prev: Message[]) => {
+            if (action === 'delete') {
+                return prev.filter(m => !selectedItems.has(m.id));
+            } else {
+                return prev.map(m => {
+                    if (selectedItems.has(m.id)) {
+                        return {
+                            ...m,
+                            isPinned: action === 'pin' ? !m.isPinned : m.isPinned,
+                            isFavorite: action === 'fav' ? !m.isFavorite : m.isFavorite
+                        };
+                    }
+                    return m;
+                });
+            }
+        });
+
+        // 退出管理模式 (仅删除时)
+        if (action === 'delete') {
+            setIsManageMode(false);
+            setSelectedItems(new Set());
+        }
+
+        // 2. [修复] 同步操作到 LeanCloud
+        try {
+            const idArray = Array.from(selectedItems);
+            
+            if (action === 'delete') {
+                // 批量删除
+                const objectsToDelete = idArray.map(id => AV.Object.createWithoutData('Message', id));
+                await AV.Object.destroyAll(objectsToDelete);
+                console.log("云端批量删除成功");
+            } else {
+                // 批量更新 (置顶/收藏)
+                // 注意：这里需要根据当前最新的本地状态来更新，或者简单点，直接对选中的对象取反。
+                // 但由于本地已经在上面 setMessages 里取反了，我们需要获取“新状态”比较麻烦。
+                // 更稳妥的方式是：遍历选中的 ID，找到对应的 Message 对象，修改其属性，然后 saveAll。
+                
+                const objectsToUpdate: any[] = [];
+                idArray.forEach(id => {
+                    const msg = messages.find(m => m.id === id); // 注意：这里的 messages 是闭包里的旧值
+                    if (msg) {
+                        const obj = AV.Object.createWithoutData('Message', id);
+                        if (action === 'pin') obj.set('isPinned', !msg.isPinned); // 取反旧值 = 新值
+                        if (action === 'fav') obj.set('isFavorite', !msg.isFavorite);
+                        objectsToUpdate.push(obj);
+                    }
+                });
+                
+                if (objectsToUpdate.length > 0) {
+                    await AV.Object.saveAll(objectsToUpdate);
+                    console.log(`云端批量${action}成功`);
+                }
+            }
+        } catch (e) {
+            console.error("批量操作同步云端失败", e);
+            alert("云端同步失败，请刷新页面重试");
+        }
     };
     return (
         <div className="flex flex-col h-full bg-yellow-50/30">
