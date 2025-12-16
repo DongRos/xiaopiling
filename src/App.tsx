@@ -2120,7 +2120,8 @@ const MainApp = ({ user, onLogout, onUpdateUser }: { user: any, onLogout: () => 
            const albumQuery = getQuery('Album');
            // [修复] 增加 if (res) 判断，防止相册被清空
            if(albumQuery) safeFind(albumQuery.descending('createdAt')).then((res: any) => {
-               if (res) setAlbums(res.map((a: any) => ({ ...a.toJSON(), id: a.id, media: a.media || [] })));
+               // [修复] Bug根源在此：a是SDK对象，没有.media属性，必须用 .get('media') 获取
+               if (res) setAlbums(res.map((a: any) => ({ ...a.toJSON(), id: a.id, media: a.get('media') || [] })));
            });
 
            // [重点] 刷新首页照片
